@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,10 +11,11 @@ import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import _ from 'lodash';
 import { isEmptyString } from 'sources/validators';
-import { SCHEMA_STATE_ACTIONS } from '../../../../../../../../../../static/js/SchemaView';
-import DataGridViewWithHeaderForm from '../../../../../../../../../../static/js/helpers/DataGridViewWithHeaderForm';
+import { SCHEMA_STATE_ACTIONS } from 'sources/SchemaView';
+import { DataGridFormHeader } from 'sources/SchemaView/DataGridView';
 import { getNodeAjaxOptions, getNodeListByName } from '../../../../../../../../../static/js/node_ajax';
 import TableSchema from '../../../../static/js/table.ui';
+
 
 export function getNodeForeignKeySchema(treeNodeInfo, itemNodeData, pgBrowser, noColumns=false, initData={}) {
   return new ForeignKeySchema({
@@ -47,6 +48,7 @@ class ForeignKeyHeaderSchema extends BaseUISchema {
       references: undefined,
       referenced: undefined,
       _disable_references: false,
+      columns_updated_at: 0,
     });
 
     this.fieldOptions = fieldOptions;
@@ -55,15 +57,25 @@ class ForeignKeyHeaderSchema extends BaseUISchema {
 
   changeColumnOptions(columns) {
     this.fieldOptions.local_column = columns;
+    if (this.state)
+      this.state.data = {...this.state.data, columns_updated_at: Date.now()};
   }
 
   addDisabled(state) {
-    return !(state.local_column && (state.references || this.origData.references) && state.referenced);
+    return !(
+      state.local_column && (
+        state.references || this.origData.references
+      ) && state.referenced
+    );
   }
 
   /* Data to ForeignKeyColumnSchema will added using the header form */
   getNewData(data) {
-    let references_table_name = _.find(this.refTables, (t)=>t.value==data.references || t.value == this.origData.references)?.label;
+    let references_table_name = _.find(
+      this.refTables,
+      (t) => t.value == data.references || t.value == this.origData.references
+    )?.label;
+
     return {
       local_column: data.local_column,
       referenced: data.referenced,
@@ -75,19 +87,26 @@ class ForeignKeyHeaderSchema extends BaseUISchema {
   get baseFields() {
     let obj = this;
     return [{
-      id: 'local_column', label: gettext('Local column'), type:'select', editable: false,
-      options: this.fieldOptions.local_column,
-      optionsReloadBasis: this.fieldOptions.local_column?.map ? _.join(this.fieldOptions.local_column.map((c)=>c.label), ',') : null,
+      id: 'local_column', label: gettext('Local column'), editable: false,
+      deps: ['columns_updated_at'],
+      type: () => ({
+        type: 'select',
+        options: this.fieldOptions.local_column,
+        optionsReloadBasis: this.fieldOptions.local_column?.map ?
+          _.join(this.fieldOptions.local_column.map((c) => c.label), ',') :
+          null
+      }),
     },{
       id: 'references', label: gettext('References'), type: 'select', editable: false,
       options: this.fieldOptions.references,
       optionsReloadBasis: this.fieldOptions.references?.map ? _.join(this.fieldOptions.references.map((c)=>c.label), ',') : null,
       optionsLoaded: (rows)=>obj.refTables=rows,
       disabled: (state) => {
-        return state._disable_references ? true : false;
+        return state._disable_references;
       }
     },{
-      id: 'referenced', label: gettext('Referencing'), editable: false, deps: ['references'],
+      id: 'referenced', label: gettext('Referencing'), editable: false,
+      deps: ['references'],
       type: (state)=>{
         return {
           type: 'select',
@@ -229,7 +248,10 @@ export default class ForeignKeySchema extends BaseUISchema {
         if(!obj.isNew(state)) {
           let origData = {};
           if(obj.inTable && obj.top) {
-            origData = _.find(obj.top.origData['foreign_key'], (r)=>r.cid == state.cid);
+            origData = _.find(
+              obj.top.origData['foreign_key'],
+              (r) => r.cid == state.cid
+            );
           } else {
             origData = obj.origData;
           }
@@ -304,14 +326,14 @@ export default class ForeignKeySchema extends BaseUISchema {
       group: gettext('Columns'), type: 'collection',
       mode: ['create', 'edit', 'properties'],
       editable: false, schema: this.fkColumnSchema,
-      headerSchema: this.fkHeaderSchema, headerVisible: (state)=>obj.isNew(state),
-      CustomControl: DataGridViewWithHeaderForm,
+      headerSchema: this.fkHeaderSchema,
+      headerFormVisible: (state)=>obj.isNew(state),
+      GridHeader: DataGridFormHeader,
       uniqueCol: ['local_column', 'references', 'referenced'],
-      canAdd: false, canDelete: function(state) {
-        // We can't update columns of existing foreign key.
-        return obj.isNew(state);
-      },
-      readonly: obj.isReadonly, cell: ()=>({
+      canAdd: (state)=>obj.isNew(state),
+      canDelete: (state)=>obj.isNew(state),
+      readonly: obj.isReadonly,
+      cell: () => ({
         cell: '',
         controlProps: {
           formatter: {
@@ -346,21 +368,22 @@ export default class ForeignKeySchema extends BaseUISchema {
         let currColumns = state.columns || [];
         if(obj.inTable && source[0] == 'columns') {
           if(actionObj.type == SCHEMA_STATE_ACTIONS.DELETE_ROW) {
-            let oldColumn = _.get(actionObj.oldState, actionObj.path.concat(actionObj.value));
-            currColumns = _.filter(currColumns, (cc)=>cc.local_column != oldColumn.name);
+            let column = _.get(actionObj.oldState, actionObj.path.concat(actionObj.value));
+            currColumns = _.filter(currColumns, (cc)=>cc.local_column != column.name);
           } else if(actionObj.type == SCHEMA_STATE_ACTIONS.SET_VALUE) {
             let tabColPath = _.slice(actionObj.path, 0, -1);
-            let oldColName = _.get(actionObj.oldState, tabColPath).name;
-            let idx = _.findIndex(currColumns, (cc)=>cc.local_column == oldColName);
+            let column = _.get(actionObj.oldState, tabColPath);
+            let idx = _.findIndex(currColumns, (cc)=>cc.local_column == column.name);
             if(idx > -1) {
               currColumns[idx].local_column = _.get(topState, tabColPath).name;
             }
           }
         }
         if(actionObj.type == SCHEMA_STATE_ACTIONS.ADD_ROW) {
-          obj.fkHeaderSchema.origData.references = null;
           // Set references value.
-          obj.fkHeaderSchema.origData.references = obj.fkHeaderSchema.sessData.references;
+          obj.fkHeaderSchema.origData.references = null;
+          obj.fkHeaderSchema.origData.references =
+            obj.fkHeaderSchema.sessData.references;
           obj.fkHeaderSchema.origData._disable_references = true;
         }
         return {columns: currColumns};

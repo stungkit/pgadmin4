@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -42,11 +42,15 @@ export class TreeFake extends Tree {
 
   constructor(pgBrowser) {
     let manageTree = new ManageTreeNodes();
-    let tree = jasmine.createSpyObj(
-      'tree', ['unload', 'onTreeEvents',
-        'getActiveFile', 'setActiveFile',
-        'deSelectActiveFile', 'closeDirectory']);
-    tree.unload.and.callFake(function(domNode, config) {
+    let tree = {
+      'unload': jest.fn(),
+      'onTreeEvents': jest.fn(),
+      'getActiveFile': jest.fn(),
+      'setActiveFile': jest.fn(),
+      'deSelectActiveFile': jest.fn(),
+      'closeDirectory': jest.fn(),
+    };
+    tree.unload.mockImplementation(function(domNode, config) {
       config.success();
     });
 
@@ -95,7 +99,7 @@ export class TreeFake extends Tree {
   findNodeByDomElement(domElement) {
     const path = this.translateTreeNodeIdFromReactTree(domElement);
 
-    if(!path || !path[0]) {
+    if(!path?.[0]) {
       return undefined;
     }
 

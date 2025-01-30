@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -51,7 +51,7 @@ export default class DomainConstraintSchema extends BaseUISchema {
         cell:'boolean', group: gettext('Definition'), min_version: 90200,
         mode: ['properties', 'create', 'edit'],
         readonly: function(state) {
-          return !obj.isNew(state) && obj._origData.convalidated;
+          return !obj.isNew(state) && obj.origData.convalidated;
         }
       }
     ];

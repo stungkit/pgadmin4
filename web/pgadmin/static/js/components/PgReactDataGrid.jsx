@@ -2,27 +2,28 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-import React, { useContext, useEffect } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 import ReactDataGrid, { Row } from 'react-data-grid';
-import { Box, makeStyles } from '@material-ui/core';
-import clsx from 'clsx';
+import { Box } from '@mui/material';
 import PropTypes from 'prop-types';
 import CustomPropTypes from '../custom_prop_types';
-import KeyboardArrowUpIcon from '@material-ui/icons/KeyboardArrowUp';
-import KeyboardArrowDownIcon from '@material-ui/icons/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import gettext from 'sources/gettext';
+import { styled } from '@mui/material/styles';
 
-const useStyles = makeStyles((theme)=>({
-  root: {
+const StyledReactDataGrid = styled(ReactDataGrid)(({theme})=>({
+  '&.ReactGrid-root': {
     height: '100%',
     color: theme.palette.text.primary,
     backgroundColor: theme.otherVars.qtDatagridBg,
     fontSize: '12px',
     border: 'none',
+    userSelect: 'none',
     '--rdg-selection-color': theme.palette.primary.main,
     '& .rdg-cell': {
       ...theme.mixins.panelBorder.right,
@@ -32,13 +33,23 @@ const useStyles = makeStyles((theme)=>({
       '&[aria-colindex="1"]': {
         padding: 0,
       },
-      '&[aria-selected=true]:not([role="columnheader"])': {
+      '&[aria-selected=true]:not([aria-colindex="1"]):not([role="columnheader"])': {
         outlineWidth: '0px',
         outlineOffset: '0px',
+      },
+      '& .rdg-cell-value': {
+        height: '100%',
+      },
+      '&.rdg-cell-copied[aria-selected=false][role="gridcell"]': {
+        backgroundColor: 'inherit',
       }
     },
     '& .rdg-header-row .rdg-cell': {
       padding: 0,
+
+      '& .rdg-header-sort-name': {
+        margin: 'auto 0',
+      }
     },
     '& .rdg-header-row': {
       backgroundColor: theme.palette.background.default,
@@ -51,9 +62,9 @@ const useStyles = makeStyles((theme)=>({
       },
     }
   },
-  cellSelection: {
+  '&.ReactGrid-cellSelection': {
     '& .rdg-cell': {
-      '&[aria-selected=true]:not([role="columnheader"])': {
+      '&[aria-selected=true]:not([aria-colindex="1"]):not([role="columnheader"])': {
         outlineWidth: '1px',
         outlineOffset: '-1px',
         backgroundColor: theme.palette.primary.light,
@@ -61,20 +72,6 @@ const useStyles = makeStyles((theme)=>({
       }
     },
   },
-  hasSelectColumn: {
-    '& .rdg-cell': {
-      '&[aria-selected=true][aria-colindex="1"]': {
-        outlineWidth: '2px',
-        outlineOffset: '-2px',
-        backgroundColor: theme.otherVars.qtDatagridBg,
-        color: theme.palette.text.primary,
-      }
-    },
-    '& .rdg-row[aria-selected=true] .rdg-cell:nth-child(1)': {
-      backgroundColor: theme.palette.primary.main,
-      color: theme.palette.primary.contrastText,
-    }
-  }
 }));
 
 export const GridContextUtils = React.createContext();
@@ -108,14 +105,20 @@ export function CustomRow({inTest=false, ...props}) {
     }
   }, [props.selectedCellIdx]);
   if(inTest) {
-    return <div data-test='test-div' tabIndex={0} onKeyDown={handleKeyDown}></div>;
+    return <div data-test='test-div' tabIndex={-1} onKeyDown={handleKeyDown}></div>;
   }
-  const onRowClick = (...args)=>{
-    gridUtils.onItemClick?.(props.rowIdx);
-    props.onRowClick?.(...args);
+
+  const onCellClick = (args) => {
+    gridUtils.onItemClick?.(args.row.rowIdx);
+    props.onRowClick?.(args.row);
   };
+
+  const onCellDoubleClick = (args) => {
+    gridUtils.onItemEnter?.(args.row);
+  };
+
   return (
-    <Row {...props} onKeyDown={handleKeyDown} onRowClick={onRowClick} onRowDoubleClick={(row)=>gridUtils.onItemEnter?.(row)}
+    <Row {...props} onKeyDown={handleKeyDown} onCellClick={onCellClick} onCellDoubleClick={onCellDoubleClick}
       selectCell={(row, column)=>props.selectCell(row, column)} aria-selected={isRowSelected}/>
   );
 }
@@ -130,19 +133,29 @@ CustomRow.propTypes = {
 
 export default function PgReactDataGrid({gridRef, className, hasSelectColumn=true, onItemEnter, onItemSelect,
   onItemClick, noRowsText, noRowsIcon,...props}) {
-  const classes = useStyles();
-  let finalClassName = [classes.root];
-  hasSelectColumn && finalClassName.push(classes.hasSelectColumn);
-  props.enableCellSelect && finalClassName.push(classes.cellSelection);
+
+  let finalClassName = ['ReactGrid-root'];
+  hasSelectColumn && finalClassName.push('ReactGrid-hasSelectColumn');
+  props.enableCellSelect && finalClassName.push('ReactGrid-cellSelection');
   finalClassName.push(className);
+  const valObj = useMemo(() => ({onItemEnter, onItemSelect, onItemClick}), [onItemEnter, onItemSelect, onItemClick]);
+
+  const renderRow = useCallback((key, props) => {
+    return <CustomRow key={key} {...props} />;
+  }, []);
+
+  const renderSortStatus = useCallback((props) => {
+    return <CutomSortIcon {...props} />;
+  }, []);
+
   return (
-    <GridContextUtils.Provider value={{onItemEnter, onItemSelect, onItemClick}}>
-      <ReactDataGrid
+    <GridContextUtils.Provider value={valObj}>
+      <StyledReactDataGrid
         ref={gridRef}
-        className={clsx(finalClassName)}
-        components={{
-          sortIcon: CutomSortIcon,
-          rowRenderer: CustomRow,
+        className={finalClassName.join(' ')}
+        renderers={{
+          renderRow,
+          renderSortStatus,
           noRowsFallback: <Box textAlign="center" gridColumn="1/-1" p={1}>{noRowsIcon}{noRowsText || gettext('No rows found.')}</Box>,
         }}
         {...props}

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -100,7 +100,7 @@ class DomainReverseEngineeredSQLTestCase(BaseTestGenerator):
             orig_sql = json.loads(get_response.data.decode('utf-8'))
 
             # Replace multiple spaces with one space and check the expected sql
-            sql = re.sub('\s+', ' ', orig_sql).strip()
+            sql = re.sub(r'\s+', ' ', orig_sql).strip()
             expected_sql = '-- DOMAIN: {0}.{1} -- DROP DOMAIN IF EXISTS ' \
                            '{0}.{1}; CREATE DOMAIN {0}.{1} {2} ' \
                            'ALTER DOMAIN {0}.{1} OWNER' \

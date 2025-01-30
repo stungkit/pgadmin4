@@ -3,9 +3,34 @@
 {% block title %}{{ config.APP_NAME }}{% endblock %}
 
 {% block init_script %}
+function parseConsoleArgs(args) {
+  const retData = Array.from(args).map(arg => {
+    try {
+      if(arg.stack) return arg.stack;
+      return JSON.stringify(arg);
+    } catch (e) {
+      return arg
+    }
+  });
+  return retData?.join(' ');
+}
+
+if(window.electronUI) {
+  for (const method of ['log', 'error']) {
+    const nativeMethod = window.console[method];
+    window.console[method] = function () {
+      nativeMethod.apply(this, arguments);
+      setTimeout(()=>{
+        window.electronUI?.log(`--------------[UI ${method}]---------------
+        ${parseConsoleArgs(arguments)}
+        ------------[UI End]----------------`);
+      });
+    }
+  }
+}
 try {
 require(
-['sources/generated/app.bundle', 'sources/generated/codemirror', 'sources/generated/browser_nodes'],
+['sources/generated/app.bundle', 'sources/generated/browser_nodes'],
 function() {
 },
 function() {
@@ -81,13 +106,6 @@ require.onResourceLoad = function (context, map, depMaps) {
     <div class="row"><div class="col-12 pg-sp-text">{{ _('Loading {0} v{1}...').format(config.APP_NAME, config.APP_VERSION) }}</div></div>
   </div>
 </div>
-{% if current_app.PGADMIN_RUNTIME | string() == 'False' %}
-<div id="main-menu-container"></div>
-<div id="dockerContainer" class="pg-docker"></div>
-{% else %}
-  <div id="dockerContainer" class="pg-docker pg-docker-native"></div>
-{% endif %}
-
-{% include 'browser/messages.html' %}
+<div id="root" style="height: 100%"></div>
 
 {% endblock %}

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,10 +10,16 @@
 """ Implements Utility class for Indexes. """
 
 from flask import render_template
-from flask_babel import gettext as _
+from flask_babel import gettext
 from pgadmin.utils.ajax import internal_server_error
 from pgadmin.utils.exception import ObjectGone, ExecuteError
 from functools import wraps
+
+AUTO_CREATE_INDEX_MSG = "-- This constraint index is automatically " \
+    "generated from a constraint with an identical name.\n-- " \
+    "For more details, refer to the Constraints node. Note that this type " \
+    "of index is only visible \n-- when the 'Show system objects?' is set " \
+    "to True in the Preferences.\n\n"
 
 
 def get_template_path(f):
@@ -117,6 +123,9 @@ def get_column_details(conn, idx, data, mode='properties', template_path=None):
             row['attdef'].strip('"'),
             'collspcname': row['collnspname'],
             'op_class': row['opcname'],
+            'col_num': row['attnum'],
+            'is_exp': row['is_exp'],
+            'statistics': row['statistics']
         }
 
         # ASC/DESC and NULLS works only with btree indexes
@@ -184,7 +193,6 @@ def _get_create_sql(data, template_path, conn, mode, name,
     :return:
     """
     required_args = {
-        'name': 'Name',
         'columns': 'Columns'
     }
     for arg in required_args:
@@ -196,7 +204,7 @@ def _get_create_sql(data, template_path, conn, mode, name,
             err = True
             # Check if we have at least one column
         if err:
-            return _('-- definition incomplete'), name
+            return gettext('-- definition incomplete'), name
 
     # If the request for new object which do not have did
     sql = render_template(
@@ -231,21 +239,29 @@ def get_sql(conn, **kwargs):
     mode = kwargs.get('mode', None)
     template_path = kwargs.get('template_path', None)
     if_exists_flag = kwargs.get('if_exists_flag', False)
+    show_sys_obj = kwargs.get('show_sys_objects', False)
 
     name = data['name'] if 'name' in data else None
     if idx is not None:
         sql = render_template("/".join([template_path, 'properties.sql']),
                               did=did, tid=tid, idx=idx,
-                              datlastsysoid=datlastsysoid)
+                              datlastsysoid=datlastsysoid,
+                              show_sys_objects=show_sys_obj)
 
         status, res = conn.execute_dict(sql)
         if not status:
             return internal_server_error(errormsg=res)
 
         if len(res['rows']) == 0:
-            raise ObjectGone(_('Could not find the index in the table.'))
+            raise ObjectGone(gettext('Could not find the index in the table.'))
 
         old_data = dict(res['rows'][0])
+
+        # Add column details for current index
+        old_data = get_column_details(conn, idx, old_data)
+
+        update_column_data, update_column = \
+            _get_column_details_to_update(old_data, data)
         # Remove opening and closing bracket as we already have in jinja
         # template.
         if 'using' in old_data and old_data['using'] is not None and \
@@ -264,7 +280,8 @@ def get_sql(conn, **kwargs):
 
         sql = render_template(
             "/".join([template_path, 'update.sql']),
-            data=data, o_data=old_data, conn=conn
+            data=data, o_data=old_data, conn=conn,
+            update_column_data=update_column_data, update_column=update_column
         )
     else:
         sql = _get_create_sql(data, template_path, conn, mode, name,
@@ -291,22 +308,31 @@ def get_reverse_engineered_sql(conn, **kwargs):
     template_path = kwargs.get('template_path', None)
     with_header = kwargs.get('with_header', True)
     if_exists_flag = kwargs.get('add_not_exists_clause', False)
+    show_sys_obj = kwargs.get('show_sys_objects', False)
 
     SQL = render_template("/".join([template_path, 'properties.sql']),
                           did=did, tid=tid, idx=idx,
-                          datlastsysoid=datlastsysoid)
+                          datlastsysoid=datlastsysoid,
+                          show_sys_objects=show_sys_obj)
 
     status, res = conn.execute_dict(SQL)
     if not status:
         raise ExecuteError(res)
 
     if len(res['rows']) == 0:
-        raise ObjectGone(_('Could not find the index in the table.'))
+        raise ObjectGone(gettext('Could not find the index in the table.'))
 
     data = dict(res['rows'][0])
     # Adding parent into data dict, will be using it while creating sql
     data['schema'] = schema
     data['table'] = table
+    data["storage_parameters"] = {}
+
+    storage_params = get_storage_params(data['amname'])
+
+    for param in storage_params:
+        if (param in data) and (data[param] is not None):
+            data["storage_parameters"].update({param: data[param]})
 
     # Add column details for current index
     data = get_column_details(conn, idx, data, 'create')
@@ -315,12 +341,17 @@ def get_reverse_engineered_sql(conn, **kwargs):
     if conn.manager.version >= 110000:
         data = get_include_details(conn, idx, data)
 
-    SQL, name = get_sql(conn, data=data, did=did, tid=tid, idx=None,
-                        datlastsysoid=datlastsysoid,
-                        if_exists_flag=if_exists_flag)
+    SQL, _ = get_sql(conn, data=data, did=did, tid=tid, idx=None,
+                     datlastsysoid=datlastsysoid,
+                     if_exists_flag=if_exists_flag)
 
     if with_header:
-        sql_header = "-- Index: {0}\n\n-- ".format(data['name'])
+        sql_header = ''
+        # Add a Note if index is automatically created.
+        if 'conname' in data and data['conname'] is not None:
+            sql_header += AUTO_CREATE_INDEX_MSG
+
+        sql_header += "-- Index: {0}\n\n-- ".format(data['name'])
 
         sql_header += render_template("/".join([template_path, 'delete.sql']),
                                       data=data, conn=conn)
@@ -328,3 +359,46 @@ def get_reverse_engineered_sql(conn, **kwargs):
         SQL = sql_header + '\n\n' + SQL
 
     return SQL
+
+
+def get_storage_params(amname):
+    """
+    This function will return storage parameters according to index type.
+
+    :param amname: access method name
+    :return:
+    """
+    storage_parameters = {
+        "btree": ["fillfactor", "deduplicate_items"],
+        "hash": ["fillfactor"],
+        "gist": ["fillfactor", "buffering"],
+        "gin": ["fastupdate", "gin_pending_list_limit"],
+        "spgist": ["fillfactor"],
+        "brin": ["pages_per_range", "autosummarize"],
+        "heap": [],
+        "ivfflat": ['lists']
+    }
+    return [] if amname not in storage_parameters else \
+        storage_parameters[amname]
+
+
+def _get_column_details_to_update(old_data, data):
+    """
+    This function returns the columns/expressions which need to update
+    :param old_data:
+    :param data:
+    :return:
+    """
+    update_column_data = []
+    update_column = False
+
+    if 'columns' in data and 'changed' in data['columns']:
+        for index, col1 in enumerate(old_data['columns']):
+            for col2 in data['columns']['changed']:
+                if col1['col_num'] == col2['col_num'] and col1['statistics'] \
+                        != col2['statistics']:
+                    update_column_data.append(col2)
+                    update_column = True
+                    break
+
+    return update_column_data, update_column

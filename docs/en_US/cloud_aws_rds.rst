@@ -1,12 +1,12 @@
 .. _cloud_aws_rds:
 
 ******************************************
-`Amazon AWS RDS Cloud Deployment`:index:
+`Amazon RDS Cloud Deployment`:index:
 ******************************************
 
-To deploy a PostgreSQL server on the Amazon AWS cloud, follow the below steps.
+To deploy a PostgreSQL server on the Amazon cloud, follow the below steps.
 
-.. image:: images/cloud_aws_provider.png
+.. image:: images/cloud_provider_for_postgresql.png
     :alt: Cloud Deployment Provider
     :align: center
 
@@ -32,8 +32,7 @@ Use the fields from the Instance Specification tab to specify the Instance
 details.
 
 * Use the *Instance name* field to add an instance name for the PostgreSQL
-  server; the name specified will be displayed in the *Browser* tree control
-  too.
+  server; the name specified will be displayed in the *Object Explorer* too.
 
 * Use the *Public IP* field to specify the IP Address range for permitting the
   inbound traffic.
@@ -63,8 +62,8 @@ details.
 Use the fields from the Database Details tab to specify the Instance details.
 
 * Use the drop-down list box in the *Server group* field to select the parent
-  node for the server; the server will be displayed in the *Browser* tree
-  control within the specified group.
+  node for the server; the server will be displayed in the *Object Explorer*
+  within the specified group.
 
 * Use the *Database name* field to add the database name for the PostgreSQL
   server.

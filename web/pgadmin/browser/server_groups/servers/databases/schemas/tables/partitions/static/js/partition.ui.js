@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,7 +11,7 @@ import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import SecLabelSchema from 'top/browser/server_groups/servers/static/js/sec_label.ui';
 import _ from 'lodash';
-import { ConstraintsSchema } from '../../../static/js/table.ui';
+import { ConstraintsSchema, getPrivilegesForTableAndLikeObjects } from '../../../static/js/table.ui';
 import { PartitionKeysSchema, PartitionsSchema } from '../../../static/js/partition.utils.ui';
 import { getNodePrivilegeRoleSchema } from '../../../../../../static/js/privilege.ui';
 import { getNodeAjaxOptions, getNodeListByName } from '../../../../../../../../static/js/node_ajax';
@@ -30,16 +30,16 @@ export function getNodePartitionTableSchema(treeNodeInfo, itemNodeData, pgBrowse
     {
       relowner: ()=>getNodeListByName('role', treeNodeInfo, itemNodeData),
       schema: ()=>getNodeListByName('schema', treeNodeInfo, itemNodeData, {
-        cacheLevel: 'database',
-        cacheNode: 'database',
+        cacheLevel: 'database'
       }, (d)=>{
         // If schema name start with pg_* then we need to exclude them
-        return !(d && d.label.match(/^pg_/));
+        return !(d?.label.match(/^pg_/));
       }),
       spcname: spcname,
       coll_inherits: ()=>getNodeAjaxOptions('get_inherits', partNode, treeNodeInfo, itemNodeData),
       typname: ()=>getNodeAjaxOptions('get_oftype', partNode, treeNodeInfo, itemNodeData),
       like_relation: ()=>getNodeAjaxOptions('get_relations', partNode, treeNodeInfo, itemNodeData),
+      table_amname_list: ()=>getNodeAjaxOptions('get_table_access_methods', partNode, treeNodeInfo, itemNodeData),
     },
     treeNodeInfo,
     {
@@ -110,6 +110,7 @@ export default class PartitionTableSchema extends BaseUISchema {
       partition_type: 'range',
       is_partitioned: false,
       partition_value: undefined,
+      amname: undefined,
       ...initValues,
     });
 
@@ -121,7 +122,7 @@ export default class PartitionTableSchema extends BaseUISchema {
     this.getAttachTables = getAttachTables;
 
     this.partitionKeysObj = new PartitionKeysSchema([], getCollations, getOperatorClass);
-    this.partitionsObj = new PartitionsSchema(this.nodeInfo, getCollations, getOperatorClass, getAttachTables);
+    this.partitionsObj = new PartitionsSchema(this.nodeInfo, getCollations, getOperatorClass, fieldOptions.table_amname_list, getAttachTables);
     this.constraintsObj = this.schemas.constraints();
   }
 
@@ -228,6 +229,23 @@ export default class PartitionTableSchema extends BaseUISchema {
       id: 'parallel_workers', label: gettext('Parallel workers'), type: 'int',
       mode: ['create', 'edit'], group: 'advanced', min_version: 90600,
       disabled: obj.isPartitioned,
+    },
+    {
+      id: 'amname', label: gettext('Access Method'), group: 'advanced',
+      type: (state)=>{
+        return {
+          type: 'select', options: this.fieldOptions.table_amname_list,
+          controlProps: {
+            allowClear: obj.isNew(state),
+          }
+        };
+      }, mode: ['create', 'properties', 'edit'], min_version: 120000,
+      disabled: (state) => {
+        if (obj.getServerVersion() < 150000 && !obj.isNew(state)) {
+          return true;
+        }
+        return obj.isPartitioned(state);
+      },
     },
     {
       id: 'relhasoids', label: gettext('Has OIDs?'), cell: 'switch',
@@ -411,7 +429,7 @@ export default class PartitionTableSchema extends BaseUISchema {
     },
     {
       id: 'relacl', label: gettext('Privileges'), type: 'collection',
-      group: gettext('Security'), schema: this.getPrivilegeRoleSchema(['a','r','w','d','D','x','t']),
+      group: gettext('Security'), schema: this.getPrivilegeRoleSchema(getPrivilegesForTableAndLikeObjects(this.getServerVersion())),
       mode: ['edit', 'create'], canAdd: true, canDelete: true,
       uniqueCol : ['grantee'],
     },{

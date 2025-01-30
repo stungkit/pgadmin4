@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -25,7 +25,7 @@ class FtsTemplateGetTestCase(BaseTestGenerator):
 
     scenarios = [
         # Fetching default URL for FTS template node.
-        ('Fetch FTS templates Node URL', dict(
+        ('Fetch FTS templates Node', dict(
             url='/browser/fts_template/obj/')
          )
     ]

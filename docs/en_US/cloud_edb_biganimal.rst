@@ -6,7 +6,7 @@
 
 To deploy a PostgreSQL server on the EDB BigAnimal cloud, follow the below steps.
 
-.. image:: images/cloud_biganimal_provider.png
+.. image:: images/cloud_provider_for_postgresql.png
     :alt: Cloud Deployment Provider
     :align: center
 
@@ -27,12 +27,13 @@ and the next button will be enabled. To proceed further, click on the next butto
     :alt: Cloud Deployment Provider
     :align: center
 
+* Use the *Project* field to choose a project in your Biganimal account.
 
 * Use the *Cluster type* field to choose a cluster type.
 
 * Use the *No. of Standby Replicas* field to specify the replicas if you have selected the High Availability cluster.
 
-* Use the *Cluster provider* field to coose the provider.
+* Use the *Cluster provider* field to choose the provider.
 
 
 .. image:: images/cloud_biganimal_instance.png
@@ -43,8 +44,7 @@ Use the fields from the Instance Specification tab to specify the Instance
 details.
 
 * Use the *Cluster name* field to add a cluster name for the PostgreSQL
-  server; the name specified will be displayed in the *Browser* tree control
-  too.
+  server; the name specified will be displayed in the *Object Explorer* too.
 
 * Use the *Region* field to select the region.
 
@@ -66,6 +66,8 @@ details.
 
 * Use the *Volume IOPS* field to specify the storage IOPS. This field is specific to AWS.
 
+* Use the *Disk throughput* field to specify the disk throughput. This field is specific to AWS.
+
 
 .. image:: images/cloud_biganimal_database.png
     :alt: Cloud Deployment Provider
@@ -74,8 +76,8 @@ details.
 Use the fields from the Database Details tab to specify the Instance details.
 
 * Use the drop-down list box in the *Server group* field to select the parent
-  node for the server; the server will be displayed in the *Browser* tree
-  control within the specified group.
+  node for the server; the server will be displayed in the *Object Explorer*
+  within the specified group.
 
 * Use the *Database type* field to specify the PostgreSQL
   type, EnterpriseDB PostgreSQL Advanced Server or PostgreSQL.

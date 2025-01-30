@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -12,11 +12,12 @@ a webserver, this will provide the WSGI interface, otherwise, we're going
 to start a web server."""
 
 import sys
+if sys.version_info <= (3, 9):
+    import select
 
-if sys.version_info < (3, 4):
-    raise RuntimeError('This application must be run under Python 3.4 '
+if sys.version_info < (3, 8):
+    raise RuntimeError('This application must be run under Python 3.8 '
                        'or later.')
-
 import builtins
 import os
 
@@ -33,17 +34,6 @@ if 'PGADMIN_SERVER_MODE' in os.environ:
         builtins.SERVER_MODE = True
 else:
     builtins.SERVER_MODE = None
-
-if (3, 10) > sys.version_info > (3, 8) and os.name == 'posix':
-    # Fix eventlet issue with Python 3.9.
-    # Ref: https://github.com/eventlet/eventlet/issues/670
-    # This was causing issue in psycopg3
-    from eventlet import hubs
-    hubs.use_hub("poll")
-    # Ref: https://github.com/miguelgrinberg/python-socketio/issues/567
-    # Resolve BigAnimal API issue
-    import selectors
-    selectors.DefaultSelector = selectors.PollSelector
 
 import config
 import setup
@@ -101,8 +91,17 @@ if not os.path.isfile(config.SQLITE_PATH):
 # it can be imported
 ##########################################################################
 app = create_app()
-app.debug = False
 app.config['sessions'] = dict()
+
+# We load the file here instead of evaluate config
+# as we don't know the path of this file in evaluate config
+# commit_hash file resides in the web directory
+try:
+    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                           'commit_hash')) as f:
+        config.COMMIT_HASH = f.readline().strip()
+except FileNotFoundError as _:
+    config.COMMIT_HASH = None
 
 if setup_db_required:
     setup.setup_db(app)
@@ -152,6 +151,8 @@ else:
 if not app.PGADMIN_RUNTIME:
     app.wsgi_app = ReverseProxied(app.wsgi_app)
 
+app.run_before_app_start()
+
 
 ##########################################################################
 # The entry point
@@ -162,22 +163,6 @@ def main():
         if getattr(sys, _name) is None:
             setattr(sys, _name,
                     open(os.devnull, 'r' if _name == 'stdin' else 'w'))
-
-    # Build Javascript files when DEBUG
-    if config.DEBUG:
-        from pgadmin.utils.javascript.javascript_bundler import \
-            JavascriptBundler, JsState
-        app.debug = True
-
-        javascript_bundler = JavascriptBundler()
-        javascript_bundler.bundle()
-        if javascript_bundler.report() == JsState.NONE:
-            app.logger.error(
-                "Unable to generate javascript.\n"
-                "To run the app ensure that yarn install command runs "
-                "successfully"
-            )
-            raise RuntimeError("No generated javascript, aborting")
 
     # Output a startup message if we're not under the runtime and startup.
     # If we're under WSGI, we don't need to worry about this
@@ -213,19 +198,19 @@ def main():
             app.run(
                 host=config.DEFAULT_SERVER,
                 port=config.EFFECTIVE_SERVER_PORT,
+                debug=config.DEBUG,
                 use_reloader=(
-                    (not app.PGADMIN_RUNTIME) and app.debug and
+                    (not app.PGADMIN_RUNTIME) and
                     os.environ.get("WERKZEUG_RUN_MAIN") is not None
                 ),
                 threaded=config.THREADED_MODE
             )
         else:
-            # Can use cheroot instead of flask dev server when not in debug
-            # 10 is default thread count in CherootServer
-            # num_threads = 10 if config.THREADED_MODE else 1
             try:
                 socketio.run(
                     app,
+                    debug=config.DEBUG,
+                    allow_unsafe_werkzeug=True,
                     host=config.DEFAULT_SERVER,
                     port=config.EFFECTIVE_SERVER_PORT,
                 )

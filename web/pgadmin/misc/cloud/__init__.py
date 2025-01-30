@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -13,7 +13,8 @@ import json
 from flask import Response, url_for
 from flask import render_template, request
 from flask_babel import gettext
-from flask_security import login_required, current_user
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 
 from pgadmin.utils import PgAdminModule, html
 from pgadmin.utils.ajax import make_json_response,\
@@ -27,6 +28,7 @@ from pgadmin.misc.cloud.biganimal import deploy_on_biganimal,\
     clear_biganimal_session
 from pgadmin.misc.cloud.rds import deploy_on_rds, clear_aws_session
 from pgadmin.misc.cloud.azure import deploy_on_azure, clear_azure_session
+from pgadmin.misc.cloud.google import clear_google_session, deploy_on_google
 import config
 
 # set template path for sql scripts
@@ -42,14 +44,6 @@ class CloudModule(PgAdminModule):
         javascript file.
 
     """
-
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def get_exposed_url_endpoints(self):
         """
@@ -78,6 +72,9 @@ class CloudModule(PgAdminModule):
         from .rds import blueprint as module
         app.register_blueprint(module)
 
+        from .google import blueprint as module
+        app.register_blueprint(module)
+
 
 # Create blueprint for CloudModule class
 blueprint = CloudModule(
@@ -85,7 +82,7 @@ blueprint = CloudModule(
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(
         errormsg=gettext("This URL cannot be called directly.")
@@ -93,7 +90,7 @@ def index():
 
 
 @blueprint.route("/cloud.js")
-@login_required
+@pga_login_required
 def script():
     """render own javascript"""
     res = Response(response=render_template(
@@ -105,7 +102,7 @@ def script():
 
 @blueprint.route('/clear_cloud_session/',
                  methods=['POST'], endpoint='clear_cloud_session')
-@login_required
+@pga_login_required
 def clear_session():
     """Get host IP Address"""
     clear_cloud_session()
@@ -114,7 +111,7 @@ def clear_session():
 
 @blueprint.route('/get_host_ip/',
                  methods=['GET'], endpoint='get_host_ip')
-@login_required
+@pga_login_required
 def get_host_ip():
     """Get host IP Address"""
     ip = get_my_ip()
@@ -124,17 +121,19 @@ def get_host_ip():
 @blueprint.route(
     '/deploy', methods=['POST'], endpoint='deploy_on_cloud'
 )
-@login_required
+@pga_login_required
 def deploy_on_cloud():
     """Deploy on Cloud."""
 
     data = json.loads(request.data)
-    if data['cloud'] == 'rds':
+    if data['cloud'] == 'aws':
         status, p, resp = deploy_on_rds(data)
     elif data['cloud'] == 'biganimal':
         status, p, resp = deploy_on_biganimal(data)
     elif data['cloud'] == 'azure':
         status, p, resp = deploy_on_azure(data)
+    elif data['cloud'] == 'google':
+        status, p, resp = deploy_on_google(data)
     else:
         status = False
         resp = gettext('No cloud implementation.')
@@ -214,13 +213,14 @@ def clear_cloud_session(pid=None):
     clear_aws_session()
     clear_biganimal_session()
     clear_azure_session(pid)
+    clear_google_session()
 
 
 @blueprint.route(
     '/update_cloud_process/<sid>', methods=['GET'],
     endpoint='update_cloud_process'
 )
-@login_required
+@pga_login_required
 def update_cloud_process(sid):
     """Update Cloud Server Process"""
     _process = Process.query.filter_by(user_id=current_user.id,
@@ -234,7 +234,7 @@ def update_cloud_process(sid):
     '/update_cloud_server', methods=['POST'],
     endpoint='update_cloud_server'
 )
-@login_required
+@pga_login_required
 def update_cloud_server():
     """Update Cloud Server."""
     server_data = json.loads(request.data)

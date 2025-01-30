@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -59,7 +59,10 @@ class FtsParserModule(SchemaChildModule):
         :param did: database id
         :param scid: schema id
         """
-        yield self.generate_browser_collection_node(scid)
+
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=FtsParserView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -163,6 +166,7 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
     """
 
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = 'fts_parsers/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -238,7 +242,7 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
                 self.datistemplate = self.manager.db_info[
                     kwargs['did']]['datistemplate']
             # Set the template path for the SQL scripts
-            self.template_path = 'fts_parsers/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version)
 
             return f(*args, **kwargs)
@@ -279,7 +283,8 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-fts_parser"
+                    icon="icon-fts_parser",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -477,12 +482,17 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
                     _("Could not find the FTS Parser node to update.")
                 )
 
+        other_node_info = {}
+        if 'description' in data:
+            other_node_info['description'] = data['description']
+
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 pid,
                 data['schema'] if 'schema' in data else scid,
                 name,
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                **other_node_info
             )
         )
 
@@ -578,7 +588,7 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
                 data[k] = v
 
         # Fetch sql query for modified data
-        SQL, name = self.get_sql(gid, sid, did, scid, data, pid)
+        SQL, _ = self.get_sql(gid, sid, did, scid, data, pid)
         # Most probably this is due to error
         if not isinstance(SQL, str):
             return SQL
@@ -991,8 +1001,8 @@ class FtsParserView(PGChildNodeView, SchemaDiffObjectCompare):
         target_schema = kwargs.get('target_schema', None)
 
         if data:
-            sql, name = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
-                                     data=data, pid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
+                                  data=data, pid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

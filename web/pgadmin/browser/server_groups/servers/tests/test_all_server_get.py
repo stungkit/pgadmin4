@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -13,6 +13,7 @@ from regression import parent_node_dict
 from regression.python_test_utils import test_utils as utils
 from . import utils as servers_utils
 import json
+from pgadmin.utils.constants import TWO_PARAM_STRING
 
 
 class AllServersGetTestCase(BaseTestGenerator):
@@ -31,7 +32,11 @@ class AllServersGetTestCase(BaseTestGenerator):
         server_details['password'] = self.server['db_password']
         server_details['save_password'] = 1
         server_details['connect_now'] = 1
-
+        server_details['connection_params'] = [
+            {'name': 'sslmode', 'value': 'prefer', 'keyword': 'sslmode'},
+            {'name': 'connect_timeout', 'value': 10,
+             'keyword': 'connect_timeout'}
+        ]
         url = "/browser/server/obj/{0}/".format(utils.SERVER_GROUP)
 
         response = self.tester.post(
@@ -67,16 +72,16 @@ class AllServersGetTestCase(BaseTestGenerator):
                     utils.SERVER_GROUP, secrets.choice(range(1, 9999999)))
             elif hasattr(self, 'children'):
 
-                self.url = self.url + '{0}/{1}'.format(
+                self.url = self.url + TWO_PARAM_STRING.format(
                     utils.SERVER_GROUP, self.server_id)
             elif hasattr(self, 'server_list'):
                 if hasattr(self, 'servers'):
                     server_id = ''
-                self.url = self.url + '{0}/{1}'.format(
+                self.url = self.url + TWO_PARAM_STRING.format(
                     utils.SERVER_GROUP, server_id)
             else:
                 if hasattr(self, "connected"):
-                    url = '/browser/server/connect/' + '{0}/{1}'.format(
+                    url = '/browser/server/connect/' + TWO_PARAM_STRING.format(
                         utils.SERVER_GROUP,
                         self.server_id)
                     self.server['password'] = self.server['db_password']

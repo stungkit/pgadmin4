@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -100,10 +100,14 @@ class TriggerModule(CollectionNodeModule):
         """
         Generate the collection node
         """
-        assert ('tid' in kwargs or 'vid' in kwargs)
-        yield self.generate_browser_collection_node(
-            kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
-        )
+        assert ('tid' in kwargs or 'vid' in kwargs or 'foid' in kwargs)
+        tid = kwargs.get('tid', kwargs.get('vid', kwargs.get('foid', None)))
+        if self.has_nodes(sid, did, scid=scid,
+                          tid=tid,
+                          base_template_path=TriggerView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(
+                tid
+            )
 
     @property
     def script_load(self):
@@ -213,6 +217,7 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     node_label = "Trigger"
+    BASE_TEMPLATE_PATH = 'triggers/sql/{0}/#{1}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -266,7 +271,7 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                 'tables/sql',
                 self.manager.version
             )
-            self.template_path = 'triggers/sql/{0}/#{1}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.server_type, self.manager.version)
 
             self.trigger_function_template_path = \
@@ -355,7 +360,6 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         """
         res = [{'label': '', 'value': ''}]
 
-        # TODO: REMOVE True Condition , it's just for testing
         # If server type is EDB-PPAS then we also need to add
         # inline edb-spl along with options fetched by below sql
 
@@ -488,7 +492,8 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                     tid,
                     row['name'],
                     icon="icon-trigger-bad" if row['is_enable_trigger'] == 'D'
-                    else "icon-trigger"
+                    else "icon-trigger",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -522,7 +527,7 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
             status=200
         )
 
-    def _fetch_properties(self, tid, trid):
+    def _fetch_properties(self, tid, trid, without_schema=False):
         """
         This function is used to fetch the properties of the specified object
         :param tid:
@@ -545,7 +550,8 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         # Making copy of output for future use
         data = dict(res['rows'][0])
         data = trigger_utils.get_trigger_function_and_columns(
-            self.conn, data, tid, self.blueprint.show_system_objects)
+            self.conn, data, tid, self.blueprint.show_system_objects,
+            without_schema)
 
         data = trigger_definition(data)
 
@@ -763,7 +769,8 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                     name,
                     icon="icon-%s-bad" % self.node_type if
                     data['is_enable_trigger'] == 'D' else
-                    "icon-%s" % self.node_type
+                    "icon-%s" % self.node_type,
+                    description=data['description']
                 )
             )
         except Exception as e:
@@ -799,7 +806,7 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         data['table'] = self.table
 
         try:
-            sql, name = trigger_utils.get_sql(
+            sql, _ = trigger_utils.get_sql(
                 self.conn, data=data, tid=tid, trid=trid,
                 datlastsysoid=self._DATABASE_LAST_SYSTEM_OID,
                 show_system_objects=self.blueprint.show_system_objects)
@@ -855,7 +862,7 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         target_schema = kwargs.get('target_schema', None)
 
         if data:
-            SQL, name = trigger_utils.get_sql(
+            SQL, _ = trigger_utils.get_sql(
                 self.conn, data=data, tid=tid, trid=oid,
                 datlastsysoid=self._DATABASE_LAST_SYSTEM_OID,
                 show_system_objects=self.blueprint.show_system_objects,
@@ -1035,8 +1042,12 @@ class TriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                 current_app.logger.error(triggers)
                 return False
 
+            without_schema = (
+                SchemaDiffRegistry.get_schema_diff_compare_mode() ==
+                'Schema Objects')
             for row in triggers['rows']:
-                status, data = self._fetch_properties(tid, row['oid'])
+                status, data = self._fetch_properties(tid, row['oid'],
+                                                      without_schema)
                 if status:
                     res[row['name']] = data
 

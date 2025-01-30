@@ -2,57 +2,51 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import '../helper/enzyme.helper';
-import { createMount } from '@material-ui/core/test-utils';
+
 import pgAdmin from 'sources/pgadmin';
 import ServerSchema from '../../../pgadmin/browser/server_groups/servers/static/js/server.ui';
 import {genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
 
 describe('ServerSchema', ()=>{
-  let mount;
-  let schemaObj = new ServerSchema([{
+
+  const createSchemaObject = () => new ServerSchema([{
     label: 'Servers', value: 1,
   }], 0, {
     user_id: 'jasmine',
   });
+  let schemaObj = createSchemaObject();
   let getInitData = ()=>Promise.resolve({});
-
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
-  beforeAll(()=>{
-    mount = createMount();
-  });
-
-  afterAll(() => {
-    mount.cleanUp();
-  });
 
   beforeEach(()=>{
     genericBeforeEach();
     pgAdmin.Browser.utils.support_ssh_tunnel = true;
   });
 
-  it('create', ()=>{
-    mount(getCreateView(schemaObj));
+  it('create', async ()=>{
+    await getCreateView(createSchemaObject());
   });
 
-  it('edit', ()=>{
-    mount(getEditView(schemaObj, getInitData));
+  it('edit', async ()=>{
+    await getEditView(createSchemaObject(), getInitData);
   });
 
-  it('properties', ()=>{
-    mount(getPropertiesView(schemaObj, getInitData));
+  it('properties', async ()=>{
+    await getPropertiesView(createSchemaObject(), getInitData);
   });
 
   it('validate', ()=>{
     let state = {};
-    let setError = jasmine.createSpy('setError');
+    let setError = jest.fn();
 
+    schemaObj.validate(state, setError);
+    expect(setError).toHaveBeenCalledWith('gid', 'Server group must be specified.');
+
+    state.gid = 1;
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('host', 'Either Host name or Service must be specified.');
 
@@ -84,6 +78,10 @@ describe('ServerSchema', ()=>{
     expect(setError).toHaveBeenCalledWith('tunnel_identity_file', 'SSH Tunnel identity file must be specified.');
 
     state.tunnel_identity_file = '/file/path/xyz.pem';
-    expect(schemaObj.validate(state, setError)).toBeFalse();
+    schemaObj.validate(state, setError);
+    expect(setError).toHaveBeenCalledWith('tunnel_keep_alive', 'Keep alive must be specified. Specify 0 for no keep alive.');
+
+    state.tunnel_keep_alive = 0;
+    expect(schemaObj.validate(state, setError)).toBe(false);
   });
 });

@@ -1,23 +1,28 @@
-import { Box, makeStyles } from '@material-ui/core';
+import { Box } from '@mui/material';
+import { styled } from '@mui/material/styles';
 import React from 'react';
-import Notifier from '../../../../static/js/helpers/Notifier';
-import CloseIcon from '@material-ui/icons/CloseRounded';
+import CloseIcon from '@mui/icons-material/CloseRounded';
 import { DefaultButton, PgIconButton } from '../../../../static/js/components/Buttons';
-import clsx from 'clsx';
-import DescriptionOutlinedIcon from '@material-ui/icons/DescriptionOutlined';
-import { BgProcessManagerProcessState } from './BgProcessManager';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import { BgProcessManagerProcessState } from './BgProcessConstants';
 import PropTypes from 'prop-types';
 import gettext from 'sources/gettext';
+import pgAdmin from 'sources/pgadmin';
 
-
-const useStyles = makeStyles((theme)=>({
-  container: {
-    borderRadius: theme.shape.borderRadius,
-    padding: '0.25rem 1rem 1rem',
-    minWidth: '325px',
-    ...theme.mixins.panelBorder.all,
+const StyledBox = styled(Box)(({theme}) => ({
+  borderRadius: theme.shape.borderRadius,
+  padding: '0.25rem 1rem 1rem',
+  minWidth: '325px',
+  ...theme.mixins.panelBorder.all,
+  '&.BgProcessNotify-containerSuccess': {
+    borderColor: theme.palette.success.main,
+    backgroundColor: theme.palette.success.light,
   },
-  containerHeader: {
+  '&.BgProcessNotify-containerError': {
+    borderColor: theme.palette.error.main,
+    backgroundColor: theme.palette.error.light,
+  },
+  '& .BgProcessNotify-containerHeader': {
     height: '32px',
     display: 'flex',
     justifyContent: 'space-between',
@@ -25,36 +30,28 @@ const useStyles = makeStyles((theme)=>({
     alignItems: 'center',
     borderTopLeftRadius: 'inherit',
     borderTopRightRadius: 'inherit',
+    '& .BgProcessNotify-iconSuccess': {
+      color: theme.palette.success.main,
+    },
+    '& .BgProcessNotify-iconError': {
+      color: theme.palette.error.main,
+    }
   },
-  containerBody: {
+  '&.BgProcessNotify-containerBody': {
     marginTop: '1rem',
     overflowWrap: 'break-word',
   },
-  containerSuccess: {
-    borderColor: theme.palette.success.main,
-    backgroundColor: theme.palette.success.light,
-  },
-  iconSuccess: {
-    color: theme.palette.success.main,
-  },
-  containerError: {
-    borderColor: theme.palette.error.main,
-    backgroundColor: theme.palette.error.light,
-  },
-  iconError: {
-    color: theme.palette.error.main,
-  },
 }));
 
+const AUTO_HIDE_DURATION = 10000;  // In milliseconds
 function ProcessNotifyMessage({title, desc, onClose, onViewProcess, success=true, dataTestSuffix=''}) {
-  const classes = useStyles();
   return (
-    <Box className={clsx(classes.container, (success ? classes.containerSuccess : classes.containerError))} data-test={'process-popup-' + dataTestSuffix}>
-      <Box display="flex" justifyContent="space-between" className={classes.containerHeader}>
+    <StyledBox className={(success ? 'BgProcessNotify-containerSuccess' : 'BgProcessNotify-containerError')} data-test={'process-popup-' + dataTestSuffix}>
+      <Box display="flex" justifyContent="space-between" className='BgProcessNotify-containerHeader'>
         <Box marginRight={'1rem'}>{title}</Box>
-        <PgIconButton size="xs" noBorder icon={<CloseIcon />} onClick={onClose} title={'Close'} className={success ? classes.iconSuccess : classes.iconError} />
+        <PgIconButton size="xs" noBorder icon={<CloseIcon />} onClick={onClose} title={'Close'} className={success ? 'BgProcessNotify-iconSuccess' : 'BgProcessNotify-iconError'} />
       </Box>
-      <Box className={classes.containerBody}>
+      <Box className='BgProcessNotify-containerBody'>
         <Box>{desc}</Box>
         <Box marginTop={'1rem'} display="flex">
           <DefaultButton startIcon={<DescriptionOutlinedIcon />} onClick={()=>{
@@ -63,7 +60,7 @@ function ProcessNotifyMessage({title, desc, onClose, onViewProcess, success=true
           }}>View Processes</DefaultButton>
         </Box>
       </Box>
-    </Box>
+    </StyledBox>
   );
 }
 ProcessNotifyMessage.propTypes = {
@@ -77,9 +74,9 @@ ProcessNotifyMessage.propTypes = {
 
 
 export function processStarted(desc, onViewProcess) {
-  Notifier.notify(
+  pgAdmin.Browser.notifier.notify(
     <ProcessNotifyMessage title={gettext('Process started')} desc={desc} onViewProcess={onViewProcess} dataTestSuffix="start"/>,
-    null
+    AUTO_HIDE_DURATION
   );
 }
 
@@ -94,9 +91,8 @@ export function processCompleted(desc, process_state, onViewProcess) {
     success = false;
   }
 
-  Notifier.notify(
+  pgAdmin.Browser.notifier.notify(
     <ProcessNotifyMessage title={title} desc={desc} onViewProcess={onViewProcess} success={success} dataTestSuffix="end"/>,
-    null
+    AUTO_HIDE_DURATION
   );
 }
-

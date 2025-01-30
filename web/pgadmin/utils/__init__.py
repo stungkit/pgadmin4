@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -11,18 +11,23 @@ import os
 import sys
 import json
 import subprocess
+import re
 from collections import defaultdict
 from operator import attrgetter
 
+from pathlib import Path
 from flask import Blueprint, current_app, url_for
 from flask_babel import gettext
 from flask_security import current_user, login_required
-from flask_security.utils import get_post_login_redirect
+from flask_security.utils import get_post_login_redirect, \
+    get_post_logout_redirect
 from threading import Lock
-
+import config
 from .paths import get_storage_directory
 from .preferences import Preferences
-from pgadmin.utils.constants import UTILITIES_ARRAY, USER_NOT_FOUND
+from pgadmin.utils.constants import UTILITIES_ARRAY, USER_NOT_FOUND, \
+    MY_STORAGE, ACCESS_DENIED_MESSAGE, INTERNAL
+from pgadmin.utils.ajax import make_json_response
 from pgadmin.model import db, User, ServerGroup, Server
 from urllib.parse import unquote
 
@@ -46,19 +51,6 @@ class PgAdminModule(Blueprint):
 
         super().__init__(name, import_name, **kwargs)
 
-        def create_module_preference():
-            # Create preference for each module by default
-            if hasattr(self, 'LABEL'):
-                self.preference = Preferences(self.name, self.LABEL)
-            else:
-                self.preference = Preferences(self.name, None)
-
-            self.register_preferences()
-
-        # Create and register the module preference object and preferences for
-        # it just before the first request
-        self.before_app_first_request(create_module_preference)
-
     def register_preferences(self):
         # To be implemented by child classes
         pass
@@ -71,19 +63,24 @@ class PgAdminModule(Blueprint):
 
         super().register(app, options)
 
+        def create_module_preference():
+            # Create preference for each module by default
+            if hasattr(self, 'LABEL'):
+                self.preference = Preferences(self.name, self.LABEL)
+            else:
+                self.preference = Preferences(self.name, None)
+
+            self.register_preferences()
+
+        # Create and register the module preference object and preferences for
+        # it just before starting app
+        app.register_before_app_start(create_module_preference)
+
         for module in self.submodules:
             module.parentmodules.append(self)
             if app.blueprints.get(module.name) is None:
                 app.register_blueprint(module)
                 app.register_logout_hook(module)
-
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module, not including any
-                stylesheet needed by the submodules.
-        """
-        return []
 
     def get_own_messages(self):
         """
@@ -101,26 +98,12 @@ class PgAdminModule(Blueprint):
         """
         return defaultdict(list)
 
-    def get_panels(self):
-        """
-        Returns:
-            list: a list of panel objects to add
-        """
-        return []
-
     def get_exposed_url_endpoints(self):
         """
         Returns:
             list: a list of url endpoints exposed to the client.
         """
         return []
-
-    @property
-    def stylesheets(self):
-        stylesheets = self.get_own_stylesheets()
-        for module in self.submodules:
-            stylesheets.extend(module.stylesheets)
-        return stylesheets
 
     @property
     def messages(self):
@@ -229,6 +212,25 @@ else:
         return os.path.realpath(os.path.expanduser('~/'))
 
 
+def get_directory_and_file_name(drivefilepath):
+    """
+    Returns directory name if specified and file name
+    :param drivefilepath: file path like '<shared_drive_name>:/filename' or
+    '/filename'
+    :return: directory name and file name
+    """
+    dir_name = ''
+    file_name = drivefilepath
+    if config.SHARED_STORAGE:
+        shared_dirs = [sdir['name'] + ':' for sdir in config.SHARED_STORAGE]
+        if len(re.findall(r"(?=(" + '|'.join(shared_dirs) + r"))",
+                          drivefilepath)) > 0:
+            dir_file_paths = drivefilepath.split(':/')
+            dir_name = dir_file_paths[0]
+            file_name = dir_file_paths[1]
+    return dir_name, file_name
+
+
 def get_complete_file_path(file, validate=True):
     """
     Args:
@@ -244,7 +246,11 @@ def get_complete_file_path(file, validate=True):
     if current_app.PGADMIN_RUNTIME or not current_app.config['SERVER_MODE']:
         return file if os.path.isfile(file) else None
 
-    storage_dir = get_storage_directory()
+    # get dir name and file name
+    dir_name, file = get_directory_and_file_name(file)
+
+    storage_dir = get_storage_directory(shared_storage=dir_name) if dir_name \
+        else get_storage_directory()
     if storage_dir:
         file = os.path.join(
             storage_dir,
@@ -264,13 +270,38 @@ def filename_with_file_manager_path(_file, create_file=False,
                                     skip_permission_check=False):
     """
     Args:
-        file: File name returned from client file manager
-        create_file: Set flag to False when file creation doesn't required
+        _file: File name returned from client file manager
+        create_file: Set flag to False when file creation doesn't require
+        skip_permission_check:
     Returns:
         Filename to use for backup with full path taken from preference
     """
-    # Set file manager directory from preference
-    storage_dir = get_storage_directory()
+    # get dir name and file name
+    _dir_name, _file = get_directory_and_file_name(_file)
+
+    # retrieve storage directory path
+    try:
+        last_storage = Preferences.module('file_manager').preference(
+            'last_storage').get()
+    except Exception:
+        last_storage = MY_STORAGE
+
+    if last_storage != MY_STORAGE:
+        sel_dir_list = [sdir for sdir in current_app.config['SHARED_STORAGE']
+                        if sdir['name'] == last_storage]
+        selected_dir = sel_dir_list[0] if len(
+            sel_dir_list) == 1 else None
+
+        if selected_dir and selected_dir['restricted_access'] and \
+                not current_user.has_role("Administrator"):
+            return make_json_response(success=0,
+                                      errormsg=ACCESS_DENIED_MESSAGE,
+                                      info='ACCESS_DENIED',
+                                      status=403)
+        storage_dir = get_storage_directory(
+            shared_storage=last_storage)
+    else:
+        storage_dir = get_storage_directory()
 
     from pgadmin.misc.file_manager import Filemanager
     Filemanager.check_access_permission(
@@ -305,10 +336,17 @@ def does_utility_exist(file):
     :return:
     """
     error_msg = None
+
     if file is None:
         error_msg = gettext("Utility file not found. Please correct the Binary"
                             " Path in the Preferences dialog")
         return error_msg
+
+    if Path(config.STORAGE_DIR) == Path(file) or \
+            Path(config.STORAGE_DIR) in Path(file).parents:
+        error_msg = gettext("Please correct the Binary Path in the Preferences"
+                            " dialog. pgAdmin storage directory can not be a"
+                            " utility binary directory.")
 
     if not os.path.exists(file):
         error_msg = gettext("'%s' file not found. Please correct the Binary"
@@ -326,35 +364,57 @@ def get_server(sid):
     return server
 
 
+def get_binary_path_versions(binary_path: str) -> dict:
+    ret = {}
+    binary_path = os.path.abspath(
+        replace_binary_path(binary_path)
+    )
+
+    for utility in UTILITIES_ARRAY:
+        ret[utility] = None
+        full_path = os.path.join(binary_path,
+                                 (utility if os.name != 'nt' else
+                                  (utility + '.exe')))
+
+        try:
+            # if path doesn't exist raise exception
+            if not os.path.isdir(binary_path):
+                current_app.logger.warning('Invalid binary path.')
+                raise Exception()
+            # Get the output of the '--version' command
+            cmd = subprocess.run(
+                [full_path, '--version'],
+                shell=False,
+                capture_output=True,
+                text=True
+            )
+            if cmd.returncode == 0:
+                ret[utility] = cmd.stdout.split(") ", 1)[1].strip()
+            else:
+                raise Exception()
+        except Exception as _:
+            continue
+
+    return ret
+
+
 def set_binary_path(binary_path, bin_paths, server_type,
-                    version_number=None, set_as_default=False):
+                    version_number=None, set_as_default=False,
+                    is_fixed_path=False):
     """
     This function is used to iterate through the utilities and set the
     default binary path.
     """
     path_with_dir = binary_path if "$DIR" in binary_path else None
+    binary_versions = get_binary_path_versions(binary_path)
 
-    # Check if "$DIR" present in binary path
-    binary_path = replace_binary_path(binary_path)
-
-    for utility in UTILITIES_ARRAY:
-        full_path = os.path.abspath(
-            os.path.join(binary_path, (utility if os.name != 'nt' else
-                                       (utility + '.exe'))))
-
+    for utility, version in binary_versions.items():
+        version_number = version if version_number is None else version_number
+        # version will be None if binary not present
+        version_number = version_number or ''
+        if version_number.find('.'):
+            version_number = version_number.split('.', 1)[0]
         try:
-            # if version_number is provided then no need to fetch it.
-            if version_number is None:
-                # Get the output of the '--version' command
-                version_string = \
-                    subprocess.getoutput('"{0}" --version'.format(full_path))
-
-                # Get the version number by splitting the result string
-                version_number = \
-                    version_string.split(") ", 1)[1].split('.', 1)[0]
-            elif version_number.find('.'):
-                version_number = version_number.split('.', 1)[0]
-
             # Get the paths array based on server type
             if 'pg_bin_paths' in bin_paths or 'as_bin_paths' in bin_paths:
                 paths_array = bin_paths['pg_bin_paths']
@@ -370,6 +430,8 @@ def set_binary_path(binary_path, bin_paths, server_type,
                         if path_with_dir is not None else binary_path
                     if set_as_default:
                         path['isDefault'] = True
+                    # Whether the fixed path in the config file exists or not
+                    path['isFixed'] = is_fixed_path
                     break
             break
         except Exception:
@@ -415,10 +477,11 @@ def add_value(attr_dict, key, value):
 
 
 def dump_database_servers(output_file, selected_servers,
-                          dump_user=current_user, from_setup=False):
+                          dump_user=current_user, from_setup=False,
+                          auth_source=INTERNAL):
     """Dump the server groups and servers.
     """
-    user = _does_user_exist(dump_user, from_setup)
+    user = _does_user_exist(dump_user, from_setup, auth_source)
     if user is None:
         return False, USER_NOT_FOUND % dump_user
 
@@ -429,10 +492,13 @@ def dump_database_servers(output_file, selected_servers,
     servers_dumped = 0
 
     # Dump servers
-    servers = Server.query.filter_by(user_id=user_id).all()
+    servers = Server.query.filter_by(user_id=user_id, is_adhoc=0).all()
     server_dict = {}
     for server in servers:
-        if selected_servers is None or str(server.id) in selected_servers:
+        if selected_servers is None or (
+            isinstance(selected_servers, list) and len(selected_servers) == 0)\
+                or str(server.id) in selected_servers\
+                or server.id in selected_servers:
             # Get the group name
             group_name = ServerGroup.query.filter_by(
                 user_id=user_id, id=server.servergroup_id).first().name
@@ -447,6 +513,7 @@ def dump_database_servers(output_file, selected_servers,
             add_value(attr_dict, "Role", server.role)
             add_value(attr_dict, "Comment", server.comment)
             add_value(attr_dict, "Shared", server.shared)
+            add_value(attr_dict, "SharedUsername", server.shared_username)
             add_value(attr_dict, "DBRestriction", server.db_res)
             add_value(attr_dict, "BGColor", server.bgcolor)
             add_value(attr_dict, "FGColor", server.fgcolor)
@@ -461,6 +528,16 @@ def dump_database_servers(output_file, selected_servers,
                       server.kerberos_conn),
             add_value(attr_dict, "ConnectionParameters",
                       server.connection_params)
+            add_value(attr_dict, "Tags", server.tags)
+
+            # if desktop mode or server mode with
+            # ENABLE_SERVER_PASS_EXEC_CMD flag is True
+            if not current_app.config['SERVER_MODE'] or \
+                    current_app.config['ENABLE_SERVER_PASS_EXEC_CMD']:
+                add_value(attr_dict, "PasswordExecCommand",
+                          server.passexec_cmd)
+                add_value(attr_dict, "PasswordExecExpiration",
+                          server.passexec_expiration)
 
             servers_dumped = servers_dumped + 1
 
@@ -469,8 +546,10 @@ def dump_database_servers(output_file, selected_servers,
     object_dict["Servers"] = server_dict
 
     try:
-        file_path = filename_with_file_manager_path(
-            unquote(output_file), skip_permission_check=from_setup)
+        if from_setup:
+            file_path = unquote(output_file)
+        else:
+            file_path = filename_with_file_manager_path(unquote(output_file))
     except Exception as e:
         return _handle_error(str(e), from_setup)
 
@@ -558,10 +637,11 @@ def validate_json_data(data, is_admin):
 
 
 def load_database_servers(input_file, selected_servers,
-                          load_user=current_user, from_setup=False):
+                          load_user=current_user, from_setup=False,
+                          auth_source=INTERNAL):
     """Load server groups and servers.
     """
-    user = _does_user_exist(load_user, from_setup)
+    user = _does_user_exist(load_user, from_setup, auth_source)
     if user is None:
         return False, USER_NOT_FOUND % load_user
 
@@ -683,7 +763,19 @@ def load_database_servers(input_file, selected_servers,
 
             new_server.shared = obj.get("Shared", None)
 
+            new_server.shared_username = obj.get("SharedUsername", None)
+
             new_server.kerberos_conn = obj.get("KerberosAuthentication", None)
+
+            new_server.tags = obj.get("Tags", None)
+
+            # if desktop mode or server mode with
+            # ENABLE_SERVER_PASS_EXEC_CMD flag is True
+            if not current_app.config['SERVER_MODE'] or \
+                    current_app.config['ENABLE_SERVER_PASS_EXEC_CMD']:
+                new_server.passexec_cmd = obj.get("PasswordExecCommand", None)
+                new_server.passexec_expiration = obj.get(
+                    "PasswordExecExpiration", None)
 
             db.session.add(new_server)
 
@@ -703,10 +795,11 @@ def load_database_servers(input_file, selected_servers,
     return True, msg
 
 
-def clear_database_servers(load_user=current_user, from_setup=False):
+def clear_database_servers(load_user=current_user, from_setup=False,
+                           auth_source=INTERNAL):
     """Clear groups and servers configurations.
     """
-    user = _does_user_exist(load_user, from_setup)
+    user = _does_user_exist(load_user, from_setup, auth_source)
     if user is None:
         return False
 
@@ -717,14 +810,15 @@ def clear_database_servers(load_user=current_user, from_setup=False):
     for server in servers:
         db.session.delete(server)
 
-    # Remove all groups
-    groups = ServerGroup.query.filter_by(user_id=user_id)
+    # Remove all servergroups except for the first
+    # This matches the UI behavior in
+    # web/pgadmin/browser/server_groups/__init__.py#delete
+    # TODO: Investigate if we can skip the first with an `offset(1)`
+    groups = ServerGroup.query.filter_by(user_id=user_id).order_by("id")
+    default_sg = groups.first()
     for group in groups:
-        db.session.delete(group)
-    servers = Server.query.filter_by(user_id=user_id)
-
-    for server in servers:
-        db.session.delete(server)
+        if group.id != default_sg.id:
+            db.session.delete(group)
 
     try:
         db.session.commit()
@@ -739,14 +833,16 @@ def clear_database_servers(load_user=current_user, from_setup=False):
         return False, error_msg
 
 
-def _does_user_exist(user, from_setup):
+def _does_user_exist(user, from_setup, auth_source=INTERNAL):
     """
     This function will check user is exist or not. If exist then return
     """
     if isinstance(user, User):
-        user = user.email
+        auth_source = user.auth_source
+        user = user.username
 
-    new_user = User.query.filter_by(email=user).first()
+    new_user = User.query.filter_by(username=user,
+                                    auth_source=auth_source).first()
 
     if new_user is None:
         print(USER_NOT_FOUND % user)
@@ -859,3 +955,16 @@ def get_safe_post_login_redirect():
             return url
 
     return url_for('browser.index')
+
+
+def get_safe_post_logout_redirect():
+    allow_list = [
+        url_for('security.login')
+    ]
+    if "SCRIPT_NAME" in os.environ and os.environ["SCRIPT_NAME"]:
+        allow_list.append(os.environ["SCRIPT_NAME"])
+    url = get_post_logout_redirect()
+    for item in allow_list:
+        if url.startswith(item):
+            return url
+    return url_for('security.login')

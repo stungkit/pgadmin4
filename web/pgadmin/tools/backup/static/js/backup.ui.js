@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -33,31 +33,40 @@ export class SectionSchema extends BaseUISchema {
         label: gettext('Pre-data'),
         type: 'switch',
         group: gettext('Sections'),
-        deps: ['only_data', 'only_schema'],
+        deps: ['only_data', 'only_schema', 'only_tablespaces', 'only_roles'],
         disabled: function(state) {
           return state.only_data ||
-           state.only_schema;
+           state.only_schema ||
+           state.only_tablespaces ||
+           state.only_roles;
         },
+        inlineGroup: 'section',
       }, {
         id: 'data',
         label: gettext('Data'),
         type: 'switch',
         group: gettext('Sections'),
-        deps: ['only_data', 'only_schema'],
+        deps: ['only_data', 'only_schema', 'only_tablespaces', 'only_roles'],
         disabled: function(state) {
           return state.only_data ||
-           state.only_schema;
+           state.only_schema ||
+           state.only_tablespaces ||
+           state.only_roles;
         },
+        inlineGroup: 'section',
       }, {
         id: 'post_data',
         label: gettext('Post-data'),
         type: 'switch',
         group: gettext('Sections'),
-        deps: ['only_data', 'only_schema'],
+        deps: ['only_data', 'only_schema', 'only_tablespaces', 'only_roles'],
         disabled: function(state) {
           return state.only_data ||
-           state.only_schema;
+           state.only_schema ||
+           state.only_tablespaces ||
+           state.only_roles;
         },
+        inlineGroup: 'section',
       }
     ];
   }
@@ -72,11 +81,8 @@ export class TypeObjSchema extends BaseUISchema {
     super();
 
     this.fieldOptions = {
-      backupType: null,
       ...fieldOptions,
     };
-
-    this.backupType = this.fieldOptions.backupType;
   }
 
   get idAttribute() {
@@ -91,32 +97,75 @@ export class TypeObjSchema extends BaseUISchema {
       label: gettext('Only data'),
       type: 'switch',
       group: gettext('Type of objects'),
-      deps: ['pre_data', 'data', 'post_data', 'only_schema'],
+      deps: ['pre_data', 'data', 'post_data', 'only_schema',
+        'only_tablespaces', 'only_roles'],
       disabled: function(state) {
         return state.pre_data ||
            state.data ||
            state.post_data ||
-           state.only_schema;
+           state.only_schema ||
+           state.only_tablespaces ||
+           state.only_roles;
       },
+      inlineGroup: 'type_of_objects',
     }, {
       id: 'only_schema',
-      label: gettext('Only schema'),
+      label: gettext('Only schemas'),
       type: 'switch',
       group: gettext('Type of objects'),
-      deps: ['pre_data', 'data', 'post_data', 'only_data'],
+      deps: ['pre_data', 'data', 'post_data', 'only_data',
+        'only_tablespaces', 'only_roles'],
       disabled: function(state) {
         return state.pre_data ||
            state.data ||
            state.post_data ||
-           state.only_data;
+           state.only_data ||
+           state.only_tablespaces ||
+           state.only_roles;
       },
+      inlineGroup: 'type_of_objects',
+    },  {
+      id: 'only_tablespaces',
+      label: gettext('Only tablespaces'),
+      type: 'switch',
+      group: gettext('Type of objects'),
+      deps: ['pre_data', 'data', 'post_data', 'only_data', 'only_schema',
+        'only_roles'],
+      disabled: function(state) {
+        return state.pre_data ||
+           state.data ||
+           state.post_data ||
+           state.only_data ||
+           state.only_schema ||
+           state.only_roles;
+      },
+      visible: isVisibleForObjectBackup(obj?.top?.backupType),
+      inlineGroup: 'type_of_objects',
+    }, {
+      id: 'only_roles',
+      label: gettext('Only roles'),
+      type: 'switch',
+      group: gettext('Type of objects'),
+      deps: ['pre_data', 'data', 'post_data', 'only_data', 'only_schema',
+        'only_tablespaces'],
+      inlineGroup: 'type_of_objects',
+      disabled: function(state) {
+        return state.pre_data ||
+           state.data ||
+           state.post_data ||
+           state.only_data ||
+           state.only_schema ||
+           state.only_tablespaces;
+      },
+      visible: isVisibleForObjectBackup(obj?.top?.backupType)
     }, {
       id: 'blobs',
       label: gettext('Blobs'),
       type: 'switch',
       group: gettext('Type of objects'),
+      inlineGroup: 'type_of_objects',
       visible: function(state) {
-        if (!_.isUndefined(obj.backupType) && obj.backupType === 'server') {
+        if (!isVisibleForServerBackup(obj?.top?.backupType)) {
           state.blobs = false;
           return false;
         }
@@ -147,7 +196,6 @@ export class SaveOptSchema extends BaseUISchema {
     return 'id';
   }
 
-
   get baseFields() {
     let obj = this;
     return [{
@@ -156,35 +204,84 @@ export class SaveOptSchema extends BaseUISchema {
       type: 'switch',
       disabled: false,
       group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+    }, {
+      id: 'dns_no_role_passwords',
+      label: gettext('Role passwords'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      visible: isVisibleForObjectBackup(obj?.top?.backupType),
+      inlineGroup: 'do_not_save',
     }, {
       id: 'dns_privilege',
-      label: gettext('Privilege'),
+      label: gettext('Privileges'),
       type: 'switch',
       disabled: false,
       group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
     }, {
       id: 'dns_tablespace',
-      label: gettext('Tablespace'),
+      label: gettext('Tablespaces'),
       type: 'switch',
       disabled: false,
       group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
     }, {
       id: 'dns_unlogged_tbl_data',
       label: gettext('Unlogged table data'),
       type: 'switch',
       disabled: false,
       group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
     }, {
-      id: 'no_comments',
+      id: 'dns_comments',
       label: gettext('Comments'),
       type: 'switch',
       disabled: false,
       group: gettext('Do not save'),
-      visible: function() {
-        let serverInfo = _.isUndefined(obj.fieldOptions.nodeInfo) ? undefined : obj.fieldOptions.nodeInfo.server;
-
-        return _.isUndefined(serverInfo) ? false : serverInfo.version >= 110000;
-      },
+      inlineGroup: 'do_not_save',
+      min_version: 110000
+    }, {
+      id: 'dns_publications',
+      label: gettext('Publications'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+      min_version: 110000
+    }, {
+      id: 'dns_subscriptions',
+      label: gettext('Subscriptions'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+      min_version: 110000
+    }, {
+      id: 'dns_security_labels',
+      label: gettext('Security labels'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+      min_version: 110000
+    }, {
+      id: 'dns_toast_compression',
+      label: gettext('Toast compressions'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+      min_version: 140000
+    }, {
+      id: 'dns_table_access_method',
+      label: gettext('Table access methods'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'do_not_save',
+      min_version: 150000
     }];
   }
 }
@@ -193,86 +290,12 @@ export function getSaveOptSchema(fieldOptions) {
   return new SaveOptSchema(fieldOptions);
 }
 
-function isVisible () {
-  return !(!_.isUndefined(this.backupType) && this.backupType === 'server');
+function isVisibleForServerBackup(backupType) {
+  return !(!_.isUndefined(backupType) && backupType === 'server');
 }
 
-export class QueryOptionSchema extends BaseUISchema {
-  constructor(fieldOptions={}, initValues={}) {
-    super({
-      id: null,
-      ...initValues,
-    });
-
-    this.fieldOptions = {
-      nodeInfo: null,
-      backupType: null,
-      ...fieldOptions,
-    };
-    this.backupType = fieldOptions.backupType;
-  }
-
-  get idAttribute() {
-    return 'id';
-  }
-
-
-  get baseFields() {
-    let obj = this;
-    return [{
-      id: 'use_column_inserts',
-      label: gettext('Use Column Inserts'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries'),
-    }, {
-      id: 'use_insert_commands',
-      label: gettext('Use Insert Commands'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries'),
-    }, {
-      id: 'include_create_database',
-      label: gettext('Include CREATE DATABASE statement'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries'),
-      visible: function() {
-        return !(!_.isUndefined(obj.backupType) && obj.backupType === 'server');
-      },
-    }, {
-      id: 'include_drop_database',
-      label: gettext('Include DROP DATABASE statement'),
-      type: 'switch',
-      group: gettext('Queries'),
-      deps: ['only_data'],
-      disabled: function(state) {
-        if (state.only_data) {
-          state.include_drop_database = false;
-          return true;
-        }
-        return false;
-      },
-    }, {
-      id: 'load_via_partition_root',
-      label: gettext('Load Via Partition Root'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries'),
-      visible: function() {
-        if (!_.isUndefined(obj.backupType) && obj.backupType === 'server')
-          return false;
-
-        let serverInfo = _.isUndefined(obj.fieldOptions.nodeInfo) ? undefined : obj.fieldOptions.nodeInfo.server;
-
-        return _.isUndefined(serverInfo) ? false : serverInfo.version >= 110000;
-      },
-    }];
-  }
-}
-
-export function getQueryOptionSchema(fieldOptions) {
-  return new QueryOptionSchema(fieldOptions);
+function isVisibleForObjectBackup(backupType) {
+  return !(!_.isUndefined(backupType) && backupType === 'backup_objects');
 }
 
 export class DisabledOptionSchema extends BaseUISchema {
@@ -296,19 +319,21 @@ export class DisabledOptionSchema extends BaseUISchema {
   get baseFields() {
     return [{
       id: 'disable_trigger',
-      label: gettext('Trigger'),
+      label: gettext('Triggers'),
       type: 'switch',
       group: gettext('Disable'),
       deps: ['only_data'],
       disabled: function(state) {
         return !(state.only_data);
       },
+      inlineGroup: 'disable',
     }, {
       id: 'disable_quoting',
       label: gettext('$ quoting'),
       type: 'switch',
       disabled: false,
       group: gettext('Disable'),
+      inlineGroup: 'disable',
     }];
   }
 }
@@ -339,41 +364,57 @@ export class MiscellaneousSchema extends BaseUISchema {
   get baseFields() {
     let obj = this;
     return [{
-      id: 'with_oids',
-      label: gettext('With OID(s)'),
-      type: 'switch',
-      deps: ['use_column_inserts', 'use_insert_commands'],
-      group: gettext('Miscellaneous'),
-      disabled: function(state) {
-        let serverInfo = _.isUndefined(obj.fieldOptions.nodeInfo) ? undefined : obj.fieldOptions.nodeInfo.server;
-
-        if (!_.isUndefined(serverInfo) && serverInfo.version >= 120000)
-          return true;
-
-        if (state.use_column_inserts || state.use_insert_commands) {
-          state.with_oids = false;
-          return true;
-        }
-        return false;
-      },
-    }, {
       id: 'verbose',
       label: gettext('Verbose messages'),
       type: 'switch',
       disabled: false,
       group: gettext('Miscellaneous'),
+      inlineGroup: 'miscellaneous',
     }, {
       id: 'dqoute',
       label: gettext('Force double quote on identifiers'),
       type: 'switch',
       disabled: false,
       group: gettext('Miscellaneous'),
+      inlineGroup: 'miscellaneous',
     }, {
       id: 'use_set_session_auth',
       label: gettext('Use SET SESSION AUTHORIZATION'),
       type: 'switch',
       disabled: false,
       group: gettext('Miscellaneous'),
+      inlineGroup: 'miscellaneous',
+    }, {
+      id: 'exclude_schema',
+      label: gettext('Exclude schema'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Miscellaneous'),
+      inlineGroup: 'miscellaneous',
+      visible: isVisibleForServerBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
+      id: 'exclude_database',
+      label: gettext('Exclude database'),
+      type: 'select',
+      disabled: false,
+      min_version: 160000,
+      group: gettext('Miscellaneous'),
+      visible: isVisibleForObjectBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
+      id: 'extra_float_digits',
+      label: gettext('Extra float digits'),
+      type: 'int',
+      disabled: false,
+      group: gettext('Miscellaneous'),
+      min_version: 120000
+    }, {
+      id: 'lock_wait_timeout',
+      label: gettext('Lock wait timeout'),
+      type: 'int',
+      disabled: false,
+      group: gettext('Miscellaneous')
     }];
   }
 }
@@ -382,8 +423,67 @@ export function getMiscellaneousSchema(fieldOptions) {
   return new MiscellaneousSchema(fieldOptions);
 }
 
+export class ExcludePatternsSchema extends BaseUISchema {
+  constructor(fieldOptions={}, initValues={}) {
+    super({
+      ...initValues,
+    });
+
+    this.fieldOptions = {
+      ...fieldOptions,
+    };
+  }
+
+  get idAttribute() {
+    return 'id';
+  }
+
+  get baseFields() {
+    let obj = this;
+    return [{
+      id: 'exclude_table',
+      label: gettext('Table(s)'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Table Options'),
+      visible: isVisibleForServerBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
+      id: 'exclude_table_data',
+      label: gettext('Table(s) data'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Table Options'),
+      visible: isVisibleForServerBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
+      id: 'exclude_table_and_children',
+      label: gettext('Table(s) and children'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Table Options'),
+      min_version: 160000,
+      visible: isVisibleForServerBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
+      id: 'exclude_table_data_and_children',
+      label: gettext('Table(s) data and children'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Table Options'),
+      min_version: 160000,
+      visible: isVisibleForServerBackup(obj?.top?.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }];
+  }
+}
+
+export function getExcludePatternsSchema() {
+  return new ExcludePatternsSchema();
+}
+
 export default class BackupSchema extends BaseUISchema {
-  constructor(sectionSchema, typeObjSchema, saveOptSchema, queryOptionSchema, disabledOptionSchema, miscellaneousSchema, fieldOptions = {}, treeNodeInfo=[], pgBrowser=null, backupType='server') {
+  constructor(sectionSchema, typeObjSchema, saveOptSchema, disabledOptionSchema, miscellaneousSchema, excludePatternsSchema, fieldOptions = {}, treeNodeInfo=[], pgBrowser=null, backupType='server', objects={}) {
     super({
       file: undefined,
       format: 'custom',
@@ -397,16 +497,16 @@ export default class BackupSchema extends BaseUISchema {
       role: null,
       ...fieldOptions,
     };
-
+    this.treeData = objects?.objects;
     this.treeNodeInfo = treeNodeInfo;
     this.pgBrowser = pgBrowser;
     this.backupType = backupType;
     this.getSectionSchema = sectionSchema;
     this.getTypeObjSchema = typeObjSchema;
     this.getSaveOptSchema = saveOptSchema;
-    this.getQueryOptionSchema = queryOptionSchema;
     this.getDisabledOptionSchema = disabledOptionSchema;
     this.getMiscellaneousSchema = miscellaneousSchema;
+    this.getExcludePatternsSchema = excludePatternsSchema;
   }
 
   get idAttribute() {
@@ -451,7 +551,7 @@ export default class BackupSchema extends BaseUISchema {
         },
       ],
       visible: function(state) {
-        if (!_.isUndefined(obj.backupType) && obj.backupType === 'server') {
+        if (!isVisibleForServerBackup(obj.backupType)) {
           state.format = 'plain';
           return false;
         }
@@ -467,20 +567,15 @@ export default class BackupSchema extends BaseUISchema {
       disabled: function(state) {
         return (state.format === 'tar');
       },
-      visible: isVisible,
+      visible: isVisibleForServerBackup(obj.backupType),
     }, {
       id: 'encoding',
       label: gettext('Encoding'),
       type: 'select',
       disabled: false,
       options: obj.fieldOptions.encoding,
-      visible: function() {
-        if (!_.isUndefined(obj.backupType) && obj.backupType === 'server') {
-          let dbNode = obj.pgBrowser.serverInfo[obj.treeNodeInfo.server._id];
-          return _.isUndefined(dbNode) ? false : dbNode.version >= 110000;
-        }
-        return true;
-      },
+      min_version: 110000,
+      visible: isVisibleForServerBackup(obj.backupType)
     }, {
       id: 'no_of_jobs',
       label: gettext('Number of jobs'),
@@ -489,7 +584,7 @@ export default class BackupSchema extends BaseUISchema {
       disabled: function(state) {
         return (state.format !== 'directory');
       },
-      visible: isVisible,
+      visible: isVisibleForServerBackup(obj.backupType),
     }, {
       id: 'role',
       label: gettext('Role name'),
@@ -509,24 +604,126 @@ export default class BackupSchema extends BaseUISchema {
     }, {
       type: 'nested-fieldset',
       label: gettext('Sections'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema:new getSectionSchema(),
-      visible: isVisible,
+      visible: isVisibleForServerBackup(obj.backupType)
     }, {
       type: 'nested-fieldset',
       label: gettext('Type of objects'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema: obj.getTypeObjSchema()
     }, {
       type: 'nested-fieldset',
       label: gettext('Do not save'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema: obj.getSaveOptSchema(),
     }, {
+      id: 'use_insert_commands',
+      label: gettext('Use INSERT Commands'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Query Options'),
+    }, {
+      id: 'max_rows_per_insert',
+      label: gettext('Maximum rows per INSERT command'),
+      type: 'int', min: 1,
+      disabled: false,
+      group: gettext('Query Options'),
+      min_version: 120000
+    }, {
+      id: 'on_conflict_do_nothing',
+      label: gettext('On conflict do nothing to INSERT command'),
+      type: 'switch',
+      group: gettext('Query Options'),
+      min_version: 120000,
+      deps: ['use_insert_commands', 'rows_per_insert', 'use_column_inserts'],
+      disabled: function(state) {
+        if (state.use_insert_commands || state.use_column_inserts || state.rows_per_insert > 0) {
+          return false;
+        }
+        state.on_conflict_do_nothing = false;
+        return true;
+      },
+      inlineGroup: 'miscellaneous',
+    }, {
+      id: 'include_create_database',
+      label: gettext('Include CREATE DATABASE statement'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Query Options'),
+      visible: isVisibleForServerBackup(obj.backupType),
+      inlineGroup: 'miscellaneous',
+    }, {
+      id: 'include_drop_database',
+      label: gettext('Include DROP DATABASE statement'),
+      type: 'switch',
+      group: gettext('Query Options'),
+      deps: ['only_data'],
+      disabled: function(state) {
+        if (state.only_data) {
+          state.include_drop_database = false;
+          return true;
+        }
+        return false;
+      },
+      inlineGroup: 'miscellaneous',
+    }, {
+      id: 'if_exists',
+      label: gettext('Include IF EXISTS clause'),
+      type: 'switch',
+      group: gettext('Query Options'),
+      deps: ['only_data, include_drop_database'],
+      disabled: function(state) {
+        if (state.include_drop_database) {
+          return false;
+        }
+        state.if_exists = false;
+        return true;
+      },
+      inlineGroup: 'miscellaneous',
+    }, {
+      id: 'use_column_inserts',
+      label: gettext('Use Column INSERTS'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Table Options'),
+    }, {
+      id: 'load_via_partition_root',
+      label: gettext('Load via partition root'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Table Options'),
+      min_version: 110000
+    }, {
+      id: 'enable_row_security',
+      label: gettext('Enable row security'),
+      type: 'switch',
+      group: gettext('Table Options'),
+      deps:['use_insert_commands'],
+      disabled: function(state) {
+        if (state.use_insert_commands) {
+          return false;
+        }
+        state.enable_row_security = false;
+        return true;
+      },
+      visible: isVisibleForServerBackup(obj.backupType),
+      helpMessage: gettext('This option is enabled only when Use INSERT Commands is enabled.')
+    }, {
+      id: 'table_and_children',
+      label: gettext('Include table(s) and Children'),
+      type: 'select',
+      disabled: false,
+      group: gettext('Table Options'),
+      min_version: 160000,
+      visible: isVisibleForServerBackup(obj.backupType),
+      controlProps: { multiple: true, allowClear: false, creatable: true, noDropdown: true, placeholder: ' ' }
+    }, {
       type: 'nested-fieldset',
-      label: gettext('Queries'),
-      group: gettext('Options'),
-      schema: obj.getQueryOptionSchema(),
+      label: gettext('Exclude patterns'),
+      group: gettext('Table Options'),
+      schema: obj.getExcludePatternsSchema(),
+      visible: isVisibleForServerBackup(obj.backupType),
     }, {
       type: 'nested-fieldset',
       label: gettext('Disable'),
@@ -537,6 +734,42 @@ export default class BackupSchema extends BaseUISchema {
       label: gettext('Miscellaneous'),
       group: gettext('Options'),
       schema: obj.getMiscellaneousSchema(),
+    },
+    {
+      id: 'object', label: gettext('Objects'), type: 'group',
+      visible: isVisibleForServerBackup(obj?.backupType)
+    },
+    {
+      id: 'objects',
+      label: gettext('objects'),
+      group: gettext('Objects'),
+      type: 'tree',
+      helpMessage: gettext('If Schema(s) is selected then it will take the backup of that selected schema(s) only'),
+      treeData: this.treeData,
+      visible: () => {
+        return isVisibleForServerBackup(obj?.backupType);
+      },
+      depChange: (state)=> {
+        let selectedNodeCollection = {
+          'schema': [],
+          'table': [],
+          'view': [],
+          'sequence': [],
+          'foreign table': [],
+          'materialized view': [],
+        };
+        state?.objects?.forEach((node)=> {
+          if(node.data.is_schema && !node.data?.isIndeterminate) {
+            selectedNodeCollection['schema'].push(node.data.name);
+          } else if(['table', 'view', 'materialized view', 'foreign table', 'sequence'].includes(node.data.type) &&
+              !node.data.is_collection && !selectedNodeCollection['schema'].includes(node.data.schema)) {
+            selectedNodeCollection[node.data.type].push(node.data);
+          }
+        });
+        return {'objects': selectedNodeCollection};
+      },
+      hasCheckbox: true,
+      isFullTab: true,
     }];
   }
 
@@ -553,5 +786,4 @@ export default class BackupSchema extends BaseUISchema {
       }
     }
   }
-
 }

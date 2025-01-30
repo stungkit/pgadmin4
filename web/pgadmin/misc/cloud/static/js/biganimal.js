@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -17,67 +17,33 @@ import getApiInstance from '../../../../static/js/api_instance';
 import { isEmptyString } from 'sources/validators';
 import PropTypes from 'prop-types';
 import gettext from 'sources/gettext';
-import { makeStyles } from '@material-ui/core/styles';
-import { AWSIcon, MSAzureIcon } from '../../../../static/js/components/ExternalIcon';
-
-
-const useStyles = makeStyles(() =>
-  ({
-    providerHeight: {
-      height: '5em',
-    },
-    AwsIcon: {
-      width: '6rem',
-    }
-  }),
-);
 
 const axiosApi = getApiInstance();
-
-export function getProviderOptions() {
-  return new Promise((resolve, reject) => {
-    axiosApi.get(url_for('biganimal.providers'))
-      .then((res) => {
-        if (res.data.data) {
-          let _options= [],
-            _options_label = {'azure': <MSAzureIcon  key='1' />,
-              'aws': <AWSIcon style={{width: '6rem'}} key = '2'/>};
-          _.forEach(res.data.data, (val) => {
-            _options.push({
-              'label': _options_label[val['value']],
-              'value': val['value'],
-              'disabled': !val['connected']
-            });
-          });
-          resolve(_options);
-        }
-      })
-      .catch((error) => {
-        reject(gettext(`Error while getting the biganimal providers: ${error.response.data.errormsg}`));
-      });
-  });
-}
 
 // BigAnimal Cluster Type
 export function BigAnimalClusterType(props) {
   const [bigAnimalClusterType, setBigAnimalClusterType] = React.useState();
-  const classes = useStyles();
 
   React.useMemo(() => {
     const bigAnimalClusterTypeSchema = new BigAnimalClusterTypeSchema({
-      providers: ()=>getNodeAjaxOptions('biganimal_providers', pgAdmin.Browser.Nodes['server'], props.nodeInfo, props.nodeData, {
+      projects: ()=>getNodeAjaxOptions('biganimal_projects', pgAdmin.Browser.Nodes['server'], props.nodeInfo, props.nodeData, {
         useCache:false,
         cacheNode: 'server',
         customGenerateUrl: ()=>{
-          return url_for('biganimal.providers');
+          return url_for('biganimal.projects');
+        }
+      }),
+      providers: (project)=>getNodeAjaxOptions('biganimal_providers', pgAdmin.Browser.Nodes['server'], props.nodeInfo, props.nodeData, {
+        useCache:false,
+        cacheNode: 'server',
+        customGenerateUrl: ()=>{
+          return url_for('biganimal.providers', {'project_id':project});
         }
       }),
     }, {
       nodeInfo: props.nodeInfo,
       nodeData: props.nodeData,
       hostIP: props.hostIP,
-      classes: classes,
-      bigAnimalProviders: props.bigAnimalProviders,
     });
     setBigAnimalClusterType(bigAnimalClusterTypeSchema);
   }, [props.cloudProvider]);
@@ -99,8 +65,7 @@ BigAnimalClusterType.propTypes = {
   nodeData: PropTypes.object,
   cloudProvider: PropTypes.string,
   setBigAnimalClusterTypeData: PropTypes.func,
-  hostIP: PropTypes.string,
-  bigAnimalProviders: PropTypes.object,
+  hostIP: PropTypes.string
 };
 
 
@@ -110,11 +75,11 @@ export function BigAnimalInstance(props) {
 
   React.useMemo(() => {
     const bigAnimalSchema = new BigAnimalClusterSchema({
-      regions: (provider_id)=>getNodeAjaxOptions('biganimal_regions', pgAdmin.Browser.Nodes['server'], props.nodeInfo, props.nodeData, {
+      regions: ()=>getNodeAjaxOptions('biganimal_regions', pgAdmin.Browser.Nodes['server'], props.nodeInfo, props.nodeData, {
         useCache:false,
         cacheNode: 'server',
         customGenerateUrl: ()=>{
-          return url_for('biganimal.regions', {'provider_id': provider_id || 0});
+          return url_for('biganimal.regions');
         }
       }),
       instance_types: (region_id, provider_id)=>{
@@ -240,7 +205,7 @@ export function validateBigAnimal() {
         }
       })
       .catch((error) => {
-        reject(`Error while fetching EDB BigAnimal verification URI: ${error.response.data.errormsg}`);
+        reject(new Error(`Error while fetching EDB BigAnimal verification URI: ${error.response.data.errormsg}`));
       });
   });
 }
@@ -277,9 +242,12 @@ export function getBigAnimalSummary(cloud, bigAnimalClusterTypeData, bigAnimalIn
 
   const rows4 = [
     createData(gettext('Volume type'), bigAnimalInstanceData.volume_type),
-    createData(gettext('Volume size'), bigAnimalInstanceData.volume_size),
-    createData(gettext('Volume IOPS'), bigAnimalInstanceData.volume_IOPS),
+    createData(gettext('Volume size'), bigAnimalInstanceData.volume_size)
   ];
+  if(bigAnimalClusterTypeData.provider.includes('aws')){
+    rows4.push(createData(gettext('Volume IOPS'), bigAnimalInstanceData.volume_IOPS));
+    rows4.push(createData(gettext('Disk Throughput'), bigAnimalInstanceData.disk_throughput));
+  }
 
   const rows5 = [
     createData(gettext('Password'), 'xxxxxxx'),
@@ -306,20 +274,9 @@ export function validateBigAnimalStep3(cloudDetails) {
   if (isEmptyString(cloudDetails.name) ||
   isEmptyString(cloudDetails.region) || isEmptyString(cloudDetails.instance_type) ||
   isEmptyString(cloudDetails.instance_series)|| isEmptyString(cloudDetails.instance_size) ||
-  isEmptyString(cloudDetails.volume_type) || (cloudDetails.provider != 'aws' && isEmptyString(cloudDetails.volume_properties)) ) {
+  isEmptyString(cloudDetails.volume_type) || (!cloudDetails.provider.includes('aws') && isEmptyString(cloudDetails.volume_properties)) ) {
     isError = true;
   }
-
-  if (cloudDetails.provider == 'aws') {
-    if (isEmptyString(cloudDetails.volume_IOPS) || isEmptyString(cloudDetails.volume_IOPS) || (cloudDetails.volume_IOPS != 'io2' &&
-     (cloudDetails.volume_size < 1 ||  cloudDetails.volume_size > 16384)) ||
-     (cloudDetails.volume_IOPS == 'io2' && (cloudDetails.volume_size < 4 ||  cloudDetails.volume_size > 16384)) ||
-     (cloudDetails.volume_IOPS != 'io2' && cloudDetails.volume_IOPS != 3000) ||
-     (cloudDetails.volume_IOPS == 'io2' && (cloudDetails.volume_IOPS < 100 ||  cloudDetails.volume_IOPS > 2000))) {
-      isError = true;
-    }
-  }
-
   return isError;
 }
 

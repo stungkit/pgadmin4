@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -105,9 +105,13 @@ class CompoundTriggerModule(CollectionNodeModule):
         Generate the collection node
         """
         assert ('tid' in kwargs or 'vid' in kwargs)
-        yield self.generate_browser_collection_node(
-            kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
-        )
+        if self.has_nodes(
+            sid, did, scid=scid,
+            tid=kwargs.get('tid', kwargs.get('vid', None)),
+                base_template_path=CompoundTriggerView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(
+                kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
+            )
 
     @property
     def script_load(self):
@@ -216,6 +220,7 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     node_label = "Compound Trigger"
+    BASE_TEMPLATE_PATH = 'compound_triggers/sql/{0}/#{1}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -278,7 +283,7 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
             )
 
             # we will set template path for sql scripts
-            self.template_path = 'compound_triggers/sql/{0}/#{1}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.server_type, self.manager.version)
             # Store server type
             self.server_type = self.manager.server_type
@@ -398,7 +403,8 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['name'],
                     icon="icon-compound_trigger-bad"
                     if row['is_enable_trigger'] == 'D'
-                    else "icon-compound_trigger"
+                    else "icon-compound_trigger",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -671,7 +677,8 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
                     name,
                     icon="icon-%s-bad" % self.node_type if
                     data['is_enable_trigger'] == 'D' else
-                    "icon-%s" % self.node_type
+                    "icon-%s" % self.node_type,
+                    description=data['description']
                 )
             )
         except Exception as e:
@@ -707,7 +714,7 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         data['table'] = self.table
 
         try:
-            sql, name = compound_trigger_utils.get_sql(
+            sql, _ = compound_trigger_utils.get_sql(
                 self.conn, data, tid, trid, self._DATABASE_LAST_SYSTEM_OID)
             if not isinstance(sql, str):
                 return sql
@@ -877,7 +884,7 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         target_schema = kwargs.get('target_schema', None)
 
         if data:
-            sql, name = compound_trigger_utils.get_sql(
+            sql, _ = compound_trigger_utils.get_sql(
                 self.conn, data, tid, oid, self._DATABASE_LAST_SYSTEM_OID)
             if not isinstance(sql, str):
                 return sql
@@ -925,7 +932,7 @@ class CompoundTriggerView(PGChildNodeView, SchemaDiffObjectCompare):
         if target_schema:
             data['schema'] = target_schema
 
-        sql, name = compound_trigger_utils.get_sql(
+        sql, _ = compound_trigger_utils.get_sql(
             self.conn, data, tid, None, self._DATABASE_LAST_SYSTEM_OID)
 
         # If compound trigger is disbaled then add sql

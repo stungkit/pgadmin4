@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 # config.py - Core application configuration settings
@@ -15,6 +15,7 @@ import builtins
 import logging
 import os
 import sys
+from collections import OrderedDict
 
 # We need to include the root directory in sys.path to ensure that we can
 # find everything we need when running in the standalone runtime.
@@ -22,47 +23,18 @@ root = os.path.dirname(os.path.realpath(__file__))
 if sys.path[0] != root:
     sys.path.insert(0, root)
 
+# The config database connection pool size.
+# Setting this to 0 will remove any limit.
+CONFIG_DATABASE_CONNECTION_POOL_SIZE = 5
+# The number of connections allowed to overflow beyond
+# the connection pool size.
+CONFIG_DATABASE_CONNECTION_MAX_OVERFLOW = 100
+
 from pgadmin.utils import env, IS_WIN, fs_short_path
-
-##########################################################################
-# Application settings
-##########################################################################
-
-# Name of the application to display in the UI
-APP_NAME = 'pgAdmin 4'
-APP_ICON = 'pg-icon'
-
-##########################################################################
-# Application settings
-##########################################################################
-
-# NOTE!!!
-# If you change any of APP_RELEASE, APP_REVISION or APP_SUFFIX, then you
-# must also change APP_VERSION_INT to match.
-#
-
-# Application version number components
-APP_RELEASE = 6
-APP_REVISION = 20
-
-# Application version suffix, e.g. 'beta1', 'dev'. Usually an empty string
-# for GA releases.
-APP_SUFFIX = ''
-
-# Numeric application version for upgrade checks. Should be in the format:
-# [X]XYYZZ, where X is the release version, Y is the revision, with a leading
-# zero if needed, and Z represents the suffix, with a leading zero if needed
-APP_VERSION_INT = 62000
-
-# DO NOT CHANGE!
-# The application version string, constructed from the components
-if not APP_SUFFIX:
-    APP_VERSION = '%s.%s' % (APP_RELEASE, APP_REVISION)
-else:
-    APP_VERSION = '%s.%s-%s' % (APP_RELEASE, APP_REVISION, APP_SUFFIX)
-
-# Copyright string for display in the app
-APP_COPYRIGHT = 'Copyright (C) 2013 - 2023, The pgAdmin Development Team'
+from version import APP_VERSION, APP_RELEASE, APP_REVISION, APP_SUFFIX, \
+    APP_VERSION_INT
+from branding import APP_NAME, APP_ICON, APP_COPYRIGHT, APP_PATH, \
+    APP_WIN_PATH, APP_SHORT_NAME, APP_DEFAULT_EMAIL
 
 ##########################################################################
 # Misc stuff
@@ -74,10 +46,12 @@ HELP_PATH = '../../../docs/en_US/_build/html/'
 # Languages we support in the UI
 LANGUAGES = {
     'en': 'English',
-    'zh': 'Chinese (Simplified)',
+    'zh_Hans_CN': 'Chinese (Simplified)',
+    'zh_Hant_TW': 'Chinese (Traditional)',
     'cs': 'Czech',
     'fr': 'French',
     'de': 'German',
+    'id': 'Indonesian',
     'it': 'Italian',
     'ja': 'Japanese',
     'ko': 'Korean',
@@ -125,7 +99,7 @@ WTF_CSRF_HEADERS = ['X-pgA-CSRFToken']
 
 # User ID (email address) to use for the default user in desktop mode.
 # The default should be fine here, as it's not exposed in the app.
-DESKTOP_USER = 'pgadmin4@pgadmin.org'
+DESKTOP_USER = APP_DEFAULT_EMAIL
 
 # This option allows the user to host the application on a LAN
 # Default hosting is on localhost (DEFAULT_SERVER='localhost').
@@ -222,8 +196,8 @@ PROXY_X_PREFIX_COUNT = 0
 
 # COMPRESSION
 COMPRESS_MIMETYPES = [
-    'text/html', 'text/css', 'text/xml', 'application/json',
-    'application/javascript'
+    'text/html', 'text/css', 'text/xml', 'text/javascript',
+    'application/json', 'application/javascript'
 ]
 COMPRESS_LEVEL = 9
 COMPRESS_MIN_SIZE = 500
@@ -242,18 +216,21 @@ APP_VERSION_EXTN = ('.css', '.js', '.html', '.svg', '.png', '.gif', '.ico')
 
 # Data directory for storage of config settings etc. This shouldn't normally
 # need to be changed - it's here as various other settings depend on it.
-# On Windows, we always store data in %APPDATA%\pgAdmin. On other platforms,
-# if we're in server mode we use /var/lib/pgadmin, otherwise ~/.pgadmin
+# On Windows, we always store data in %APPDATA%\$(APP_WIN_PATH). On other
+# platforms, if we're in server mode we use /var/lib/$(APP_PATH),
+# otherwise ~/.$(APP_PATH)
 if IS_WIN:
     # Use the short path on windows
     DATA_DIR = os.path.realpath(
-        os.path.join(fs_short_path(env('APPDATA')), "pgAdmin")
+        os.path.join(fs_short_path(env('APPDATA')), APP_WIN_PATH)
     )
 else:
     if SERVER_MODE:
-        DATA_DIR = '/var/lib/pgadmin'
+        DATA_DIR = os.path.join('/var/lib/', APP_PATH)
     else:
-        DATA_DIR = os.path.realpath(os.path.expanduser('~/.pgadmin/'))
+        DATA_DIR = os.path.realpath(
+            os.path.expanduser('~/' + '.' + APP_PATH + '/')
+        )
 
 # An optional login banner to show security warnings/disclaimers etc. at
 # login and password recovery etc. HTML may be included for basic formatting,
@@ -281,15 +258,29 @@ CONSOLE_LOG_LEVEL = logging.WARNING
 FILE_LOG_LEVEL = logging.WARNING
 
 # Log format.
+JSON_LOGGER = False
+CONSOLE_LOG_FORMAT_JSON = OrderedDict([
+    ("time", "asctime"),
+    ("message", "message"),
+    ("level", "levelname")
+])
+
+FILE_LOG_FORMAT_JSON = OrderedDict([
+    ("time", "asctime"),
+    ("message", "message"),
+    ("level", "levelname")
+])
+
+
 CONSOLE_LOG_FORMAT = '%(asctime)s: %(levelname)s\t%(name)s:\t%(message)s'
 FILE_LOG_FORMAT = '%(asctime)s: %(levelname)s\t%(name)s:\t%(message)s'
 
 # Log file name. This goes in the data directory, except on non-Windows
 # platforms in server mode.
 if SERVER_MODE and not IS_WIN:
-    LOG_FILE = '/var/log/pgadmin/pgadmin4.log'
+    LOG_FILE = os.path.join('/var/log', APP_PATH, APP_SHORT_NAME + '.log')
 else:
-    LOG_FILE = os.path.join(DATA_DIR, 'pgadmin4.log')
+    LOG_FILE = os.path.join(DATA_DIR, APP_SHORT_NAME + '.log')
 
 # Log rotation setting
 # Log file will be rotated considering values for LOG_ROTATION_SIZE
@@ -303,10 +294,7 @@ LOG_ROTATION_MAX_LOG_FILES = 90  # Maximum number of backups to retain
 ##########################################################################
 
 # The default driver used for making connection with PostgreSQL
-if sys.version_info < (3, 7):
-    PG_DEFAULT_DRIVER = 'psycopg2'
-else:
-    PG_DEFAULT_DRIVER = 'psycopg3'
+PG_DEFAULT_DRIVER = 'psycopg3'
 
 # Maximum allowed idle time in minutes before which releasing the connection
 # for the particular session. (in minutes)
@@ -336,7 +324,8 @@ CONFIG_DATABASE_URI = ''
 # The default path to the SQLite database used to store user accounts and
 # settings. This default places the file in the same directory as this
 # config file, but generates an absolute path for use througout the app.
-SQLITE_PATH = env('SQLITE_PATH') or os.path.join(DATA_DIR, 'pgadmin4.db')
+SQLITE_PATH = env('SQLITE_PATH') or \
+    os.path.join(DATA_DIR, APP_SHORT_NAME + '.db')
 
 # SQLITE_TIMEOUT will define how long to wait before throwing the error -
 # OperationError due to database lock. On slower system, you may need to change
@@ -409,13 +398,10 @@ SECURITY_EMAIL_SUBJECT_PASSWORD_CHANGE_NOTICE = \
 ##########################################################################
 # Email address validation
 ##########################################################################
-
-# flask-security-too will validate email addresses and check deliverability
-# by default. Disable the deliverability check by default, which was the old
-# behaviour in <= v5.3
 CHECK_EMAIL_DELIVERABILITY = False
 SECURITY_EMAIL_VALIDATOR_ARGS = \
     {"check_deliverability": CHECK_EMAIL_DELIVERABILITY}
+ALLOW_SPECIAL_EMAIL_DOMAINS = []
 
 ##########################################################################
 # Upgrade checks
@@ -472,19 +458,37 @@ STORAGE_DIR = os.path.join(DATA_DIR, 'storage')
 ##########################################################################
 DEFAULT_BINARY_PATHS = {
     "pg": "",
-    "pg-10": "",
-    "pg-11": "",
-    "pg-12": "",
     "pg-13": "",
     "pg-14": "",
     "pg-15": "",
+    "pg-16": "",
+    "pg-17": "",
     "ppas": "",
-    "ppas-10": "",
-    "ppas-11": "",
-    "ppas-12": "",
     "ppas-13": "",
     "ppas-14": "",
-    "ppas-15": ""
+    "ppas-15": "",
+    "ppas-16": "",
+    "ppas-17": ""
+}
+
+##########################################################################
+
+# Admin can specify fixed binary paths to prevent users from changing.
+# It will take precedence over DEFAULT_BINARY_PATHS.
+
+FIXED_BINARY_PATHS = {
+    "pg": "",
+    "pg-13": "",
+    "pg-14": "",
+    "pg-15": "",
+    "pg-16": "",
+    "pg-17": "",
+    "ppas": "",
+    "ppas-13": "",
+    "ppas-14": "",
+    "ppas-15": "",
+    "ppas-16": "",
+    "ppas-17": ""
 }
 
 ##########################################################################
@@ -506,10 +510,10 @@ THREADED_MODE = True
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 ##########################################################################
-# Number of records to fetch in one batch in query tool when query result
-# set is large.
+# Number of records to fetch in one page in query tool when query result
+# set is large and is divided in multiple pages
 ##########################################################################
-ON_DEMAND_RECORD_COUNT = 1000
+DATA_RESULT_ROWS_PER_PAGE = 1000
 
 ##########################################################################
 # Allow users to display Gravatar image for their username in Server mode
@@ -577,8 +581,35 @@ ALLOW_SAVE_TUNNEL_PASSWORD = False
 # Applicable for desktop mode only
 ##########################################################################
 MASTER_PASSWORD_REQUIRED = True
+##########################################################################
 
 ##########################################################################
+# Allow to save master password which is used to encrypt/decrypt saved
+# passwords in the os level secret like Keychain, password store etc.
+# Disabling this will require user to enter master password
+# if MASTER_PASSWORD_REQUIRED is set to True. Note: this is applicable only
+# in case of Desktop mode.
+##########################################################################
+USE_OS_SECRET_STORAGE = True
+##########################################################################
+
+# pgAdmin encrypts the database connection and ssh tunnel password using a
+# master password or pgAdmin login password (for other authentication sources)
+# before storing it in the pgAdmin configuration database.
+#
+# Below setting is used to allow the user to specify the path to a script
+# or program that will return an encryption key which will be used to
+# encrypt the passwords. This setting is used only in server mode when
+# auth sources are oauth, Kerberos, and webserver.
+#
+# You can pass the current username as an argument to the external script
+# by specifying %u in config value.
+# E.g. - MASTER_PASSWORD_HOOK = '<PATH>/passwdgen_script.sh %u'
+##########################################################################
+MASTER_PASSWORD_HOOK = None
+
+##########################################################################
+
 # Allows pgAdmin4 to create session cookies based on IP address, so even
 # if a cookie is stolen, the attacker will not be able to connect to the
 # server using that stolen cookie.
@@ -704,6 +735,13 @@ LDAP_CERT_FILE = ''
 LDAP_KEY_FILE = ''
 
 ##########################################################################
+
+# Some flaky LDAP servers returns malformed schema. If True, no exception
+# will be raised and schema is thrown away but authentication will be done.
+# This parameter should remain False, as recommended.
+LDAP_IGNORE_MALFORMED_SCHEMA = False
+
+##########################################################################
 # Kerberos Configuration
 ##########################################################################
 
@@ -770,6 +808,37 @@ OAUTH2_CONFIG = [
         'OAUTH2_ICON': None,
         # UI button colour, ex: #0000ff
         'OAUTH2_BUTTON_COLOR': None,
+        # The additional claims to check on user ID Token or Userinfo response.
+        # This is useful to provide additional authorization checks
+        # before allowing access.
+        # Example for GitLab: allowing all maintainers teams, and a specific
+        # developers group to access pgadmin:
+        # 'OAUTH2_ADDITIONAL_CLAIMS': {
+        #     'https://gitlab.org/claims/groups/maintainer': [
+        #           'kuberheads/applications',
+        #           'kuberheads/dba',
+        #           'kuberheads/support'
+        #      ],
+        #     'https://gitlab.org/claims/groups/developer': [
+        #           'kuberheads/applications/team01'
+        #      ],
+        # }
+        # Example for AzureAD:
+        # 'OAUTH2_ADDITIONAL_CLAIMS': {
+        #     'groups': ["0760b6cf-170e-4a14-91b3-4b78e0739963"],
+        #     'wids': ["cf1c38e5-3621-4004-a7cb-879624dced7c"],
+        # }
+        'OAUTH2_ADDITIONAL_CLAIMS': None,
+        # Set this variable to False to disable SSL certificate verification
+        # for OAuth2 provider.
+        # This may need to set False, in case of self-signed certificates.
+        # Ref: https://github.com/psf/requests/issues/6071
+        'OAUTH2_SSL_CERT_VERIFICATION': True,
+        # set this variable to invalidate the session of the oauth2 provider
+        # Example for keycloak:
+        # 'OAUTH2_LOGOUT_URL':
+        # 'https://example.com/realms/master/protocol/openid-connect/logout?post_logout_redirect_uri={redirect_uri}&id_token_hint={id_token}'
+        'OAUTH2_LOGOUT_URL': None
     }
 ]
 
@@ -832,6 +901,18 @@ ENABLE_PSQL = False
 ##########################################################################
 ENABLE_BINARY_PATH_BROWSING = False
 
+##########################################################################
+# In server mode, the SHARED_STORAGE setting is used to enable shared storage.
+# Specify the name, path, and restricted_access values that should be shared
+# between users. When restricted_access is set to True, non-admin users cannot
+# upload/add, delete, or rename files/folders in shared storage, only admins
+# can do that. Users must provide the absolute path to the folder, and the name
+# can be anything they see on the user interface.
+# [{ 'name': 'Shared 1', 'path': '/shared_folder',
+#   'restricted_access': True/False}]
+##########################################################################
+SHARED_STORAGE = []
+
 #############################################################################
 # AUTO_DISCOVER_SERVERS setting is used to enable the pgAdmin to discover the
 # database server automatically on the local machine.
@@ -847,80 +928,27 @@ AUTO_DISCOVER_SERVERS = True
 #############################################################################
 SERVER_HEARTBEAT_TIMEOUT = 30  # In seconds
 
-##########################################################################
-# Local config settings
-##########################################################################
-# User configs loaded from config_local, config_distro etc.
-user_config_settings = {}
+#############################################################################
+# ENABLE_SERVER_PASS_EXEC_CMD is used to enable/disable Password exec command
+# field in server properties. This is used to specify a shell command to be
+# executed to retrieve a password to be used for server authentication.
+# This setting is applicable only for server mode.
+#############################################################################
+ENABLE_SERVER_PASS_EXEC_CMD = False
 
+#############################################################################
+# Maximum number of Tags allowed on a server node
+##############################################################################
+MAX_SERVER_TAGS_ALLOWED = 5
 
-# Function to Extract settings from config_local, config_distro etc.
-def get_variables_from_module(module_name):
-    module = globals().get(module_name, None)
-    variables = {}
-    if module:
-        variables = {key: value for key, value in module.__dict__.items()
-                     if not (key.startswith('__') or key.startswith('_'))}
-    return variables
+#############################################################################
+# Number of records to fetch in one batch for server logs.
+##############################################################################
 
+ON_DEMAND_LOG_COUNT = 10000
 
-# Load distribution-specific config overrides
-try:
-    import config_distro
-    config_distro_settings = get_variables_from_module('config_distro')
-    user_config_settings.update(config_distro_settings)
-except ImportError:
-    pass
-
-# Load local config overrides
-try:
-    import config_local
-    config_local_settings = get_variables_from_module('config_local')
-    user_config_settings.update(config_local_settings)
-except ImportError:
-    pass
-
-# Load system config overrides. We do this last, so that the sysadmin can
-# override anything they want from a config file that's in a protected system
-# directory and away from pgAdmin to avoid invalidating signatures.
-system_config_dir = '/etc/pgadmin'
-if sys.platform.startswith('win32'):
-    system_config_dir = os.environ['CommonProgramFiles'] + '/pgadmin'
-elif sys.platform.startswith('darwin'):
-    system_config_dir = '/Library/Preferences/pgadmin'
-
-if os.path.exists(system_config_dir + '/config_system.py'):
-    try:
-        sys.path.insert(0, system_config_dir)
-        import config_system
-        config_system_settings = get_variables_from_module('config_system')
-        user_config_settings.update(config_system_settings)
-    except ImportError:
-        pass
-
-# Update settings for 'LOG_FILE', 'SQLITE_PATH', 'SESSION_DB_PATH',
-# 'AZURE_CREDENTIAL_CACHE_DIR', 'KERBEROS_CCACHE_DIR', 'STORAGE_DIR'
-# of DATA_DIR is user defined
-data_dir_dependent_settings = ['LOG_FILE', 'SQLITE_PATH', 'SESSION_DB_PATH',
-                               'AZURE_CREDENTIAL_CACHE_DIR',
-                               'KERBEROS_CCACHE_DIR', 'STORAGE_DIR']
-
-if 'DATA_DIR' in user_config_settings:
-    for setting in data_dir_dependent_settings:
-        if setting not in user_config_settings:
-            data_dir = user_config_settings['DATA_DIR']
-            file_dir_name = os.path.basename(locals().get(setting))
-            locals().update({setting: os.path.join(data_dir, file_dir_name)})
-
-# Finally update config user configs
-locals().update(user_config_settings)
-
-# Override DEFAULT_SERVER value from environment variable.
-if 'PGADMIN_CONFIG_DEFAULT_SERVER' in os.environ:
-    DEFAULT_SERVER = os.environ['PGADMIN_CONFIG_DEFAULT_SERVER']
-
-# Disable USER_INACTIVITY_TIMEOUT when SERVER_MODE=False
-if not SERVER_MODE:
-    USER_INACTIVITY_TIMEOUT = 0
-    # Enable PSQL in Desktop Mode.
-    ENABLE_PSQL = True
+#############################################################################
+# Patch the default config with custom config and other manipulations
+#############################################################################
+from pgadmin.evaluate_config import evaluate_and_patch_config
+locals().update(evaluate_and_patch_config(locals()))

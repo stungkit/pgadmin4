@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -19,6 +19,7 @@ import config as app_config
 from pgadmin.utils.route import BaseTestGenerator
 from regression.feature_utils.pgadmin_page import PgadminPage
 from regression.python_test_utils import test_utils
+from pgadmin.utils.constants import TWO_PARAM_STRING
 
 
 class BaseFeatureTest(BaseTestGenerator):
@@ -62,20 +63,18 @@ class BaseFeatureTest(BaseTestGenerator):
         pass
 
     def tearDown(self):
-        python2_failures = hasattr(
-            self, "_resultForDoCleanups") and self.current_test_failed()
-
         python3_failures = hasattr(self, '_outcome') and self.any_step_failed()
 
-        if python2_failures or python3_failures:
+        if python3_failures:
             self._screenshot()
 
         self.after()
 
     def any_step_failed(self):
-        for step in self._outcome.errors:
-            if step[1] is not None:
-                return True
+        if hasattr(self._outcome, 'errors'):
+            for step in self._outcome.errors:
+                if step[1] is not None:
+                    return True
         return False
 
     def current_test_failed(self):
@@ -88,7 +87,7 @@ class BaseFeatureTest(BaseTestGenerator):
 
     def _screenshot(self):
         screenshots_directory = '{0}/../screenshots'.format(self.CURRENT_PATH)
-        screenshots_server_directory = '{0}/{1}'.format(
+        screenshots_server_directory = TWO_PARAM_STRING.format(
             screenshots_directory,
             self.server["name"].replace(" ", "_")
         )

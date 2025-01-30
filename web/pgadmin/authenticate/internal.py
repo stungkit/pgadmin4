@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -41,7 +41,7 @@ class BaseAuthentication(metaclass=AuthSourceRegistry):
         pass
 
     @abstractmethod
-    def authenticate(self):
+    def authenticate(self, form):
         pass
 
     def validate(self, form):
@@ -106,8 +106,9 @@ class InternalAuthentication(BaseAuthentication):
 
     def authenticate(self, form):
         username = form.data['email']
-        user = getattr(form, 'user',
-                       User.query.filter_by(username=username).first())
-        if user and user.is_authenticated and form.validate_on_submit():
-            return True, None
+        if form.validate_on_submit():
+            user = getattr(form, 'user',
+                           User.query.filter_by(username=username).first())
+            if user and user.is_authenticated:
+                return True, None
         return False, self.messages('USER_DOES_NOT_EXIST')

@@ -1,23 +1,16 @@
-/////////////////////////////////////////////////////////////
-//
-// pgAdmin 4 - PostgreSQL Tools
-//
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
-// This software is released under the PostgreSQL Licence
-//
-//////////////////////////////////////////////////////////////
-import { makeStyles } from '@material-ui/core';
-import React, { useRef, useEffect } from 'react';
+import { styled } from '@mui/material/styles';
+import React, { useRef, useEffect, useCallback } from 'react';
 import PgReactDataGrid from '../../../../../static/js/components/PgReactDataGrid';
-import FolderIcon from '@material-ui/icons/Folder';
-import StorageRoundedIcon from '@material-ui/icons/StorageRounded';
-import DescriptionIcon from '@material-ui/icons/Description';
-import LockRoundedIcon from '@material-ui/icons/LockRounded';
+import FolderIcon from '@mui/icons-material/Folder';
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
+import DescriptionIcon from '@mui/icons-material/Description';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import PropTypes from 'prop-types';
 import gettext from 'sources/gettext';
 
-const useStyles = makeStyles((theme)=>({
-  grid: {
+
+const StyledPgReactDataGrid = styled(PgReactDataGrid)(({theme}) => ({
+  '&.Grid-grid': {
     fontSize: '13px',
     '& .rdg-header-row': {
       '& .rdg-cell': {
@@ -31,39 +24,39 @@ const useStyles = makeStyles((theme)=>({
         '&.rdg-editor-container': {
           padding: '0px',
         },
+      },
+      '& .Grid-input': {
+        appearance: 'none',
+        width: '100%',
+        height: '100%',
+        verticalAlign: 'top',
+        outline: 'none',
+        backgroundColor: theme.palette.background.default,
+        color: theme.palette.text.primary,
+        border: 0,
+        boxShadow: 'inset 0 0 0 1.5px '+theme.palette.primary.main,
+        padding: '0 2px',
+        '::selection': {
+          background: theme.palette.primary.light,
+        }
+      },
+      '& .Grid-protected': {
+        height: '0.75rem',
+        width: '0.75rem',
+        position: 'absolute',
+        left: '14px',
+        top: '5px',
+        color: theme.palette.error.main,
+        backgroundColor: 'inherit',
       }
     }
   },
-  input: {
-    appearance: 'none',
-    width: '100%',
-    height: '100%',
-    verticalAlign: 'top',
-    outline: 'none',
-    backgroundColor: theme.palette.background.default,
-    color: theme.palette.text.primary,
-    border: 0,
-    boxShadow: 'inset 0 0 0 1.5px '+theme.palette.primary.main,
-    padding: '0 2px',
-    '::selection': {
-      background: theme.palette.primary.light,
-    }
-  },
-  protected: {
-    height: '0.75rem',
-    width: '0.75rem',
-    position: 'absolute',
-    left: '14px',
-    top: '5px',
-    color: theme.palette.error.main,
-    backgroundColor: 'inherit',
-  }
 }));
 
 export const GridContextUtils = React.createContext();
 
 export function FileNameEditor({row, column, onRowChange, onClose}) {
-  const classes = useStyles();
+
   const value = row[column.key] ?? '';
   const [localVal, setLocalVal] = React.useState(value);
   const localValRef = useRef(localVal);
@@ -77,14 +70,15 @@ export function FileNameEditor({row, column, onRowChange, onClose}) {
   }, []);
 
   const onKeyDown = (e)=>{
-    if(e.code === 'Tab' || e.code === 'Enter') {
+    if(e.code === 'Tab' || e.code == 'Escape' || e.code == 'Enter') {
       e.preventDefault();
+      e.stopPropagation();
       onClose();
     }
   };
   return (
     <input
-      className={classes.input}
+      className='Grid-input'
       value={localVal}
       onChange={(e)=>{
         setLocalVal(e.target.value);
@@ -102,7 +96,7 @@ FileNameEditor.propTypes = {
   onClose: PropTypes.func,
 };
 function FileNameFormatter({row}) {
-  const classes = useStyles();
+
   let icon = <DescriptionIcon style={{fontSize: '1.2rem'}} />;
   if(row.file_type == 'dir') {
     icon = <FolderIcon style={{fontSize: '1.2rem'}} />;
@@ -111,7 +105,7 @@ function FileNameFormatter({row}) {
   }
   return <>
     {icon}
-    {Boolean(row.Protected) && <LockRoundedIcon className={classes.protected}/>}
+    {Boolean(row.Protected) && <LockRoundedIcon className='Grid-protected'/>}
     <span style={{marginLeft: '4px'}}>{row['Filename']}</span>
   </>;
 }
@@ -123,44 +117,46 @@ const columns = [
   {
     key: 'Filename',
     name: gettext('Name'),
-    formatter: FileNameFormatter,
-    editor: FileNameEditor,
-    editorOptions: {
-      editOnClick: false,
-      onCellKeyDown: (e)=>e.preventDefault(),
-    }
+    renderCell: FileNameFormatter,
+    renderEditCell: FileNameEditor,
   },{
     key: 'Properties.DateModified',
     name: gettext('Date Modified'),
-    formatter: ({row})=><>{row.Properties?.['Date Modified']}</>
+    renderCell: ({row})=><>{row.Properties?.['Date Modified']}</>
   },{
     key: 'Properties.Size',
     name: gettext('Size'),
-    formatter: ({row})=><>{row.file_type != 'dir' && row.Properties?.['Size']}</>
+    renderCell: ({row})=><>{row.file_type != 'dir' && row.Properties?.['Size']}</>
   }
 ];
 
 
 export default function ListView({items, operation, ...props}) {
-  const classes = useStyles();
   const gridRef = useRef();
 
   useEffect(()=>{
     if(operation.type) {
-      operation.type == 'add' && gridRef.current.scrollToRow(operation.idx);
+      operation.type == 'add' && gridRef.current.scrollToCell({rowIdx: operation.idx});
       gridRef.current.selectCell({idx: 0, rowIdx: operation.idx}, true);
     }
   }, [operation]);
 
-  useEffect(()=>{
-    gridRef.current.selectCell({idx: 0, rowIdx: 0});
-  }, [gridRef.current?.element]);
+  const onRowsChange = useCallback((rows)=>{
+    operation?.onComplete?.(rows[operation.idx], operation.idx);
+  }, [operation]);
+
+  const onCellKeyDown = useCallback(({mode}, e)=>{
+    /* Typing should not open the editor */
+    if(mode == 'SELECT' && e.code != 'ArrowDown' && e.code != 'ArrowUp') {
+      e.preventGridDefault();
+    }
+  }, []);
 
   return (
-    <PgReactDataGrid
+    <StyledPgReactDataGrid
       gridRef={gridRef}
-      id="files"
-      className={classes.grid}
+      id="list"
+      className='Grid-grid'
       hasSelectColumn={false}
       columns={columns}
       rows={items}
@@ -168,14 +164,13 @@ export default function ListView({items, operation, ...props}) {
         sortable: true,
         resizable: true
       }}
-      headerRowHeight={28}
+      headerRowHeight={35}
       rowHeight={28}
       mincolumnWidthBy={25}
       enableCellSelect={false}
       noRowsText={gettext('No files/folders found')}
-      onRowsChange={(rows)=>{
-        operation?.onComplete?.(rows[operation.idx], operation.idx);
-      }}
+      onRowsChange={onRowsChange}
+      onCellKeyDown={onCellKeyDown}
       {...props}
     />
   );

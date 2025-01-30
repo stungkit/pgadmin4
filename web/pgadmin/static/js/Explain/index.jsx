@@ -2,33 +2,33 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-import { Box, Tab, Tabs } from '@material-ui/core';
+import { Box, Tab, Tabs } from '@mui/material';
+import { styled } from '@mui/material/styles';
 import React from 'react';
 import _ from 'lodash';
 import Graphical from './Graphical';
 import TabPanel from '../components/TabPanel';
 import gettext  from 'sources/gettext';
 import ImageMapper from './ImageMapper';
-import { makeStyles } from '@material-ui/styles';
 import Analysis from './Analysis';
 import ExplainStatistics from './ExplainStatistics';
 import PropTypes from 'prop-types';
 import EmptyPanelMessage from '../components/EmptyPanelMessage';
 
-const useStyles = makeStyles((theme)=>({
-  tabPanel: {
-    padding: 0,
-    backgroundColor: theme.palette.background.default,
-  },
+const StyledBox = styled(Box)(({theme}) => ({
+  '& .Explain-tabPanel': {
+    padding: '0 !important',
+    backgroundColor: theme.palette.background.default + ' !important',
+  }
 }));
 
 // Some predefined constants used to calculate image location and its border
-let pWIDTH = 100.;
-let pHEIGHT = 100.;
+let pWIDTH = 100;
+let pHEIGHT = 100;
 let offsetX = 200,
   offsetY = 60;
 let xMargin = 25,
@@ -390,11 +390,9 @@ function parsePlan(data, ctx) {
       plans.push(plan);
       idx++;
     });
-  } else{
-    if('loops' in data && 'exclusive' in data) {
-      data['inclusive'] = Math.ceil10(data['Actual Total Time'] / data['loops'] || 1, -3);
-      data['exclusive'] = data['inclusive'];
-    }
+  } else if('loops' in data && 'exclusive' in data) {
+    data['inclusive'] = Math.ceil10(data['Actual Total Time'] / data['loops'] || 1, -3);
+    data['exclusive'] = data['inclusive'];
   }
 
   if ('exclusive' in data) {
@@ -467,8 +465,10 @@ function parsePlanData(data, ctx) {
   return retPlan;
 }
 
-export default function Explain({plans=[]}) {
-  const classes = useStyles();
+export default function Explain({plans=[],
+  emptyMessage=gettext('Use Explain/Explain analyze button to generate the plan for a query. Alternatively, you can also execute "EXPLAIN (FORMAT JSON) [QUERY]".')
+}) {
+
   const [tabValue, setTabValue] = React.useState(0);
 
   let ctx = React.useRef({});
@@ -490,12 +490,14 @@ export default function Explain({plans=[]}) {
   }, [plans]);
 
   if(_.isEmpty(plans)) {
-    return <Box height="100%" display="flex" flexDirection="column">
-      <EmptyPanelMessage text={gettext('Use Explain/Explain analyze button to generate the plan for a query. Alternatively, you can also execute "EXPLAIN (FORMAT JSON) [QUERY]".')} />
-    </Box>;
+    return (
+      <StyledBox height="100%" display="flex" flexDirection="column">
+        {emptyMessage && <EmptyPanelMessage text={emptyMessage} />}
+      </StyledBox>
+    );
   }
   return (
-    <Box height="100%" display="flex" flexDirection="column">
+    <StyledBox height="100%" display="flex" flexDirection="column">
       <Box>
         <Tabs
           value={tabValue}
@@ -505,26 +507,27 @@ export default function Explain({plans=[]}) {
           // indicatorColor="primary"
           variant="scrollable"
           scrollButtons="auto"
-          action={(ref)=>ref && ref.updateIndicator()}
+          action={(ref)=>ref?.updateIndicator()}
         >
           <Tab label="Graphical" />
           <Tab label="Analysis" />
           <Tab label="Statistics" />
         </Tabs>
       </Box>
-      <TabPanel value={tabValue} index={0} classNameRoot={classes.tabPanel}>
+      <TabPanel value={tabValue} index={0} classNameRoot='Explain-tabPanel'>
         <Graphical planData={planData} ctx={ctx.current}/>
       </TabPanel>
-      <TabPanel value={tabValue} index={1} classNameRoot={classes.tabPanel}>
+      <TabPanel value={tabValue} index={1} classNameRoot='Explain-tabPanel'>
         <Analysis explainTable={ctx.current.explainTable} />
       </TabPanel>
-      <TabPanel value={tabValue} index={2} classNameRoot={classes.tabPanel}>
+      <TabPanel value={tabValue} index={2} classNameRoot='Explain-tabPanel'>
         <ExplainStatistics explainTable={ctx.current.explainTable} />
       </TabPanel>
-    </Box>
+    </StyledBox>
   );
 }
 
 Explain.propTypes = {
-  plans: PropTypes.array,
+  plans: PropTypes.array.isRequired,
+  emptyMessage: PropTypes.string,
 };

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -32,15 +32,15 @@ class TestMacros(BaseTestGenerator):
              operation='set',
              data={
                  'changed': [
-                     {'id': 1,
+                     {'mid': 1,
                       'name': 'Test Macro 1',
                       'sql': 'SELECT 1;'
                       },
-                     {'id': 2,
+                     {'mid': 2,
                       'name': 'Test Macro 2',
                       'sql': 'SELECT 2;'
                       },
-                     {'id': 3,
+                     {'mid': 3,
                       'name': 'Test Macro 3',
                       'sql': 'SELECT 3;'
                       },
@@ -108,7 +108,9 @@ class TestMacros(BaseTestGenerator):
         self.trans_id = str(secrets.choice(range(1, 9999999)))
         url = '/sqleditor/initialize/sqleditor/{0}/{1}/{2}/{3}'.format(
             self.trans_id, utils.SERVER_GROUP, self.server_id, self.db_id)
-        response = self.tester.post(url)
+        response = self.tester.post(url, data=json.dumps({
+            "dbname": database_info["db_name"]
+        }))
         self.assertEqual(response.status_code, 200)
 
     def runTest(self):
@@ -127,10 +129,11 @@ class TestMacros(BaseTestGenerator):
             self.assertEqual(response.status_code, 200)
 
             for m in self.data['changed']:
+                if self.operation == 'set':
+                    m['id'] = m['mid']
                 url = '/sqleditor/get_macros/{0}/{1}'.format(m['id'],
                                                              self.trans_id)
                 response = self.tester.get(url)
-
                 if self.operation == 'clear':
                     self.assertEqual(response.status_code, 410)
                 elif self.operation == 'set':

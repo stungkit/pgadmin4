@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -30,7 +30,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict()
+                 http_session=dict(),
              ),
              pickle_load_return=None,
              get_driver_exception=False,
@@ -60,7 +60,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData=dict())
+                 http_session=dict(gridData=dict()),
              ),
              pickle_load_return=None,
              get_driver_exception=False,
@@ -91,7 +91,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
+                 http_session=dict(gridData={'123': dict(command_obj='')}),
              ),
              pickle_load_return=None,
              get_driver_exception=False,
@@ -112,8 +112,7 @@ class StartRunningQueryTest(BaseTestGenerator):
                             'not found.',
                      can_edit=False,
                      can_filter=False,
-                     notifies=None,
-                     transaction_status=None
+                     notifies=None
                  )
              ),
              expect_internal_server_error_called_with=None,
@@ -126,7 +125,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
+                 http_session=dict(gridData={'123': dict(command_obj='')}),
              ),
              pickle_load_return=MagicMock(conn_id=1,
                                           update_fetched_row_cnt=MagicMock()),
@@ -155,7 +154,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
+                 http_session=dict(gridData={'123': dict(command_obj='')}),
              ),
              pickle_load_return=MagicMock(
                  conn_id=1,
@@ -184,7 +183,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
+                 http_session=dict(gridData={'123': dict(command_obj='')}),
              ),
              pickle_load_return=MagicMock(
                  conn_id=1,
@@ -212,7 +211,7 @@ class StartRunningQueryTest(BaseTestGenerator):
              function_parameters=dict(
                  sql=dict(sql='some sql', explain_plan=None),
                  trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
+                 http_session=dict(gridData={'123': dict(command_obj='')}),
              ),
              pickle_load_return=MagicMock(
                  conn_id=1,
@@ -236,182 +235,6 @@ class StartRunningQueryTest(BaseTestGenerator):
              ),
              expected_logger_error=get_connection_lost_exception,
              expect_execute_void_called_with='some sql',
-         )),
-        ('When server is connected and start query async request, '
-         'it returns an success message',
-         dict(
-             function_parameters=dict(
-                 sql=dict(sql='some sql', explain_plan=None),
-                 trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
-             ),
-             pickle_load_return=MagicMock(
-                 conn_id=1,
-                 update_fetched_row_cnt=MagicMock(),
-                 set_connection_id=MagicMock(),
-                 auto_commit=True,
-                 auto_rollback=False,
-                 can_edit=lambda: True,
-                 can_filter=lambda: True
-             ),
-             get_driver_exception=False,
-             get_connection_lost_exception=False,
-             manager_connection_exception=None,
-
-             is_connected_to_server=True,
-             connection_connect_return=None,
-             execute_async_return_value=[True,
-                                         'async function result output'],
-             is_begin_required=False,
-             is_rollback_required=False,
-             apply_explain_plan_wrapper_if_needed_return_value='some sql',
-
-             expect_make_json_response_to_have_been_called_with=dict(
-                 data=dict(
-                     status=True,
-                     result='async function result output',
-                     can_edit=True,
-                     can_filter=True,
-                     notifies=None,
-                     transaction_status=None
-                 )
-             ),
-             expect_internal_server_error_called_with=None,
-             expected_logger_error=None,
-             expect_execute_void_called_with='some sql',
-         )),
-        ('When server is connected and start query async request and '
-         'begin is required, '
-         'it returns an success message',
-         dict(
-             function_parameters=dict(
-                 sql=dict(sql='some sql', explain_plan=None),
-                 trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
-             ),
-             pickle_load_return=MagicMock(
-                 conn_id=1,
-                 update_fetched_row_cnt=MagicMock(),
-                 set_connection_id=MagicMock(),
-                 auto_commit=True,
-                 auto_rollback=False,
-                 can_edit=lambda: True,
-                 can_filter=lambda: True
-             ),
-             get_driver_exception=False,
-             get_connection_lost_exception=False,
-             manager_connection_exception=None,
-
-             is_connected_to_server=True,
-             connection_connect_return=None,
-             execute_async_return_value=[True,
-                                         'async function result output'],
-             is_begin_required=True,
-             is_rollback_required=False,
-             apply_explain_plan_wrapper_if_needed_return_value='some sql',
-
-             expect_make_json_response_to_have_been_called_with=dict(
-                 data=dict(
-                     status=True,
-                     result='async function result output',
-                     can_edit=True,
-                     can_filter=True,
-                     notifies=None,
-                     transaction_status=None
-                 )
-             ),
-             expect_internal_server_error_called_with=None,
-             expected_logger_error=None,
-             expect_execute_void_called_with='some sql',
-         )),
-        ('When server is connected and start query async request and '
-         'rollback is required, '
-         'it returns an success message',
-         dict(
-             function_parameters=dict(
-                 sql=dict(sql='some sql', explain_plan=None),
-                 trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
-             ),
-             pickle_load_return=MagicMock(
-                 conn_id=1,
-                 update_fetched_row_cnt=MagicMock(),
-                 set_connection_id=MagicMock(),
-                 auto_commit=True,
-                 auto_rollback=False,
-                 can_edit=lambda: True,
-                 can_filter=lambda: True
-             ),
-             get_driver_exception=False,
-             get_connection_lost_exception=False,
-             manager_connection_exception=None,
-
-             is_connected_to_server=True,
-             connection_connect_return=None,
-             execute_async_return_value=[True,
-                                         'async function result output'],
-             is_begin_required=False,
-             is_rollback_required=True,
-             apply_explain_plan_wrapper_if_needed_return_value='some sql',
-
-             expect_make_json_response_to_have_been_called_with=dict(
-                 data=dict(
-                     status=True,
-                     result='async function result output',
-                     can_edit=True,
-                     can_filter=True,
-                     notifies=None,
-                     transaction_status=None
-                 )
-             ),
-             expect_internal_server_error_called_with=None,
-             expected_logger_error=None,
-             expect_execute_void_called_with='some sql',
-         )),
-        ('When server is connected and start query async request with '
-         'explain plan wrapper, '
-         'it returns an success message',
-         dict(
-             function_parameters=dict(
-                 sql=dict(sql='some sql', explain_plan=None),
-                 trans_id=123,
-                 http_session=dict(gridData={'123': dict(command_obj='')})
-             ),
-             pickle_load_return=MagicMock(
-                 conn_id=1,
-                 update_fetched_row_cnt=MagicMock(),
-                 set_connection_id=MagicMock(),
-                 auto_commit=True,
-                 auto_rollback=False,
-                 can_edit=lambda: True,
-                 can_filter=lambda: True
-             ),
-             get_driver_exception=False,
-             get_connection_lost_exception=False,
-             manager_connection_exception=None,
-
-             is_connected_to_server=True,
-             connection_connect_return=None,
-             execute_async_return_value=[True,
-                                         'async function result output'],
-             is_begin_required=False,
-             is_rollback_required=True,
-             apply_explain_plan_wrapper_if_needed_return_value='EXPLAIN '
-                                                               'PLAN some sql',
-
-             expect_make_json_response_to_have_been_called_with=dict(
-                 data=dict(
-                     status=True,
-                     result='async function result output',
-                     can_edit=True,
-                     can_filter=True,
-                     notifies=None,
-                     transaction_status=None
-                 )
-             ),
-             expect_internal_server_error_called_with=None,
-             expected_logger_error=None,
-             expect_execute_void_called_with='EXPLAIN PLAN some sql',
          )),
     ]
 

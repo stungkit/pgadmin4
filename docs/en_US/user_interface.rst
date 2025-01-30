@@ -22,7 +22,7 @@ Features of pgAdmin 4 include:
 * online help and information about using pgAdmin dialogs and tools.
 
 When pgAdmin opens, the interface features a menu bar and a window divided into
-two panes: the *Browser* tree control in the left pane, and a tabbed browser in
+two panes: the *Object Explorer* tree control in the left pane, and a tabbed browser in
 the right pane.
 
 .. image:: images/welcome.png
@@ -32,7 +32,7 @@ the right pane.
 Select an icon from the *Quick Links* panel on the *Dashboard* tab to:
 
 * Click the *Add New Server* button to open the
-  :ref:`Create - Server dialog <server_dialog>` to add a new server definition.
+  :ref:`Register - Server dialog <server_dialog>` to add a new server definition.
 * Click the *Configure pgAdmin* button to open the
   :ref:`Preferences dialog <preferences>` to customize your pgAdmin client.
 

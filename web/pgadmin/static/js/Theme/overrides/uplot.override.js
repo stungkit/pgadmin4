@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -22,6 +22,7 @@ export default function uplotOverride(theme) {
       color: theme.palette.background.default,
       backgroundColor: theme.palette.text.primary,
       zIndex: 9999,
+      display: 'block',
 
       '& .uplot-tooltip-label': {
         display: 'flex',

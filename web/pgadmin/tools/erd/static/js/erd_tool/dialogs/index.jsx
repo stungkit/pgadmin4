@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -23,7 +23,7 @@ export default class ERDDialogs {
     return new Promise((resolve, reject)=>{
       let errorMsg = okCallback(data);
       if(errorMsg) {
-        reject(errorMsg);
+        reject(new Error(errorMsg));
       } else {
         closeModal();
         resolve();
@@ -52,6 +52,7 @@ export default class ERDDialogs {
           hasSQL={false}
           disableSqlHelp={true}
           disableDialogHelp={true}
+          Notifier={this.modal}
         />
       );
     }, {

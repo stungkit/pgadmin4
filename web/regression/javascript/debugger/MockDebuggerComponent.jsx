@@ -2,28 +2,32 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import React from 'react';
+import React, { useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
-import Theme from 'sources/Theme';
 import {DebuggerContext, DebuggerEventsContext} from '../../../pgadmin/tools/debugger/static/js/components/DebuggerComponent';
+import { withBrowser } from '../genericFunctions';
 
-export default function MockDebuggerComponent({value, eventsvalue, children}) {
+function MockDebuggerComponent({value, eventsvalue, children}) {
+  const containerRef = useRef();
+  const valObj = useMemo(() => ({...value, containerRef: containerRef}), [value]);
   return (
-    <Theme>
-      <DebuggerContext.Provider value={value}>
-        <DebuggerEventsContext.Provider value={eventsvalue}>
+    <DebuggerContext.Provider value={valObj}>
+      <DebuggerEventsContext.Provider value={eventsvalue}>
+        <div ref={containerRef} style={{width: '100%', height: '100%'}}>
           {children}
-        </DebuggerEventsContext.Provider>
-      </DebuggerContext.Provider>
-    </Theme>
+        </div>
+      </DebuggerEventsContext.Provider>
+    </DebuggerContext.Provider>
   );
 }
+
+export default withBrowser(MockDebuggerComponent);
 
 MockDebuggerComponent.propTypes = {
   value: PropTypes.any,

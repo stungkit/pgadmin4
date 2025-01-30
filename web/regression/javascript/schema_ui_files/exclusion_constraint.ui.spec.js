@@ -2,21 +2,20 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import '../helper/enzyme.helper';
-import { createMount } from '@material-ui/core/test-utils';
+
 import { SCHEMA_STATE_ACTIONS } from '../../../pgadmin/static/js/SchemaView';
 import BaseUISchema from '../../../pgadmin/static/js/SchemaView/base_schema.ui';
 import _ from 'lodash';
 import { getNodeExclusionConstraintSchema } from '../../../pgadmin/browser/server_groups/servers/databases/schemas/tables/constraints/exclusion_constraint/static/js/exclusion_constraint.ui';
 import * as nodeAjax from '../../../pgadmin/browser/static/js/node_ajax';
 import TableSchema from '../../../pgadmin/browser/server_groups/servers/databases/schemas/tables/static/js/table.ui';
-import Notify from '../../../pgadmin/static/js/helpers/Notifier';
-import {genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
+import {addNewDatagridRow, genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
+import pgAdmin from '../fake_pgadmin';
 
 class SchemaInColl extends BaseUISchema {
   constructor(schemaObj) {
@@ -40,60 +39,57 @@ function getFieldDepChange(schema, id) {
 }
 
 describe('ExclusionConstraintSchema', ()=>{
-  let mount;
-  let schemaObj;
+
+  const createSchemaObject = () => getNodeExclusionConstraintSchema(
+    {}, {}, {Nodes: {table: {}}}
+  );
   let getInitData = ()=>Promise.resolve({});
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
   beforeAll(()=>{
-    mount = createMount();
-    spyOn(nodeAjax, 'getNodeAjaxOptions').and.returnValue(Promise.resolve([]));
-    spyOn(nodeAjax, 'getNodeListByName').and.returnValue(Promise.resolve([]));
-    schemaObj = getNodeExclusionConstraintSchema({}, {}, {Nodes: {table: {}}});
-  });
-
-  afterAll(() => {
-    mount.cleanUp();
+    jest.spyOn(nodeAjax, 'getNodeAjaxOptions').mockReturnValue(Promise.resolve([]));
+    jest.spyOn(nodeAjax, 'getNodeListByName').mockReturnValue(Promise.resolve([]));
   });
 
   beforeEach(()=>{
     genericBeforeEach();
   });
 
-  it('create', ()=>{
-    mount(getCreateView(schemaObj));
+  it('create', async ()=>{
+    await getCreateView(createSchemaObject());
   });
 
-  it('edit', ()=>{
-    mount(getEditView(schemaObj, getInitData));
+  it('edit', async ()=>{
+    await getEditView(createSchemaObject(), getInitData);
   });
 
-  it('properties', ()=>{
-    mount(getPropertiesView(schemaObj, getInitData));
+  it('properties', async ()=>{
+    await getPropertiesView(createSchemaObject(), getInitData);
   });
 
-  it('create collection', ()=>{
+  it('create collection', async ()=>{
+    let schemaObj = createSchemaObject();
     let schemaCollObj = new SchemaInColl(schemaObj);
-    let ctrl = mount(getCreateView(schemaCollObj));
+    const {ctrl, user} = await getCreateView(schemaCollObj);
     /* Make sure you hit every corner */
-    ctrl.find('DataGridView').at(0).find('PgIconButton[data-test="add-row"]').find('button').simulate('click');
+    await addNewDatagridRow(user, ctrl);
   });
 
   it('changeColumnOptions', ()=>{
-    spyOn(schemaObj.exHeaderSchema, 'changeColumnOptions').and.callThrough();
+    let schemaObj = createSchemaObject();
+    jest.spyOn(schemaObj.exHeaderSchema, 'changeColumnOptions');
     let columns = [{label: 'label', value: 'value'}];
     schemaObj.changeColumnOptions(columns);
     expect(schemaObj.exHeaderSchema.changeColumnOptions).toHaveBeenCalledWith(columns);
   });
 
   describe('ExclusionColHeaderSchema', ()=>{
+    let schemaObj = createSchemaObject();
     it('getNewData', ()=>{
       schemaObj.exHeaderSchema.columnOptions = [
         {label: 'id', value: 'id', datatype: 'numeric'},
         {label: 'name', value: 'name', datatype: 'char'}
       ];
-      spyOn(schemaObj.exColumnSchema, 'getNewData');
+      jest.spyOn(schemaObj.exColumnSchema, 'getNewData').mockImplementation(() => {});
       schemaObj.exHeaderSchema.getNewData({
         is_exp: false,
         column: 'id',
@@ -119,6 +115,7 @@ describe('ExclusionConstraintSchema', ()=>{
   });
 
   describe('ExclusionColumnSchema', ()=>{
+    let schemaObj = createSchemaObject();
     it('isEditable', ()=>{
       schemaObj.exColumnSchema.isNewExCons = false;
       expect(schemaObj.exColumnSchema.isEditable()).toBe(false);
@@ -133,7 +130,8 @@ describe('ExclusionConstraintSchema', ()=>{
   });
 
   it('depChange', ()=>{
-    let state = {columns: [{local_column: 'id'}]};
+    let schemaObj = createSchemaObject();
+    let state = {columns: [{column: 'id'}]};
 
     schemaObj.top = new TableSchema({}, null);
     expect(getFieldDepChange(schemaObj, 'columns')(state, ['columns', 0], null, {
@@ -163,7 +161,7 @@ describe('ExclusionConstraintSchema', ()=>{
       path: ['columns', 0, 'name'],
       value: 'id123',
     })).toEqual({
-      columns: [{local_column: 'id123'}],
+      columns: [{column: 'id123'}],
     });
 
     state = {};
@@ -177,6 +175,7 @@ describe('ExclusionConstraintSchema', ()=>{
   });
 
   it('columns formatter', ()=>{
+    let schemaObj = createSchemaObject();
     let formatter = _.find(schemaObj.fields, (f)=>f.id=='columns').cell().controlProps.formatter;
     expect(formatter.fromRaw([{
       column: 'lid',
@@ -188,6 +187,7 @@ describe('ExclusionConstraintSchema', ()=>{
   });
 
   describe('amname change', ()=>{
+    let schemaObj = createSchemaObject();
     let confirmSpy;
     let deferredDepChange;
     let operClassOptions = [
@@ -195,13 +195,14 @@ describe('ExclusionConstraintSchema', ()=>{
     ];
 
     beforeEach(()=>{
-      spyOn(schemaObj.exColumnSchema, 'setOperClassOptions').and.callThrough();
-      spyOn(schemaObj.fieldOptions, 'getOperClass').and.returnValue(operClassOptions);
-      confirmSpy = spyOn(Notify, 'confirm').and.callThrough();
+      jest.spyOn(schemaObj.exColumnSchema, 'setOperClassOptions');
+      jest.spyOn(schemaObj.fieldOptions, 'getOperClass').mockReturnValue(operClassOptions);
+      confirmSpy = jest.spyOn(pgAdmin.Browser.notifier, 'confirm');
       deferredDepChange = _.find(schemaObj.fields, (f)=>f.id=='amname')?.deferredDepChange;
     });
 
     it('btree', (done)=>{
+      confirmSpy.mockClear();
       let state = {amname: 'btree'};
       let deferredPromise = deferredDepChange(state);
       deferredPromise.then((depChange)=>{
@@ -212,10 +213,11 @@ describe('ExclusionConstraintSchema', ()=>{
         done();
       });
       /* Press OK */
-      confirmSpy.calls.argsFor(0)[2]();
+      confirmSpy.mock.calls[0][2]();
     });
 
     it('not btree', (done)=>{
+      confirmSpy.mockClear();
       let state = {amname: 'gist'};
       let deferredPromise = deferredDepChange(state);
       deferredPromise.then((depChange)=>{
@@ -226,10 +228,11 @@ describe('ExclusionConstraintSchema', ()=>{
         done();
       });
       /* Press OK */
-      confirmSpy.calls.argsFor(0)[2]();
+      confirmSpy.mock.calls[0][2]();
     });
 
     it('press no', (done)=>{
+      confirmSpy.mockClear();
       let state = {amname: 'gist'};
       let deferredPromise = deferredDepChange(state, null, null, {
         oldState: {
@@ -237,7 +240,7 @@ describe('ExclusionConstraintSchema', ()=>{
         },
       });
       /* Press Cancel */
-      confirmSpy.calls.argsFor(0)[3]();
+      confirmSpy.mock.calls[0][3]();
       deferredPromise.then((depChange)=>{
         expect(depChange()).toEqual({
           amname: 'btree',
@@ -248,8 +251,9 @@ describe('ExclusionConstraintSchema', ()=>{
   });
 
   it('validate', ()=>{
+    let schemaObj = createSchemaObject();
     let state = {};
-    let setError = jasmine.createSpy('setError');
+    let setError = jest.fn();
 
     state.columns = ['id'];
     state.autoindex = true;
@@ -260,4 +264,3 @@ describe('ExclusionConstraintSchema', ()=>{
     expect(schemaObj.validate(state, setError)).toBe(false);
   });
 });
-

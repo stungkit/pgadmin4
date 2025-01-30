@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -16,7 +16,8 @@ import secrets
 
 from flask import Response, render_template, request
 from flask_babel import gettext as _
-from flask_security import login_required, current_user
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import bad_request
 from pgadmin.utils.constants import MIMETYPE_APP_JS
@@ -54,13 +55,13 @@ blueprint = ImportExportServersModule(MODULE_NAME, __name__)
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(errormsg=_("This URL cannot be called directly."))
 
 
 @blueprint.route("/js/import_export_servers.js")
-@login_required
+@pga_login_required
 def script():
     """render the import/export javascript file"""
     return Response(
@@ -72,7 +73,7 @@ def script():
 
 
 @blueprint.route('/get_servers', methods=['GET'], endpoint='get_servers')
-@login_required
+@pga_login_required
 def get_servers():
     """
     This function is used to get the servers with server groups
@@ -88,7 +89,8 @@ def get_servers():
         # Loop through all the servers for specific server group
         servers = Server.query.filter(
             Server.user_id == current_user.id,
-            Server.servergroup_id == group.id)
+            Server.servergroup_id == group.id,
+            Server.is_adhoc == 0)
         for server in servers:
             children.append({'value': server.id, 'label': server.name})
 
@@ -102,7 +104,7 @@ def get_servers():
 
 
 @blueprint.route('/load_servers', methods=['POST'], endpoint='load_servers')
-@login_required
+@pga_login_required
 def load_servers():
     """
     This function is used to load the servers from the json file.
@@ -117,9 +119,6 @@ def load_servers():
 
     file_path = unquote(filename)
 
-    # retrieve storage directory path
-    storage_manager_path = get_storage_directory()
-
     try:
         file_path = filename_with_file_manager_path(file_path)
     except PermissionError as e:
@@ -133,7 +132,8 @@ def load_servers():
                 data = json.loads(j.read())
 
                 # Validate the json file and data
-                errmsg = validate_json_data(data, False)
+                errmsg = validate_json_data(
+                    data, current_user.has_role("Administrator"))
                 if errmsg is not None:
                     return internal_server_error(errmsg)
 
@@ -169,7 +169,7 @@ def load_servers():
 
 
 @blueprint.route('/save', methods=['POST'], endpoint='save')
-@login_required
+@pga_login_required
 def save():
     """
     This function is used to import or export based on the data
@@ -192,6 +192,9 @@ def save():
     status = False
     errmsg = None
     if data['type'] == 'export':
+        file_ext = os.path.splitext(data['filename'])[-1].lower()
+        if file_ext != '.json':
+            data['filename'] = data['filename'] + '.json'
         status, errmsg = \
             dump_database_servers(data['filename'], data['selected_sever_ids'])
     elif data['type'] == 'import':

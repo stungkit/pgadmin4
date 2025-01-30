@@ -20,7 +20,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}\{#MyAppVersion}
+DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableWelcomePage=no
 DisableProgramGroupPage=auto
@@ -143,36 +143,6 @@ begin
 
   { Are Equal }
   Result := 0;
-end;
-
-function IsPathValid(Path: string): Boolean;
-var
-  I: Integer;
-  Ret: Boolean;
-begin
-  Ret := True;
-  Path := Uppercase(Path);
-  Result :=
-    (Length(Path) >= 3) and
-    (Path[1] >= 'A') and (Path[1] <= 'Z') and
-    (Path[2] = ':') and
-    (Path[3] = '\');
-
-  if Result then
-  begin
-    for I := 3 to Length(Path) do
-      begin
-        case Path[I] of
-          '0'..'9', 'A'..'Z', '\', ' ', '.', '-', '_', '(', ')':
-          else
-          begin
-            Ret := False;
-            break;
-          end;
-      end;
-    end;
-  end;
-  Result := Ret;
 end;
 
 function CheckPgAdminAlreadyInstalled: Boolean;
@@ -328,16 +298,6 @@ var
 begin
   Ret := True;
   case CurPageID of
-    wpSelectDir:
-      begin
-        // Validate InstallDir path
-        if Not IsPathValid(ExpandConstant('{app}')) then
-        begin
-          MsgBox(ExpandConstant('{cm:InvalidPath}'), mbError, MB_OK);
-          Ret := False;
-        end;
-      end;
-
     wpReady:
 	begin
       if (IsUpgradeMode) then

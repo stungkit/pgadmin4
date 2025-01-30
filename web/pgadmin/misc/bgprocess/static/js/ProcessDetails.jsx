@@ -2,37 +2,36 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import React, { useState, useMemo } from 'react';
+import { styled } from '@mui/material/styles';
 import gettext from 'sources/gettext';
 import url_for from 'sources/url_for';
-import { Box, makeStyles } from '@material-ui/core';
+import { Box } from '@mui/material';
 import PropTypes from 'prop-types';
 import { MESSAGE_TYPE, NotifierMessage } from '../../../../static/js/components/FormComponents';
-import { BgProcessManagerProcessState } from './BgProcessManager';
+import { BgProcessManagerProcessState } from './BgProcessConstants';
 import { DefaultButton, PgIconButton } from '../../../../static/js/components/Buttons';
-import HighlightOffRoundedIcon from '@material-ui/icons/HighlightOffRounded';
-import AccessTimeRoundedIcon from '@material-ui/icons/AccessTimeRounded';
+import HighlightOffRoundedIcon from '@mui/icons-material/HighlightOffRounded';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 import { useInterval } from '../../../../static/js/custom_hooks';
 import getApiInstance from '../../../../static/js/api_instance';
 import pgAdmin from 'sources/pgadmin';
-import FolderSharedRoundedIcon from '@material-ui/icons/FolderSharedRounded';
+import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded';
 
 
-const useStyles = makeStyles((theme)=>({
-  container: {
-    backgroundColor: theme.palette.background.default,
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px',
-    userSelect: 'text',
-  },
-  cmd: {
+const StyledBox = styled(Box)(({theme}) => ({
+  backgroundColor: theme.palette.background.default,
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '8px',
+  userSelect: 'text',
+  '& .ProcessDetails-cmd': {
     ...theme.mixins.panelBorder.all,
     borderRadius: theme.shape.borderRadius,
     backgroundColor: theme.otherVars.inputDisabledBg,
@@ -40,19 +39,7 @@ const useStyles = makeStyles((theme)=>({
     margin: '8px 0px',
     padding: '4px',
   },
-  logs: {
-    flexGrow: 1,
-    borderRadius: theme.shape.borderRadius,
-    padding: '4px',
-    overflow: 'auto',
-    textOverflow: 'wrap-text',
-    margin: '8px 0px',
-    ...theme.mixins.panelBorder.all,
-  },
-  logErr: {
-    color: theme.palette.error.main,
-  },
-  terminateBtn: {
+  '& .ProcessDetails-terminateBtn': {
     backgroundColor: theme.palette.error.main,
     color: theme.palette.error.contrastText,
     border: 0,
@@ -64,7 +51,20 @@ const useStyles = makeStyles((theme)=>({
       color: theme.palette.error.contrastText + ' !important',
       border: 0,
     }
-  }
+  },
+  '& .ProcessDetails-logs': {
+    flexGrow: 1,
+    borderRadius: theme.shape.borderRadius,
+    padding: '4px',
+    overflow: 'auto',
+    textOverflow: 'wrap-text',
+    margin: '8px 0px',
+    ...theme.mixins.panelBorder.all,
+
+    '& .ProcessDetails-logErr': {
+      color: theme.palette.error.main,
+    },
+  },
 }));
 
 async function getDetailedStatus(api, jobId, out, err) {
@@ -79,7 +79,6 @@ async function getDetailedStatus(api, jobId, out, err) {
 }
 
 export default function ProcessDetails({data}) {
-  const classes = useStyles();
   const api = useMemo(()=>getApiInstance());
   const [logs, setLogs] = useState(null);
   const [completed, setCompleted] = useState(false);
@@ -148,15 +147,15 @@ export default function ProcessDetails({data}) {
 
   const errRe = new RegExp(': (' + gettext('error') + '|' + gettext('fatal') + '):', 'i');
   return (
-    <Box display="flex" flexDirection="column" className={classes.container} data-test="process-details">
+    <StyledBox display="flex" flexDirection="column" data-test="process-details">
       <Box data-test="process-message">{data.details?.message}</Box>
       {data.details?.cmd && <>
         <Box>{gettext('Running command')}:</Box>
-        <Box data-test="process-cmd" className={classes.cmd}>{data.details.cmd}</Box>
+        <Box data-test="process-cmd" className='ProcessDetails-cmd'>{data.details.cmd}</Box>
       </>}
       {data.details?.query && <>
         <Box>{gettext('Running query')}:</Box>
-        <Box data-test="process-cmd" className={classes.cmd}>{data.details.query}</Box>
+        <Box data-test="process-cmd" className='ProcessDetails-cmd'>{data.details.query}</Box>
       </>}
       <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap">
         <Box><span><AccessTimeRoundedIcon /> {gettext('Start time')}: {new Date(data.stime).toString()}</span></Box>
@@ -166,33 +165,31 @@ export default function ProcessDetails({data}) {
             pgAdmin.Tools.FileManager.openStorageManager(data.current_storage_dir);
           }} style={{marginRight: '4px'}} />}
           <DefaultButton disabled={process_state != BgProcessManagerProcessState.PROCESS_STARTED || data.server_id != null}
-            startIcon={<HighlightOffRoundedIcon />} className={classes.terminateBtn} onClick={onStopProcess}>
+            startIcon={<HighlightOffRoundedIcon />} className='ProcessDetails-terminateBtn' onClick={onStopProcess}>
               Stop Process
           </DefaultButton>
         </Box>
       </Box>
-      <Box flexGrow={1} className={classes.logs}>
+      <Box flexGrow={1} className='ProcessDetails-logs'>
         {logs == null && <span data-test="loading-logs">{gettext('Loading process logs...')}</span>}
         {logs?.length == 0 && gettext('No logs available.')}
         {logs?.map((log, i)=>{
+          let id = logs.length-i;
           return <div ref={(el)=>{
             if(i==logs.length-1) {
               el?.scrollIntoView();
             }
-          }} key={i} className={errRe.test(log) ? classes.logErr : ''}>{log}</div>;
+          }} key={id} className={errRe.test(log) ? 'ProcessDetails-logErr' : ''}>{log}</div>;
         })}
       </Box>
       <Box display="flex" alignItems="center">
         <NotifierMessage type={notifyType} message={notifyText} closable={false} textCenter={true} style={{flexGrow: 1, marginRight: '8px'}} />
         <Box>{gettext('Execution time')}: {timeTaken} {gettext('seconds')}</Box>
       </Box>
-    </Box>
+    </StyledBox>
   );
 }
 
 ProcessDetails.propTypes = {
-  closeModal: PropTypes.func,
   data: PropTypes.object,
-  onOK: PropTypes.func,
-  setHeight: PropTypes.func
 };

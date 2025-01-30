@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -15,6 +15,7 @@ class SchemaDiffRegistry():
     It is more of a registry for different type of nodes for schema diff.
     """
     _registered_nodes = dict()
+    _schema_diff_compare_mode = None
 
     def __init__(self, node_name, node_view, parent_node='schema'):
         if node_name not in SchemaDiffRegistry._registered_nodes:
@@ -59,3 +60,11 @@ class SchemaDiffRegistry():
         if not module:
             return None
         return module(**cmd)
+
+    @classmethod
+    def set_schema_diff_compare_mode(cls, mode):
+        cls._schema_diff_compare_mode = mode
+
+    @classmethod
+    def get_schema_diff_compare_mode(cls):
+        return cls._schema_diff_compare_mode

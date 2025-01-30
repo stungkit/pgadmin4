@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -79,7 +79,9 @@ NOTICE:  Hello, world!
         self.trans_id = str(secrets.choice(range(1, 9999999)))
         url = '/sqleditor/initialize/sqleditor/{0}/{1}/{2}/{3}'.format(
             self.trans_id, utils.SERVER_GROUP, self.server_id, self.db_id)
-        response = self.tester.post(url)
+        response = self.tester.post(url, data=json.dumps({
+            "dbname": database_info["db_name"]
+        }))
         self.assertEqual(response.status_code, 200)
 
         cnt = 0
@@ -89,23 +91,33 @@ NOTICE:  Hello, world!
             url = '/sqleditor/query_tool/start/{0}'.format(self.trans_id)
             response = self.tester.post(url, data=json.dumps({"sql": s}),
                                         content_type='html/json')
-
             self.assertEqual(response.status_code, 200)
-
-            # Query tool polling
             url = '/sqleditor/poll/{0}'.format(self.trans_id)
-            response = self.tester.get(url)
-            self.assertEqual(response.status_code, 200)
-            response_data = json.loads(response.data.decode('utf-8'))
 
-            if self.expected_message[cnt] is not None:
-                # Check the returned messages
-                self.assertIn(self.expected_message[cnt],
-                              response_data['data']['additional_messages'])
+            _status = True
+            # Lets poll till the status is busy and check the messages
+            while _status:
+                response = self.tester.get(url)
+                if response.data:
+                    response_data = json.loads(response.data.decode('utf-8'))
 
-            # Check the output
-            self.assertEqual(self.expected_result[cnt],
-                             response_data['data']['result'][0][0])
+                    if response_data['success'] == 1 and 'data' in\
+                            response_data:
+                        if response_data['data']['status'] == 'NotInitialised':
+                            pass
+                        elif response_data['data']['status'] == 'Busy':
+                            if self.expected_message[cnt] is not None:
+                                if response_data['data']['result']:
+
+                                    self.assertIn(
+                                        response_data['data']['result'],
+                                        self.expected_message[cnt]
+                                    )
+                        else:
+                            self.assertEqual(self.expected_result[cnt],
+                                             response_data['data']['result'][
+                                                 0][0])
+                            _status = False
 
             cnt += 1
 

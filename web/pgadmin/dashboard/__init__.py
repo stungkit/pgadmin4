@@ -2,29 +2,30 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
 """A blueprint module implementing the dashboard frame."""
 import math
-from functools import wraps
-from flask import render_template, url_for, Response, g, request
+import re
+
+from flask import render_template, Response, g, request
 from flask_babel import gettext
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 import json
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import make_response as ajax_response,\
-    internal_server_error
-from pgadmin.utils.ajax import precondition_required
+    internal_server_error, make_json_response, precondition_required
 from pgadmin.utils.driver import get_driver
-from pgadmin.utils.menu import Panel
 from pgadmin.utils.preferences import Preferences
 from pgadmin.utils.constants import PREF_LABEL_DISPLAY, MIMETYPE_APP_JS, \
-    PREF_LABEL_REFRESH_RATES
+    PREF_LABEL_REFRESH_RATES, ERROR_SERVER_ID_NOT_SPECIFIED
 
-from config import PG_DEFAULT_DRIVER
+from .precondition import check_precondition
+from .pgd_replication import blueprint as pgd_replication
+from config import PG_DEFAULT_DRIVER, ON_DEMAND_LOG_COUNT
 
 MODULE_NAME = 'dashboard'
 
@@ -35,30 +36,6 @@ class DashboardModule(PgAdminModule):
 
     def get_own_menuitems(self):
         return {}
-
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
-
-    def get_panels(self):
-        return [
-            Panel(
-                name='dashboard',
-                priority=1,
-                title=gettext('Dashboard'),
-                icon='',
-                content='',
-                is_closeable=True,
-                is_private=False,
-                limit=1,
-                is_iframe=False,
-                can_hide=True
-            ).__dict__
-        ]
 
     def register_preferences(self):
         """
@@ -112,19 +89,85 @@ class DashboardModule(PgAdminModule):
             help_str=help_string
         )
 
+        self.hpc_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'hpc_stats_refresh',
+            gettext("Handle & Process count statistics refresh rate"),
+            'integer', 5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.cpu_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'cpu_stats_refresh',
+            gettext(
+                "Percentage of CPU time used by different process \
+                modes statistics refresh rate"
+            ), 'integer', 5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.la_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'la_stats_refresh',
+            gettext("Average load statistics refresh rate"), 'integer',
+            5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.pcpu_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'pcpu_stats_refresh',
+            gettext("CPU usage per process statistics refresh rate"),
+            'integer', 5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.m_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'm_stats_refresh',
+            gettext("Memory usage statistics refresh rate"), 'integer',
+            5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.sm_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'sm_stats_refresh',
+            gettext("Swap memory usage statistics refresh rate"), 'integer',
+            5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.pmu_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'pmu_stats_refresh',
+            gettext("Memory usage per process statistics refresh rate"),
+            'integer', 5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
+        self.io_stats_refresh = self.dashboard_preference.register(
+            'dashboards', 'io_stats_refresh',
+            gettext("I/O analysis statistics refresh rate"), 'integer',
+            5, min_val=1, max_val=999999,
+            category_label=PREF_LABEL_REFRESH_RATES,
+            help_str=help_string
+        )
+
         self.display_graphs = self.dashboard_preference.register(
             'display', 'show_graphs',
-            gettext("Show graphs?"), 'boolean', True,
+            gettext("Show activity?"), 'boolean', True,
             category_label=PREF_LABEL_DISPLAY,
-            help_str=gettext('If set to True, graphs '
+            help_str=gettext('If set to True, activity '
                              'will be displayed on dashboards.')
         )
 
         self.display_server_activity = self.dashboard_preference.register(
             'display', 'show_activity',
-            gettext("Show activity?"), 'boolean', True,
+            gettext("Show state?"), 'boolean', True,
             category_label=PREF_LABEL_DISPLAY,
-            help_str=gettext('If set to True, activity tables '
+            help_str=gettext('If set to True, state tables '
                              'will be displayed on dashboards.')
         )
 
@@ -175,6 +218,8 @@ class DashboardModule(PgAdminModule):
             help_str=gettext('Set the width of the lines on the line chart.')
         )
 
+        pgd_replication.register_preferences(self)
+
     def get_exposed_url_endpoints(self):
         """
         Returns:
@@ -196,75 +241,26 @@ class DashboardModule(PgAdminModule):
             'dashboard.get_prepared_by_server_id',
             'dashboard.get_prepared_by_database_id',
             'dashboard.config',
-            'dashboard.get_config_by_server_id',
-        ]
+            'dashboard.log_formats',
+            'dashboard.logs',
+            'dashboard.get_logs_by_server_id',
+            'dashboard.check_system_statistics',
+            'dashboard.check_system_statistics_sid',
+            'dashboard.check_system_statistics_did',
+            'dashboard.system_statistics',
+            'dashboard.system_statistics_sid',
+            'dashboard.system_statistics_did',
+            'dashboard.replication_slots',
+            'dashboard.replication_stats',
+        ] + pgd_replication.get_exposed_url_endpoints()
 
 
 blueprint = DashboardModule(MODULE_NAME, __name__)
-
-
-def check_precondition(f):
-    """
-    This function will behave as a decorator which will check
-    database connection before running view, it also adds
-    manager, conn & template_path properties to self
-    """
-
-    @wraps(f)
-    def wrap(*args, **kwargs):
-        # Here args[0] will hold self & kwargs will hold gid,sid,did
-
-        g.manager = get_driver(
-            PG_DEFAULT_DRIVER).connection_manager(
-            kwargs['sid']
-        )
-
-        def get_error(i_node_type):
-            stats_type = ('activity', 'prepared', 'locks', 'config')
-            if f.__name__ in stats_type:
-                return precondition_required(
-                    gettext("Please connect to the selected {0}"
-                            " to view the table.".format(i_node_type))
-                )
-            else:
-                return precondition_required(
-                    gettext("Please connect to the selected {0}"
-                            " to view the graph.".format(i_node_type))
-                )
-
-        # Below check handle the case where existing server is deleted
-        # by user and python server will raise exception if this check
-        # is not introduce.
-        if g.manager is None:
-            return get_error('server')
-
-        if 'did' in kwargs:
-            g.conn = g.manager.connection(did=kwargs['did'])
-            node_type = 'database'
-        else:
-            g.conn = g.manager.connection()
-            node_type = 'server'
-
-        # If not connected then return error to browser
-        if not g.conn.connected():
-            return get_error(node_type)
-
-        # Set template path for sql scripts
-        g.server_type = g.manager.server_type
-        g.version = g.manager.version
-
-        # Include server_type in template_path
-        g.template_path = 'dashboard/sql/' + (
-            '#{0}#'.format(g.version)
-        )
-
-        return f(*args, **kwargs)
-
-    return wrap
+blueprint.register_blueprint(pgd_replication)
 
 
 @blueprint.route("/dashboard.js")
-@login_required
+@pga_login_required
 def script():
     """render the required javascript"""
     return Response(
@@ -280,7 +276,7 @@ def script():
 @blueprint.route('/', endpoint='index')
 @blueprint.route('/<int:sid>', endpoint='get_by_sever_id')
 @blueprint.route('/<int:sid>/<int:did>', endpoint='get_by_database_id')
-@login_required
+@pga_login_required
 def index(sid=None, did=None):
     """
     Renders the welcome, server or database dashboard
@@ -324,7 +320,8 @@ def index(sid=None, did=None):
         )
 
 
-def get_data(sid, did, template, check_long_running_query=False):
+def get_data(sid, did, template, check_long_running_query=False,
+             only_data=False):
     """
     Generic function to get server stats based on an SQL template
     Args:
@@ -339,7 +336,7 @@ def get_data(sid, did, template, check_long_running_query=False):
     # Allow no server ID to be specified (so we can generate a route in JS)
     # but throw an error if it's actually called.
     if not sid:
-        return internal_server_error(errormsg='Server ID not specified.')
+        return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
 
     sql = render_template(
         "/".join([g.template_path, template]), did=did
@@ -352,6 +349,9 @@ def get_data(sid, did, template, check_long_running_query=False):
     # Check the long running query status and set the row type.
     if check_long_running_query:
         get_long_running_query_status(res['rows'])
+
+    if only_data:
+        return res['rows']
 
     return ajax_response(
         response=res['rows'],
@@ -396,7 +396,7 @@ def get_long_running_query_status(activities):
                  endpoint='dashboard_stats_sid')
 @blueprint.route('/dashboard_stats/<int:sid>/<int:did>',
                  endpoint='dashboard_stats_did')
-@login_required
+@pga_login_required
 @check_precondition
 def dashboard_stats(sid=None, did=None):
     resp_data = {}
@@ -405,13 +405,14 @@ def dashboard_stats(sid=None, did=None):
         chart_names = request.args['chart_names'].split(',')
 
         if not sid:
-            return internal_server_error(errormsg='Server ID not specified.')
+            return internal_server_error(
+                errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
 
         sql = render_template(
             "/".join([g.template_path, 'dashboard_stats.sql']), did=did,
             chart_names=chart_names,
         )
-        status, res = g.conn.execute_dict(sql)
+        _, res = g.conn.execute_dict(sql)
 
         for chart_row in res['rows']:
             resp_data[chart_row['chart_name']] = json.loads(
@@ -428,7 +429,7 @@ def dashboard_stats(sid=None, did=None):
 @blueprint.route(
     '/activity/<int:sid>/<int:did>', endpoint='get_activity_by_database_id'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def activity(sid=None, did=None):
     """
@@ -436,7 +437,15 @@ def activity(sid=None, did=None):
     :param sid: server id
     :return:
     """
-    return get_data(sid, did, 'activity.sql', True)
+    data = [{
+        'activity': get_data(sid, did, 'activity.sql', True, True),
+        'locks': get_data(sid, did, 'locks.sql', only_data=True),
+        'prepared': get_data(sid, did, 'prepared.sql', only_data=True)
+    }]
+    return ajax_response(
+        response=data,
+        status=200
+    )
 
 
 @blueprint.route('/locks/', endpoint='locks')
@@ -444,7 +453,7 @@ def activity(sid=None, did=None):
 @blueprint.route(
     '/locks/<int:sid>/<int:did>', endpoint='get_locks_by_database_id'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def locks(sid=None, did=None):
     """
@@ -460,7 +469,7 @@ def locks(sid=None, did=None):
 @blueprint.route(
     '/prepared/<int:sid>/<int:did>', endpoint='get_prepared_by_database_id'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def prepared(sid=None, did=None):
     """
@@ -471,9 +480,8 @@ def prepared(sid=None, did=None):
     return get_data(sid, did, 'prepared.sql')
 
 
-@blueprint.route('/config/', endpoint='config')
-@blueprint.route('/config/<int:sid>', endpoint='get_config_by_server_id')
-@login_required
+@blueprint.route('/config/<int:sid>', endpoint='config')
+@pga_login_required
 @check_precondition
 def config(sid=None):
     """
@@ -484,13 +492,157 @@ def config(sid=None):
     return get_data(sid, None, 'config.sql')
 
 
+@blueprint.route('/log_formats', endpoint='log_formats')
+@blueprint.route('/log_formats/<int:sid>', endpoint='log_formats')
+@pga_login_required
+@check_precondition
+def log_formats(sid=None):
+    if not sid:
+        return internal_server_error(errormsg='Server ID not specified.')
+
+    sql = render_template(
+        "/".join([g.template_path, 'log_format.sql'])
+    )
+    status, _format = g.conn.execute_scalar(sql)
+
+    if not status:
+        return internal_server_error(errormsg=_format)
+
+    return ajax_response(
+        response=_format,
+        status=200
+    )
+
+
+@blueprint.route('/logs/<log_format>/<disp_format>/<int:sid>', endpoint='logs')
+@blueprint.route('/logs/<log_format>/<disp_format>/<int:sid>/<int:page>',
+                 endpoint='get_logs_by_server_id')
+@pga_login_required
+@check_precondition
+def logs(log_format=None, disp_format=None, sid=None, page=0):
+    """
+    This function returns server logs details
+    """
+
+    LOG_STATEMENTS = 'DEBUG:|STATEMENT:|LOG:|WARNING:|NOTICE:|INFO:' \
+                     '|ERROR:|FATAL:|PANIC:'
+    if not sid:
+        return internal_server_error(
+            errormsg=gettext('Server ID not specified.'))
+
+    sql = render_template(
+        "/".join([g.template_path, 'log_format.sql'])
+    )
+    status, _format = g.conn.execute_scalar(sql)
+
+    # Check the requested format is available or not
+    if log_format == 'C' and 'csvlog' in _format:
+        log_format = 'csvlog'
+    elif log_format == 'J' and 'jsonlog' in _format:
+        log_format = 'jsonlog'
+    else:
+        log_format = ''
+
+    sql = render_template(
+        "/".join([g.template_path, 'log_stat.sql']),
+        log_format=log_format, conn=g.conn
+    )
+
+    status, res = g.conn.execute_scalar(sql)
+    if not status:
+        return internal_server_error(errormsg=res)
+    if not res or len(res) <= 0:
+        return ajax_response(
+            response={'logs_disabled': True},
+            status=200
+        )
+
+    file_stat = json.loads(res[0])
+
+    if file_stat <= 0:
+        return ajax_response(
+            response={'logs_disabled': True},
+            status=200
+        )
+
+    _start = 0
+    _end = ON_DEMAND_LOG_COUNT
+    page = int(page)
+    final_cols = []
+    if page > 0:
+        _start = page * int(ON_DEMAND_LOG_COUNT)
+        _end = _start + int(ON_DEMAND_LOG_COUNT)
+
+    if _start < file_stat:
+        if disp_format == 'plain':
+            _end = file_stat
+        sql = render_template(
+            "/".join([g.template_path, 'logs.sql']), st=_start, ed=_end,
+            log_format=log_format, conn=g.conn
+        )
+        status, res = g.conn.execute_dict(sql)
+        if not status:
+            return internal_server_error(errormsg=res)
+
+        final_res = res['rows'][0]['pg_read_file'].split('\n')
+        # Json format
+        if log_format == 'jsonlog':
+            for f in final_res:
+                try:
+                    _tmp_log = json.loads(f)
+                    final_cols.append(
+                        {"error_severity": _tmp_log['error_severity'],
+                         "timestamp": _tmp_log['timestamp'],
+                         "message": _tmp_log['message']})
+                except Exception:
+                    pass
+
+        # CSV format
+        elif log_format == 'csvlog':
+            for f in final_res:
+                try:
+                    _tmp_log = f.split(',')
+                    final_cols.append({"error_severity": _tmp_log[11],
+                                       "timestamp": _tmp_log[0],
+                                       "message": _tmp_log[13]})
+                except Exception:
+                    pass
+
+        else:
+            _pattern = re.compile(LOG_STATEMENTS)
+            for f in final_res:
+                tmp = re.search(LOG_STATEMENTS, f)
+                if not tmp or tmp.group((0)) == 'STATEMENT:':
+                    last_val = final_cols.pop() if len(final_cols) > 0\
+                        else {'message': ''}
+                    last_val['message'] += f
+                    final_cols.append(last_val)
+                else:
+                    _tmp = re.split(LOG_STATEMENTS, f)
+
+                    final_cols.append({
+                        "error_severity": tmp.group(0)[:len(tmp.group(0)) - 1],
+                        "timestamp": _tmp[0],
+                        "message": _tmp[1] if len(_tmp) > 1 else ''})
+
+    if disp_format == 'plain':
+        final_response = res['rows']
+    else:
+        final_response = final_cols
+
+    return ajax_response(
+        response=final_response,
+        status=200
+    )
+
+
 @blueprint.route(
     '/cancel_query/<int:sid>/<int:pid>', methods=['DELETE']
 )
 @blueprint.route(
     '/cancel_query/<int:sid>/<int:did>/<int:pid>', methods=['DELETE']
 )
-@login_required
+@pga_login_required
 @check_precondition
 def cancel_query(sid=None, did=None, pid=None):
     """
@@ -517,7 +669,7 @@ def cancel_query(sid=None, did=None, pid=None):
 @blueprint.route(
     '/terminate_session/<int:sid>/<int:did>/<int:pid>', methods=['DELETE']
 )
-@login_required
+@pga_login_required
 @check_precondition
 def terminate_session(sid=None, did=None, pid=None):
     """
@@ -534,5 +686,116 @@ def terminate_session(sid=None, did=None, pid=None):
 
     return ajax_response(
         response=gettext("Success") if res else gettext("Failed"),
+        status=200
+    )
+
+
+# To check whether system stats extesion is present or not
+@blueprint.route('check_extension/system_statistics',
+                 endpoint='check_system_statistics', methods=['GET'])
+@blueprint.route('check_extension/system_statistics/<int:sid>',
+                 endpoint='check_system_statistics_sid', methods=['GET'])
+@blueprint.route('check_extension/system_statistics/<int:sid>/<int:did>',
+                 endpoint='check_system_statistics_did', methods=['GET'])
+@pga_login_required
+@check_precondition
+def check_system_statistics(sid=None, did=None):
+    sql = "SELECT * FROM pg_extension WHERE extname = 'system_stats';"
+    status, res = g.conn.execute_scalar(sql)
+    if not status:
+        return internal_server_error(errormsg=res)
+    data = {}
+    if res is not None:
+        data['ss_present'] = True
+    else:
+        data['ss_present'] = False
+    return ajax_response(
+        response=data,
+        status=200
+    )
+
+
+# System Statistics Backend
+@blueprint.route('/system_statistics',
+                 endpoint='system_statistics', methods=['GET'])
+@blueprint.route('/system_statistics/<int:sid>',
+                 endpoint='system_statistics_sid', methods=['GET'])
+@blueprint.route('/system_statistics/<int:sid>/<int:did>',
+                 endpoint='system_statistics_did', methods=['GET'])
+@pga_login_required
+@check_precondition
+def system_statistics(sid=None, did=None):
+    resp_data = {}
+
+    if request.args['chart_names'] != '':
+        chart_names = request.args['chart_names'].split(',')
+
+        if not sid:
+            return internal_server_error(
+                errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+
+        sql = render_template(
+            "/".join([g.template_path, 'system_statistics.sql']), did=did,
+            chart_names=chart_names,
+        )
+        status, res = g.conn.execute_dict(sql)
+
+        if not status:
+            return internal_server_error(errormsg=str(res))
+
+        for chart_row in res['rows']:
+            resp_data[chart_row['chart_name']] = json.loads(
+                chart_row['chart_data'])
+
+    return ajax_response(
+        response=resp_data,
+        status=200
+    )
+
+
+@blueprint.route('/replication_stats/<int:sid>',
+                 endpoint='replication_stats', methods=['GET'])
+@pga_login_required
+@check_precondition
+def replication_stats(sid=None):
+    """
+    This function is used to list all the Replication slots of the cluster
+    """
+
+    if not sid:
+        return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+
+    sql = render_template("/".join([g.template_path, 'replication_stats.sql']))
+    status, res = g.conn.execute_dict(sql)
+
+    if not status:
+        return internal_server_error(errormsg=str(res))
+
+    return ajax_response(
+        response=res['rows'],
+        status=200
+    )
+
+
+@blueprint.route('/replication_slots/<int:sid>',
+                 endpoint='replication_slots', methods=['GET'])
+@pga_login_required
+@check_precondition
+def replication_slots(sid=None):
+    """
+    This function is used to list all the Replication slots of the cluster
+    """
+
+    if not sid:
+        return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+
+    sql = render_template("/".join([g.template_path, 'replication_slots.sql']))
+    status, res = g.conn.execute_dict(sql)
+
+    if not status:
+        return internal_server_error(errormsg=str(res))
+
+    return ajax_response(
+        response=res['rows'],
         status=200
     )

@@ -27,7 +27,7 @@ and modify the values for the following parameters:
 
    * [‘webserver’, ‘internal’]: pgAdmin will first try to authenticate the user
      through webserver. If that authentication fails, then it will return back
-     to the login dialog where you need to provide internal pgAdmin user
+     to the login page where you need to provide internal pgAdmin user
      credentials for authentication."
     "WEBSERVER_AUTO_CREATE_USER", "Set the value to *True* if you want to automatically
     create a pgAdmin user corresponding to a successfully authenticated Webserver user.
@@ -37,6 +37,7 @@ and modify the values for the following parameters:
     The default value is REMOTE_USER and the possible values are REMOTE_USER,
     HTTP_X_FORWARDED_USER, X-Forwarded-User."
 
+.. note:: If REMOTE_USER does not work, try replacing it with either REMOTE-USER or Remote-user.
 
 Master Password
 ===============

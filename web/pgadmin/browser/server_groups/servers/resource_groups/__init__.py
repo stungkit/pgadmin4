@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -79,7 +79,10 @@ class ResourceGroupModule(CollectionNodeModule):
             gid: Server Group ID
             sid: Server ID
         """
-        yield self.generate_browser_collection_node(sid)
+        if self.has_nodes(
+            sid, None,
+                base_template_path=ResourceGroupView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(sid)
 
     @property
     def node_inode(self):
@@ -165,6 +168,7 @@ class ResourceGroupView(NodeView):
     """
 
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = 'resource_groups/sql/#{0}#'
     _PROPERTIES_SQL = 'properties.sql'
     _CREATE_SQL = 'create.sql'
     _UPDATE_SQL = 'update.sql'
@@ -236,7 +240,7 @@ class ResourceGroupView(NodeView):
                         "Connection to the server has been lost."
                     )
                 )
-            self.sql_path = 'resource_groups/sql/#{0}#'.format(
+            self.sql_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version
             )
             return f(*args, **kwargs)
@@ -602,7 +606,7 @@ class ResourceGroupView(NodeView):
             except ValueError:
                 data[k] = v
 
-        sql, name = self.get_sql(data, rg_id)
+        sql, _ = self.get_sql(data, rg_id)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql

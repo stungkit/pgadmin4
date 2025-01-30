@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -26,7 +26,7 @@ from selenium.common.exceptions import WebDriverException
 from urllib.request import urlopen
 import json
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.support import expected_conditions as ec
 import selenium.common.exceptions
 
@@ -35,16 +35,12 @@ import regression
 from regression import test_setup
 
 from pgadmin.utils.preferences import Preferences
-from pgadmin.utils.constants import BINARY_PATHS, PSYCOPG3
+from pgadmin.utils.constants import BINARY_PATHS
 from pgadmin.utils import set_binary_path
 
 from functools import wraps
+import psycopg
 
-# Remove this condition, once psycopg2 will be removed completely
-if config.PG_DEFAULT_DRIVER == PSYCOPG3:
-    import psycopg
-else:
-    import psycopg2 as psycopg
 
 CURRENT_PATH = os.path.abspath(os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "../"))
@@ -54,8 +50,23 @@ COVERAGE_CONFIG_FILE = os.path.join(CURRENT_PATH, ".coveragerc")
 file_name = os.path.realpath(__file__)
 
 
-def get_db_connection(db, username, password, host, port, sslmode="prefer"):
+def get_db_connection(db, username, password, host, port, sslmode="prefer",
+                      max_connections=None):
     """This function returns the connection object of psycopg"""
+    if max_connections:
+        with psycopg.connect(
+            dbname=db,
+            user=username,
+            password=password,
+            host=host,
+            port=port,
+            sslmode=sslmode,
+            autocommit=True,
+        ) as conn:
+            cur = conn.cursor()
+            cur.execute('ALTER SYSTEM SET max_connections TO 100;')
+            cur.execute('SELECT pg_reload_conf();')
+
     connection = psycopg.connect(
         dbname=db,
         user=username,
@@ -149,62 +160,58 @@ def clear_node_info_dict():
 def create_database(server, db_name, encoding=None):
     """This function used to create database and returns the database id"""
     db_id = ''
-    try:
-        connection = get_db_connection(
-            server['db'],
-            server['username'],
-            server['db_password'],
-            server['host'],
-            server['port'],
-            server['sslmode']
-        )
-        old_isolation_level = connection.isolation_level
-        set_isolation_level(connection, 0)
-        connection.autocommit = True
-        pg_cursor = connection.cursor()
-        if encoding is None:
-            pg_cursor.execute(
-                '''CREATE DATABASE "%s" TEMPLATE template0''' % db_name)
-        else:
-            pg_cursor.execute(
-                '''CREATE DATABASE "%s" TEMPLATE template0
-                ENCODING='%s' LC_COLLATE='%s' LC_CTYPE='%s' ''' %
-                (db_name, encoding[0], encoding[1], encoding[1]))
-        connection.autocommit = False
-        set_isolation_level(connection, old_isolation_level)
-        connection.commit()
+    connection = get_db_connection(
+        server['db'],
+        server['username'],
+        server['db_password'],
+        server['host'],
+        server['port'],
+        server['sslmode']
+    )
+    old_isolation_level = connection.isolation_level
+    set_isolation_level(connection, 0)
+    connection.autocommit = True
+    pg_cursor = connection.cursor()
+    if encoding is None:
+        pg_cursor.execute(
+            '''CREATE DATABASE "%s" TEMPLATE template0''' % db_name)
+    else:
+        pg_cursor.execute(
+            '''CREATE DATABASE "%s" TEMPLATE template0
+            ENCODING='%s' LC_COLLATE='%s' LC_CTYPE='%s' ''' %
+            (db_name, encoding[0], encoding[1], encoding[1]))
+    connection.autocommit = False
+    set_isolation_level(connection, old_isolation_level)
+    connection.commit()
 
-        # Get 'oid' from newly created database
-        pg_cursor.execute("SELECT db.oid from pg_catalog.pg_database db WHERE"
-                          " db.datname='%s'" % db_name)
-        oid = pg_cursor.fetchone()
-        if oid:
-            db_id = oid[0]
-        connection.close()
+    # Get 'oid' from newly created database
+    pg_cursor.execute("SELECT db.oid from pg_catalog.pg_database db WHERE"
+                      " db.datname='%s'" % db_name)
+    oid = pg_cursor.fetchone()
+    if oid:
+        db_id = oid[0]
+    connection.close()
 
-        # In PostgreSQL 15 the default public schema that every database has
-        # will have a different set of permissions. In fact, before PostgreSQL
-        # 15, every user could manipulate the public schema of a database he is
-        # not owner. Since the upcoming new version, only the database owner
-        # will be granted full access to the public schema, while other users
-        # will need to get an explicit GRANT
-        connection = get_db_connection(
-            db_name,
-            server['username'],
-            server['db_password'],
-            server['host'],
-            server['port'],
-            server['sslmode']
-        )
-        pg_cursor = connection.cursor()
-        pg_cursor.execute('''GRANT ALL ON SCHEMA public TO PUBLIC''')
-        connection.commit()
-        connection.close()
+    # In PostgreSQL 15 the default public schema that every database has
+    # will have a different set of permissions. In fact, before PostgreSQL
+    # 15, every user could manipulate the public schema of a database he is
+    # not owner. Since the upcoming new version, only the database owner
+    # will be granted full access to the public schema, while other users
+    # will need to get an explicit GRANT
+    connection = get_db_connection(
+        db_name,
+        server['username'],
+        server['db_password'],
+        server['host'],
+        server['port'],
+        server['sslmode']
+    )
+    pg_cursor = connection.cursor()
+    pg_cursor.execute('''GRANT ALL ON SCHEMA public TO PUBLIC''')
+    connection.commit()
+    connection.close()
 
-        return db_id
-    except Exception:
-        traceback.print_exc(file=sys.stderr)
-        return db_id
+    return db_id
 
 
 def create_table(server, db_name, table_name, extra_columns=[]):
@@ -572,7 +579,11 @@ def drop_database(connection, database_name):
         if pg_cursor.fetchall():
             old_isolation_level = connection.isolation_level
             set_isolation_level(connection, 0)
-            pg_cursor.execute('''DROP DATABASE "%s"''' % database_name)
+            if connection.info.server_version >= 130000:
+                pg_cursor.execute(
+                    '''DROP DATABASE "%s" WITH (FORCE)''' % database_name)
+            else:
+                pg_cursor.execute('''DROP DATABASE "%s"''' % database_name)
             set_isolation_level(connection, old_isolation_level)
             connection.commit()
             connection.close()
@@ -602,7 +613,11 @@ def drop_database_multiple(connection, database_names):
             if pg_cursor.fetchall():
                 old_isolation_level = connection.isolation_level
                 set_isolation_level(connection, 0)
-                pg_cursor.execute('''DROP DATABASE "%s"''' % database_name)
+                if connection.info.server_version >= 130000:
+                    pg_cursor.execute(
+                        '''DROP DATABASE "%s" WITH (FORCE)''' % database_name)
+                else:
+                    pg_cursor.execute('''DROP DATABASE "%s"''' % database_name)
                 set_isolation_level(connection, old_isolation_level)
                 connection.commit()
     connection.close()
@@ -921,6 +936,42 @@ def configure_preferences(default_binary_path=None):
             ('False', pref_confirm_on_refresh_close.pid)
         )
 
+    # Disable object breadcrumbs for tests
+    pref_breadcrumbs_enable = \
+        browser_pref.preference('breadcrumbs_enable')
+
+    user_pref = cur.execute(
+        select_preference_query, (pref_breadcrumbs_enable.pid,)
+    )
+
+    if len(user_pref.fetchall()) == 0:
+        cur.execute(
+            insert_preferences_query,
+            (pref_breadcrumbs_enable.pid, 1, 'False')
+        )
+    else:
+        cur.execute(
+            update_preference_query,
+            ('False', pref_breadcrumbs_enable.pid)
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def change_layout_for_feature_test():
+    """
+    This function is used to change the layout in the preferences from
+    'Workspace' to 'Classic'.
+    """
+    misc_pref = Preferences.module('misc')
+    pref_layout = misc_pref.preference('layout')
+
+    conn = sqlite3.connect(config.TEST_SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute('INSERT INTO user_preferences(pid, uid, value) VALUES (?,?,?)',
+                (pref_layout.pid, 1, 'classic')
+                )
     conn.commit()
     conn.close()
 
@@ -954,7 +1005,11 @@ def reset_layout_db(user_id=None):
 def remove_db_file():
     """This function use to remove SQLite DB file"""
     if os.path.isfile(config.TEST_SQLITE_PATH):
-        os.remove(config.TEST_SQLITE_PATH)
+        try:
+            os.remove(config.TEST_SQLITE_PATH)
+        except PermissionError:
+            # TODO: Added for issue 6164
+            pass
 
 
 def _cleanup(tester, app_starter):
@@ -1065,7 +1120,7 @@ def get_scenario_name(cases):
     for class_name, test_case_list in cases.items():
         result = {class_name: []}
         for case_name_dict in test_case_list:
-            key, value = list(case_name_dict.items())[0]
+            key, _ = list(case_name_dict.items())[0]
             class_names_dict = dict(
                 (c_name, "") for scenario in result[class_name] for
                 c_name in scenario.keys())
@@ -1177,30 +1232,31 @@ def get_server_type(server):
     :param server:
     :return:
     """
-    try:
-        connection = get_db_connection(
-            server['db'],
-            server['username'],
-            server['db_password'],
-            server['host'],
-            server['port'],
-            server['sslmode']
-        )
+    connection = get_db_connection(
+        server['db'],
+        server['username'],
+        server['db_password'],
+        server['host'],
+        server['port'],
+        server['sslmode']
+    )
 
-        pg_cursor = connection.cursor()
-        # Get 'version' string
-        pg_cursor.execute("SELECT version()")
-        version_string = pg_cursor.fetchone()
-        connection.close()
-        if isinstance(version_string, tuple):
-            version_string = version_string[0]
+    pg_cursor = connection.cursor()
+    # Get 'version' string
+    pg_cursor.execute("SELECT version()")
+    version_string = pg_cursor.fetchone()
+    connection.close()
+    if isinstance(version_string, tuple):
+        version_string = version_string[0]
 
-        if "EnterpriseDB" in version_string:
-            return 'ppas'
+    # Handle SQL_ASCII (https://github.com/psycopg/psycopg/issues/561)
+    version_string = version_string.decode() if \
+        hasattr(version_string, 'decode') else version_string
 
-        return 'pg'
-    except Exception:
-        traceback.print_exc(file=sys.stderr)
+    if "EnterpriseDB" in version_string:
+        return 'ppas'
+
+    return 'pg'
 
 
 def check_binary_path_or_skip_test(cls, utility_name):
@@ -1417,8 +1473,7 @@ def get_remote_webdriver(hub_url, browser, browser_ver, test_name, url_client):
     test_name = time.strftime("%m_%d_%y_%H_%M_%S_", time.localtime()) + \
         test_name.replace(' ', '_') + '_' + browser + browser_ver
     driver_local = None
-    desired_capabilities = {
-        "version": browser_ver,
+    selenoid_options = {
         "enableVNC": True,
         "enableVideo": True,
         "enableLog": True,
@@ -1430,28 +1485,28 @@ def get_remote_webdriver(hub_url, browser, browser_ver, test_name, url_client):
     }
 
     if browser == 'firefox':
+        options = FirefoxOptions()
+        options.browser_version = browser_ver
         profile = webdriver.FirefoxProfile()
         profile.set_preference("dom.disable_beforeunload", True)
-        desired_capabilities["browserName"] = "firefox"
-        desired_capabilities["requireWindowFocus"] = True
-        desired_capabilities["enablePersistentHover"] = False
+        options.profile = profile
         driver_local = webdriver.Remote(
-            command_executor=hub_url,
-            desired_capabilities=desired_capabilities, browser_profile=profile)
+            command_executor=hub_url, options=options)
     elif browser == 'chrome':
-        options = Options()
+        options = webdriver.ChromeOptions()
         options.add_argument("--window-size=1280,1024")
         options.add_argument(
             '--unsafely-treat-insecure-origin-as-secure=' + url_client)
-        desired_capabilities["browserName"] = "chrome"
+        options.browser_version = browser_ver
+        options.set_capability("selenoid:options", selenoid_options)
         driver_local = webdriver.Remote(
-            command_executor=hub_url,
-            desired_capabilities=desired_capabilities, options=options)
+            command_executor=hub_url, options=options)
     else:
         print("Specified browser does not exist.")
 
     # maximize browser window
-    driver_local.maximize_window()
+    if driver_local:
+        driver_local.maximize_window()
 
     # driver_local.implicitly_wait(2)
     return driver_local

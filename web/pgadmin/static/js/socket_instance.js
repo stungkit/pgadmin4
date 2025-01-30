@@ -2,14 +2,14 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import { io } from 'socketio';
 import gettext from 'sources/gettext';
 import url_for from 'sources/url_for';
-
+import { parseApiError } from './api_instance';
 export function openSocket(namespace, options) {
   return new Promise((resolve, reject)=>{
     const socketObj = io(namespace, {
@@ -27,10 +27,10 @@ export function openSocket(namespace, options) {
       resolve(socketObj);
     });
     socketObj.on('connect_error', (err)=>{
-      reject(err);
+      reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
     });
     socketObj.on('disconnect', (err)=>{
-      reject(err);
+      reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
     });
   });
 }
@@ -42,10 +42,12 @@ export function socketApiGet(socket, endpoint, params) {
       resolve(data);
     });
     socket.on(`${endpoint}_failed`, (data)=>{
-      reject(data);
+      /* when data comes in JSON format, 
+      that must be parsed to only error message */
+      reject(new Error(parseApiError(data)));
     });
     socket.on('disconnect', ()=>{
-      reject(gettext('Connection to pgAdmin server has been lost'));
+      reject(new Error(gettext('Connection to pgAdmin server has been lost')));
     });
   });
 }

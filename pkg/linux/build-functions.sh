@@ -10,13 +10,25 @@ _setup_env() {
     SERVERROOT=${BUILDROOT}/server
     WEBROOT=${BUILDROOT}/web
     DISTROOT=$(realpath "${WD}/../../dist")
-    APP_RELEASE=$(grep "^APP_RELEASE" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-    APP_REVISION=$(grep "^APP_REVISION" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-    APP_NAME=$(grep "^APP_NAME" web/config.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //' | sed 's/ //g' | tr '[:upper:]' '[:lower:]')
+    APP_RELEASE=$(grep "^APP_RELEASE" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+    APP_REVISION=$(grep "^APP_REVISION" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+    APP_NAME=$(grep "^APP_NAME" web/branding.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //' | sed 's/ //g' | tr '[:upper:]' '[:lower:]')
     APP_LONG_VERSION=${APP_RELEASE}.${APP_REVISION}
-    APP_SUFFIX=$(grep "^APP_SUFFIX" web/config.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
+    APP_SUFFIX=$(grep "^APP_SUFFIX" web/version.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
     if [ -n "${APP_SUFFIX}" ]; then
         APP_LONG_VERSION=${APP_LONG_VERSION}-${APP_SUFFIX}
+    fi
+
+    # Setting up the correct Python version for Ubuntu 18 and EL-8, which have
+    # new Python versions installed parallel to the old ones.
+    OS_VERSION=$(grep "^VERSION_ID=" /etc/os-release | awk -F "=" '{ print $2 }' | sed 's/"//g' | awk -F "." '{ print $1 }')
+    SYSTEM_PYTHON_PATH='/usr/bin/python3'
+    PYTHON_BINARY=$("${SYSTEM_PYTHON_PATH}" -c "import sys; print('python%d.%.d' % (sys.version_info.major, sys.version_info.minor))")
+    PYTHON_BINARY_WITHOUT_DOTS='python3'
+    if [ "$2" == 'redhat' ] && [ "${OS_VERSION}" == "8" ]; then
+      SYSTEM_PYTHON_PATH='/usr/bin/python3.9'
+      PYTHON_BINARY='python3.9'
+      PYTHON_BINARY_WITHOUT_DOTS='python39'
     fi
 }
 
@@ -51,12 +63,13 @@ _create_python_virtualenv() {
     cd "usr/${APP_NAME}" || exit
 
     # Create the blank venv
-    python3 -m venv venv
+    "${SYSTEM_PYTHON_PATH}" -m venv venv
     # shellcheck disable=SC1091
-    source venv/bin/activate
+    . venv/bin/activate
 
     # Make sure we have the wheel package present, as well as the latest pip
     pip3 install --upgrade pip
+    pip3 install setuptools
     pip3 install wheel
 
     # Install the requirements
@@ -75,14 +88,13 @@ _create_python_virtualenv() {
 
     # Figure out some paths for use when completing the venv
     # Use "python3" here as we want the venv path
-    PYMODULES_PATH=$(python3 -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")
-    DIR_PYMODULES_PATH=$(dirname "${PYMODULES_PATH}")
+    DIR_PYMODULES_PATH=$(python3 -c "from sysconfig import get_path; print(get_path('platstdlib'))")
 
-    # Use /usr/bin/python3 here as we want the system path
+    # Use {SYSTEM_PYTHON_PATH} here as we want the system path
     if [ "$1" == "debian" ]; then
-        PYSYSLIB_PATH=$(/usr/bin/python3 -c "import sys; print('%s/lib/python%d.%.d' % (sys.prefix, sys.version_info.major, sys.version_info.minor))")
+        PYSYSLIB_PATH=$("${SYSTEM_PYTHON_PATH}" -c "import sys; print('%s/lib/python%d.%.d' % (sys.prefix, sys.version_info.major, sys.version_info.minor))")
     else
-        PYSYSLIB_PATH=$(/usr/bin/python3 -c "import sys; print('%s/lib64/python%d.%.d' % (sys.prefix, sys.version_info.major, sys.version_info.minor))")
+        PYSYSLIB_PATH=$("${SYSTEM_PYTHON_PATH}" -c "import sys; print('%s/lib64/python%d.%.d' % (sys.prefix, sys.version_info.major, sys.version_info.minor))")
     fi
 
     # Symlink in the rest of the Python libs. This is required because the runtime
@@ -121,51 +133,56 @@ _create_python_virtualenv() {
 _build_runtime() {
     echo "Assembling the desktop runtime..."
 
-    # Get a fresh copy of nwjs.
-    # NOTE: The nw download servers seem to be very unreliable, so at the moment we're using wget
-    #       in a retry loop as Yarn/Npm don't seem to like that.
+    # Get a fresh copy of electron.
 
-    # YARN:
-    # yarn add --cwd "${BUILDROOT}" nw
-    # YARN END
+    ELECTRON_ARCH="x64"
+    if [ "$(uname -m)" == "arm64" ]; then
+      ELECTRON_ARCH="arm64"
+    fi
 
-    # WGET:
-    NW_VERSION=$(yarn info nw | grep latest | awk -F "'" '{ print $2}')
+    ELECTRON_VERSION="$(npm info electron version)"
 
     pushd "${BUILDROOT}" > /dev/null || exit
         while true;do
-            wget "https://dl.nwjs.io/v${NW_VERSION}/nwjs-v${NW_VERSION}-linux-x64.tar.gz" && break
-            rm "nwjs-v${NW_VERSION}-linux-x64.tar.gz"
+            wget "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}.zip" && break
+            rm "electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}.zip"
         done
-        tar -zxvf "nwjs-v${NW_VERSION}-linux-x64.tar.gz"
+        unzip "electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}.zip" -d "electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}"
     popd > /dev/null || exit
-    # WGET END
 
-    # Copy nwjs into the staging directory
+    # Copy electron into the staging directory
     mkdir -p "${DESKTOPROOT}/usr/${APP_NAME}/bin"
 
-    # The chmod command below is needed to fix the permission issue of
-    # the NWjs binaries and files.
     # Change the permission for others and group the same as the owner
-    chmod -R og=u "${BUILDROOT}/nwjs-v${NW_VERSION}-linux-x64"/*
+    chmod -R og=u "${BUILDROOT}/electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}"/*
     # Explicitly remove write permissions for others and group
-    chmod -R og-w "${BUILDROOT}/nwjs-v${NW_VERSION}-linux-x64"/*
+    chmod -R og-w "${BUILDROOT}/electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}"/*
 
-    # YARN:
-    # cp -r "${BUILDROOT}/node_modules/nw/nwjs"/* "${DESKTOPROOT}/usr/${APP_NAME}/bin"
-    #  YARN END
+    BUNDLEDIR="${DESKTOPROOT}/usr/${APP_NAME}/bin"
 
     # WGET:
-    cp -r "${BUILDROOT}/nwjs-v${NW_VERSION}-linux-x64"/* "${DESKTOPROOT}/usr/${APP_NAME}/bin"
+    cp -r "${BUILDROOT}/electron-v${ELECTRON_VERSION}-linux-${ELECTRON_ARCH}"/* "${BUNDLEDIR}"
     # WGET END
 
-    mv "${DESKTOPROOT}/usr/${APP_NAME}/bin/nw" "${DESKTOPROOT}/usr/${APP_NAME}/bin/${APP_NAME}"
+    mv "${BUNDLEDIR}/electron" "${BUNDLEDIR}/${APP_NAME}"
 
-    cp -r "${SOURCEDIR}/runtime/assets" "${DESKTOPROOT}/usr/${APP_NAME}/bin/assets"
-    cp -r "${SOURCEDIR}/runtime/src" "${DESKTOPROOT}/usr/${APP_NAME}/bin/src"
+    mkdir -p "${BUNDLEDIR}/resources/app"
+    cp -r "${SOURCEDIR}/runtime/assets" "${BUNDLEDIR}/resources/app/assets"
+    cp -r "${SOURCEDIR}/runtime/src" "${BUNDLEDIR}/resources/app/src"
 
-    cp "${SOURCEDIR}/runtime/package.json" "${DESKTOPROOT}/usr/${APP_NAME}/bin/"
-    yarn --cwd "${DESKTOPROOT}/usr/${APP_NAME}/bin" install --production=true
+    cp "${SOURCEDIR}/runtime/package.json" "${BUNDLEDIR}/resources/app"
+    cp "${SOURCEDIR}/runtime/.yarnrc.yml" "${BUNDLEDIR}/resources/app"
+
+    # Install the runtime node_modules
+    pushd "${BUNDLEDIR}/resources/app" > /dev/null || exit
+        yarn set version berry
+        yarn set version 3
+        yarn plugin import workspace-tools
+        yarn workspaces focus --production
+
+        # remove the yarn cache
+        rm -rf .yarn .yarn*
+    popd > /dev/null || exit
 
     # Create the icon
     mkdir -p "${DESKTOPROOT}/usr/share/icons/hicolor/128x128/apps/"
@@ -188,22 +205,26 @@ _build_docs() {
     cd "${SERVERROOT}" && mkdir -p "usr/${APP_NAME}/share/docs/en_US/html"
     cd "${SOURCEDIR}/docs/en_US" || exit
     python3 build_code_snippet.py
-    SYS_PYTHONPATH=$(/usr/bin/python3 -c "import sys; print(':'.join([p for p in sys.path if p]))")
+    SYS_PYTHONPATH=$("${SYSTEM_PYTHON_PATH}" -c "import sys; print(':'.join([p for p in sys.path if p]))")
     # shellcheck disable=SC2153
-    if [ "$1" == "redhat" ] && [ "${OS_VERSION}" == "7" ]; then
-            PYTHONPATH=$PYTHONPATH:${SYS_PYTHONPATH} python3 /usr/local/bin/sphinx-build . "${SERVERROOT}/usr/${APP_NAME}/share/docs/en_US/html"
-    else
-        PYTHONPATH=$PYTHONPATH:${SYS_PYTHONPATH} python3 -msphinx . "${SERVERROOT}/usr/${APP_NAME}/share/docs/en_US/html"
-    fi
+    PYTHONPATH=$PYTHONPATH:${SYS_PYTHONPATH} python3 -msphinx . "${SERVERROOT}/usr/${APP_NAME}/share/docs/en_US/html"
 }
 
 _copy_code() {
     echo "Copying the server code..."
 
+    OS_VERSION=$(grep "^VERSION_ID=" /etc/os-release | awk -F "=" '{ print $2 }' | sed 's/"//g' | awk -F "." '{ print $1 }')
+    if [ "$1" == 'redhat' ] && [ "${OS_VERSION}" == "8" ]; then
+      echo "Setting file permission through umask..."
+      umask u+rwx,go+rx,go-w
+    fi
+
     # Remove any TCL-related files that may cause us problems
     find "${SERVERROOT}/usr/${APP_NAME}/venv/" -name "_tkinter*" -print0 | xargs -0 rm -rf
 
     pushd "${SOURCEDIR}/web" > /dev/null || exit
+        yarn set version berry
+        yarn set version 3
         yarn install
         yarn run bundle
     popd > /dev/null || exit
@@ -213,7 +234,7 @@ _copy_code() {
     cp "${SOURCEDIR}/pkg/linux/config_distro.py" "${SERVERROOT}/usr/${APP_NAME}/web/"
     cd "${SERVERROOT}/usr/${APP_NAME}/web/" || exit
     rm -f pgadmin4.db config_local.*
-    rm -rf karma.conf.js package.json node_modules/ regression/ tools/ pgadmin/static/js/generated/.cache
+    rm -rf jest.config.js babel.* package.json .yarn* yarn* .editorconfig .eslint* node_modules/ regression/ tools/ pgadmin/static/js/generated/.cache
     find . -name "tests" -type d -print0 | xargs -0 rm -rf
     find . -name "feature_tests" -type d -print0 | xargs -0 rm -rf
     find . -name "__pycache__" -type d -print0 | xargs -0 rm -rf
@@ -230,10 +251,18 @@ _copy_code() {
     # user has configured an alternative default.
     # DO THIS LAST!
     cd "${SERVERROOT}/usr/${APP_NAME}/venv/bin" || exit
-    PYTHON_INTERPRETER=$(/usr/bin/python3 -c "import os, sys; print(os.path.realpath(sys.executable))")
-    PYTHON_VERSION=$(/usr/bin/python3 -c "import sys; print('%d.%d' % (sys.version_info.major, sys.version_info.minor))")
+    PYTHON_INTERPRETER=$("${SYSTEM_PYTHON_PATH}" -c "import os, sys; print(os.path.realpath(sys.executable))")
+    PYTHON_VERSION=$("${SYSTEM_PYTHON_PATH}" -c "import sys; print('%d.%d' % (sys.version_info.major, sys.version_info.minor))")
     rm python && ln -s python3 python
     rm "python${PYTHON_VERSION}" && ln -s python3 "python${PYTHON_VERSION}"
     rm python3 && ln -s "${PYTHON_INTERPRETER}" python3
 }
 
+
+_generate_sbom() {
+   echo "Generating SBOMs..."
+   # Note that we don't generate an SBOM for the Meta package as it doesn't contain any files.
+   syft "${SERVERROOT}/" -o cyclonedx-json > "${SERVERROOT}/usr/${APP_NAME}/sbom-server.json"
+   syft "${DESKTOPROOT}/" -o cyclonedx-json > "${DESKTOPROOT}/usr/${APP_NAME}/sbom-desktop.json"
+   syft "${WEBROOT}/" -o cyclonedx-json > "${WEBROOT}/usr/${APP_NAME}/sbom-web.json"
+}

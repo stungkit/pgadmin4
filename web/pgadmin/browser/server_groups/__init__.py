@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -14,7 +14,8 @@ from abc import ABCMeta, abstractmethod
 
 from flask import request, jsonify, render_template
 from flask_babel import gettext
-from flask_security import current_user, login_required
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.browser import BrowserPluginModule
 from pgadmin.browser.utils import NodeView
 from pgadmin.utils.ajax import make_json_response, gone, \
@@ -39,8 +40,9 @@ def get_icon_css_class(group_id, group_user_id,
         group_user_id != current_user.id and
             ServerGroupModule.has_shared_server(group_id)):
         default_val = 'icon-server_group_shared'
+        return default_val, True
 
-    return default_val
+    return default_val, False
 
 
 SG_NOT_FOUND_ERROR = 'The specified server group could not be found.'
@@ -86,14 +88,16 @@ class ServerGroupModule(BrowserPluginModule):
             ).order_by("id")
 
         for idx, group in enumerate(groups):
+            icon_class, is_shared = get_icon_css_class(group.id, group.user_id)
             yield self.generate_browser_node(
                 "%d" % (group.id), None,
                 group.name,
-                get_icon_css_class(group.id, group.user_id),
+                icon_class,
                 True,
                 self.node_type,
                 can_delete=True if idx > 0 else False,
-                user_id=group.user_id
+                user_id=group.user_id,
+                is_shared=is_shared
             )
 
     @property
@@ -159,7 +163,7 @@ class ServerGroupView(NodeView):
     parent_ids = []
     ids = [{'type': 'int', 'id': 'gid'}]
 
-    @login_required
+    @pga_login_required
     def list(self):
         res = []
 
@@ -173,7 +177,7 @@ class ServerGroupView(NodeView):
 
         return ajax_response(response=res, status=200)
 
-    @login_required
+    @pga_login_required
     def delete(self, gid):
         """Delete a server group node in the settings database"""
 
@@ -182,6 +186,10 @@ class ServerGroupView(NodeView):
         ).order_by("id")
 
         # if server group id is 1 we won't delete it.
+        # This matches the behavior of
+        # web/pgadmin/utils/__init.py__#clear_database_servers
+        # called by the setup script when importing and replacing servers:
+        # `python setup.py load-servers input_file.json --replace`
         sg = groups.first()
 
         shared_servers = Server.query.filter_by(servergroup_id=gid,
@@ -225,7 +233,7 @@ class ServerGroupView(NodeView):
 
         return make_json_response(result=request.form)
 
-    @login_required
+    @pga_login_required
     def update(self, gid):
         """Update the server-group properties"""
 
@@ -260,19 +268,21 @@ class ServerGroupView(NodeView):
                     status=410, success=0, errormsg=e.message
                 )
 
+        icon_class, is_shared = get_icon_css_class(gid, servergroup.user_id)
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 gid,
                 None,
                 servergroup.name,
-                get_icon_css_class(gid, servergroup.user_id),
+                icon_class,
                 True,
                 self.node_type,
-                can_delete=True  # This is user created hence can deleted
+                can_delete=True,  # This is user created hence can delete
+                is_shared=is_shared
             )
         )
 
-    @login_required
+    @pga_login_required
     def properties(self, gid):
         """Update the server-group properties"""
 
@@ -290,7 +300,7 @@ class ServerGroupView(NodeView):
                 status=200
             )
 
-    @login_required
+    @pga_login_required
     def create(self):
         """Creates new server-group """
         data = request.form if request.form else json.loads(
@@ -307,16 +317,18 @@ class ServerGroupView(NodeView):
                 data['id'] = sg.id
                 data['name'] = sg.name
 
+                icon_class, is_shared = get_icon_css_class(sg.id, sg.user_id)
                 return jsonify(
                     node=self.blueprint.generate_browser_node(
                         "%d" % sg.id,
                         None,
                         sg.name,
-                        get_icon_css_class(sg.id, sg.user_id),
+                        icon_class,
                         True,
                         self.node_type,
                         # This is user created hence can deleted
-                        can_delete=True
+                        can_delete=True,
+                        is_shared=is_shared
                     )
                 )
             except exc.IntegrityError:
@@ -338,23 +350,23 @@ class ServerGroupView(NodeView):
                 success=0,
                 errormsg=gettext('No server group name was specified'))
 
-    @login_required
+    @pga_login_required
     def sql(self, gid):
         return make_json_response(status=422)
 
-    @login_required
+    @pga_login_required
     def modified_sql(self, gid):
         return make_json_response(status=422)
 
-    @login_required
+    @pga_login_required
     def statistics(self, gid):
         return make_json_response(status=422)
 
-    @login_required
+    @pga_login_required
     def dependencies(self, gid):
         return make_json_response(status=422)
 
-    @login_required
+    @pga_login_required
     def dependents(self, gid):
         return make_json_response(status=422)
 
@@ -383,7 +395,7 @@ class ServerGroupView(NodeView):
                 groups.append(group)
         return groups
 
-    @login_required
+    @pga_login_required
     def nodes(self, gid=None):
         """Return a JSON document listing the server groups for the user"""
         nodes = []
@@ -395,14 +407,17 @@ class ServerGroupView(NodeView):
                 groups = ServerGroup.query.filter_by(user_id=current_user.id)
 
             for group in groups:
+                icon_class, is_shared = get_icon_css_class(group.id,
+                                                           group.user_id)
                 nodes.append(
                     self.blueprint.generate_browser_node(
                         "%d" % group.id,
                         None,
                         group.name,
-                        get_icon_css_class(group.id, group.user_id),
+                        icon_class,
                         True,
-                        self.node_type
+                        self.node_type,
+                        is_shared=is_shared
                     )
                 )
         else:
@@ -413,12 +428,15 @@ class ServerGroupView(NodeView):
                     errormsg=gettext("Could not find the server group.")
                 )
 
+            icon_class, is_shared = get_icon_css_class(group.id,
+                                                       group.user_id)
             nodes = self.blueprint.generate_browser_node(
                 "%d" % (group.id), None,
                 group.name,
-                get_icon_css_class(group.id, group.user_id),
+                icon_class,
                 True,
-                self.node_type
+                self.node_type,
+                is_shared=is_shared
             )
 
         return make_json_response(data=nodes)

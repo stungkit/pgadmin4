@@ -2,29 +2,35 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 #########################################################################
 
 SHELL = /bin/sh
 
-APP_NAME := $(shell grep ^APP_NAME web/config.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]' | tr -d "'" | awk '{print tolower($$0)}')
-APP_RELEASE := $(shell grep ^APP_RELEASE web/config.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]')
-APP_REVISION := $(shell grep ^APP_REVISION web/config.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]')
+APP_NAME := $(shell grep ^APP_NAME web/branding.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]' | tr -d "'" | awk '{print tolower($$0)}')
+APP_RELEASE := $(shell grep ^APP_RELEASE web/version.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]')
+APP_REVISION := $(shell grep ^APP_REVISION web/version.py | awk -F"=" '{print $$NF}' | tr -d '[:space:]')
 
 #########################################################################
 # High-level targets
 #########################################################################
 
 # Include only platform-independent builds in all
-all: docs pip src runtime
+all: docs pip src
 
 appbundle:
 	./pkg/mac/build.sh
 
 install-node:
-	cd web && yarn install && npm rebuild
+	cd web && yarn install
+
+install-python:
+	./tools/setup-python-env.sh
+
+install-python-testing:
+	./tools/setup-python-env.sh --test
 
 bundle:
 	cd web && yarn run bundle
@@ -36,7 +42,7 @@ linter:
 	cd web && yarn run linter
 
 check: install-node bundle linter check-pep8
-	cd web && yarn run karma start --single-run && python regression/runtests.py
+	cd web && yarn run test:js-once && python regression/runtests.py
 
 check-audit:
 	cd web && yarn run audit
@@ -71,27 +77,17 @@ check-feature: install-node bundle
 	cd web && python regression/runtests.py --pkg feature_tests
 
 check-js: install-node linter
-	cd web && yarn run karma start --single-run
+	cd web && yarn run test:js-once
 
 check-js-coverage:
-    cd web && yarn run test:karma-coverage
-
-runtime-debug:
-	cd runtime && qmake CONFIG+=debug && make
-
-runtime:
-	cd runtime && qmake CONFIG+=release && make
+    cd web && yarn run test:js-coverage
 
 # Include all clean sub-targets in clean
-clean: clean-appbundle clean-debian clean-dist clean-docs clean-node clean-pip clean-redhat clean-src clean-runtime
+clean: clean-appbundle clean-debian clean-dist clean-docs clean-node clean-pip clean-redhat clean-src
 	rm -rf web/pgadmin/static/js/generated/*
 	rm -rf web/pgadmin/static/js/generated/.cache
 	rm -rf web/pgadmin/static/css/generated/*
 	rm -rf web/pgadmin/static/css/generated/.cache
-
-clean-runtime:
-	if [ -f runtime/Makefile ]; then (cd runtime && make clean); fi;
-	rm -rf build-*
 
 clean-appbundle:
 	rm -rf mac-build/
@@ -122,6 +118,7 @@ debian:
 
 docker:
 	echo $(APP_NAME)
+	git checkout HEAD
 	docker build --pull -t ${APP_NAME} -t $(APP_NAME):latest -t $(APP_NAME):$(APP_RELEASE) -t $(APP_NAME):$(APP_RELEASE).$(APP_REVISION) .
 
 docs:

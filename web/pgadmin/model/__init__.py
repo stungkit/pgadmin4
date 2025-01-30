@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -23,7 +23,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.ext.mutable import MutableDict
 import sqlalchemy.types as types
 import uuid
-import json
+import config
 
 ##########################################################################
 #
@@ -33,7 +33,7 @@ import json
 #
 ##########################################################################
 
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 42
 
 ##########################################################################
 #
@@ -41,9 +41,15 @@ SCHEMA_VERSION = 35
 #
 ##########################################################################
 
-db = SQLAlchemy()
+db = SQLAlchemy(
+    engine_options={
+        'pool_size': config.CONFIG_DATABASE_CONNECTION_POOL_SIZE,
+        'max_overflow': config.CONFIG_DATABASE_CONNECTION_MAX_OVERFLOW})
+
+
 USER_ID = 'user.id'
 SERVER_ID = 'server.id'
+CASCADE_STR = "all, delete-orphan"
 
 # Define models
 roles_users = db.Table(
@@ -71,25 +77,6 @@ class PgAdminDbBinaryString(types.TypeDecorator):
             return bytes.fromhex(value)
         except Exception as _:
             return value
-
-
-class PgAdminJSONString(types.TypeDecorator):
-    """
-    This function is used to return a string representing a json object from
-    an object and vise versa.
-    """
-
-    impl = types.String
-
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            value = json.dumps(value)
-        return value
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            value = json.loads(value)
-        return value
 
 
 class Version(db.Model):
@@ -187,7 +174,7 @@ class Server(db.Model):
     discovery_id = db.Column(db.String(128), nullable=True)
     servers = db.relationship(
         'ServerGroup',
-        backref=db.backref('server', cascade="all, delete-orphan"),
+        backref=db.backref('server', cascade=CASCADE_STR),
         lazy='joined'
     )
     db_res = db.Column(db.Text(), nullable=True)
@@ -205,7 +192,7 @@ class Server(db.Model):
     tunnel_port = db.Column(
         db.Integer(),
         db.CheckConstraint('port <= 65534'),
-        nullable=True)
+        nullable=True, default=22)
     tunnel_username = db.Column(db.String(64), nullable=True)
     tunnel_authentication = db.Column(
         db.Integer(),
@@ -215,42 +202,26 @@ class Server(db.Model):
     )
     tunnel_identity_file = db.Column(db.String(64), nullable=True)
     tunnel_password = db.Column(PgAdminDbBinaryString())
+    tunnel_keep_alive = db.Column(db.Integer(), nullable=True, default=0)
     shared = db.Column(db.Boolean(), nullable=False)
+    shared_username = db.Column(db.String(64), nullable=True)
     kerberos_conn = db.Column(db.Boolean(), nullable=False, default=0)
     cloud_status = db.Column(db.Integer(), nullable=False, default=0)
-    connection_params = db.Column(MutableDict.as_mutable(PgAdminJSONString))
+    connection_params = db.Column(MutableDict.as_mutable(types.JSON))
+    prepare_threshold = db.Column(db.Integer(), nullable=True)
+    tags = db.Column(types.JSON)
+    is_adhoc = db.Column(
+        db.Integer(),
+        db.CheckConstraint('is_adhoc >= 0 AND is_adhoc <= 1'),
+        nullable=False, default=0
+    )
 
-    @property
-    def serialize(self):
-        """Return object data in easily serializable format"""
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "servergroup_id": self.servergroup_id,
-            "name": self.name,
-            "host": self.host,
-            "port": self.port,
-            "maintenance_db": self.maintenance_db,
-            "username": self.username,
-            "password": self.password,
-            "save_password": self.save_password,
-            "role": self.role,
-            "comment": self.comment,
-            "discovery_id": self.discovery_id,
-            "db_res": self.db_res,
-            "passexec_cmd": self.passexec_cmd,
-            "passexec_expiration": self.passexec_expiration,
-            "bgcolor": self.bgcolor,
-            "fgcolor": self.fgcolor,
-            "service": self.service,
-            "use_ssh_tunnel": self.use_ssh_tunnel,
-            "tunnel_host": self.tunnel_host,
-            "tunnel_port": self.tunnel_port,
-            "tunnel_authentication": self.tunnel_authentication,
-            "tunnel_identity_file": self.tunnel_identity_file,
-            "tunnel_password": self.tunnel_password,
-            "connection_params": self.connection_params
-        }
+    def clone(self):
+        d = dict(self.__dict__)
+        d.pop("id")  # get rid of id
+        d.pop("_sa_instance_state")  # get rid of SQLAlchemy special attr
+        copy = self.__class__(**d)
+        return copy
 
 
 class ModulePreference(db.Model):
@@ -431,7 +402,7 @@ class SharedServer(db.Model):
     discovery_id = db.Column(db.String(128), nullable=True)
     servers = db.relationship(
         'ServerGroup',
-        backref=db.backref('sharedserver', cascade="all, delete-orphan"),
+        backref=db.backref('sharedserver', cascade=CASCADE_STR),
         lazy='joined'
     )
     db_res = db.Column(db.Text(), nullable=True)
@@ -457,8 +428,10 @@ class SharedServer(db.Model):
     )
     tunnel_identity_file = db.Column(db.String(64), nullable=True)
     tunnel_password = db.Column(PgAdminDbBinaryString())
+    tunnel_keep_alive = db.Column(db.Integer(), nullable=True)
     shared = db.Column(db.Boolean(), nullable=False)
-    connection_params = db.Column(MutableDict.as_mutable(PgAdminJSONString))
+    connection_params = db.Column(MutableDict.as_mutable(types.JSON))
+    prepare_threshold = db.Column(db.Integer(), nullable=True)
 
 
 class Macros(db.Model):
@@ -474,11 +447,12 @@ class Macros(db.Model):
 class UserMacros(db.Model):
     """Define the macro for a particular user."""
     __tablename__ = 'user_macros'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     mid = db.Column(
-        db.Integer, db.ForeignKey('macros.id'), primary_key=True
+        db.Integer, db.ForeignKey('macros.id'), nullable=True
     )
     uid = db.Column(
-        db.Integer, db.ForeignKey(USER_ID), primary_key=True
+        db.Integer, db.ForeignKey(USER_ID)
     )
     name = db.Column(db.String(1024), nullable=False)
     sql = db.Column(db.Text(), nullable=False)
@@ -492,5 +466,5 @@ class UserMFA(db.Model):
     options = db.Column(db.Text(), nullable=True)
     user = db.relationship(
         'User',
-        backref=db.backref('user', cascade="all, delete-orphan")
+        backref=db.backref('user', cascade=CASCADE_STR)
     )

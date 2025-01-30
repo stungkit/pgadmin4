@@ -3,18 +3,20 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
+import json
+import secrets
 from pgadmin.utils.route import BaseTestGenerator
 from pgadmin.browser.server_groups.servers.databases.tests import utils as \
     database_utils
 from regression.python_test_utils import test_utils
-import json
 from pgadmin.utils import server_utils
-import secrets
+from pgadmin.tools.sqleditor.tests.execute_query_test_utils \
+    import async_poll
 
 
 class TestEncodingCharset(BaseTestGenerator):
@@ -265,17 +267,20 @@ class TestEncodingCharset(BaseTestGenerator):
         url = '/sqleditor/initialize/sqleditor/{0}/{1}/{2}/{3}'\
             .format(self.trans_id, test_utils.SERVER_GROUP, self.encode_sid,
                     self.encode_did)
-        response = self.tester.post(url)
+        response = self.tester.post(url, data=json.dumps({
+            "dbname": self.encode_db_name
+        }))
         self.assertEqual(response.status_code, 200)
 
         # Check character
         url = "/sqleditor/query_tool/start/{0}".format(self.trans_id)
         sql = "select E'{0}';".format(self.test_str)
-        response = self.tester.post(url, data=json.dumps({"sql": sql}),
-                                    content_type='html/json')
+        response = (self.tester.post(url, data=json.dumps({"sql": sql}),
+                                     content_type='html/json'))
         self.assertEqual(response.status_code, 200)
-        url = '/sqleditor/poll/{0}'.format(self.trans_id)
-        response = self.tester.get(url)
+        response = async_poll(tester=self.tester,
+                              poll_url='/sqleditor/poll/{0}'.format(
+                                  self.trans_id))
         self.assertEqual(response.status_code, 200)
         response_data = json.loads(response.data.decode('utf-8'))
         self.assertEqual(response_data['data']['rows_fetched_to'], 1)

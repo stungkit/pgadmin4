@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,20 +10,20 @@
 """A blueprint module implementing the import and export functionality"""
 
 import json
-import os
 import copy
-from flask import url_for, Response, render_template, request, current_app
+
+from flask import Response, render_template, request, current_app
 from flask_babel import gettext as _
-from flask_security import login_required, current_user
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.misc.bgprocess.processes import BatchProcess, IProcessDesc
-from pgadmin.utils import PgAdminModule, get_storage_directory, html, \
-    fs_short_path, document_dir, IS_WIN, does_utility_exist, \
-    filename_with_file_manager_path
+from pgadmin.utils import PgAdminModule, get_storage_directory, IS_WIN, \
+    does_utility_exist, get_server, filename_with_file_manager_path
 from pgadmin.utils.ajax import make_json_response, bad_request, unauthorized
 
 from config import PG_DEFAULT_DRIVER
 from pgadmin.model import Server
-from pgadmin.utils.constants import MIMETYPE_APP_JS
+from pgadmin.utils.constants import MIMETYPE_APP_JS, SERVER_NOT_FOUND
 from pgadmin.settings import get_setting, store_setting
 
 MODULE_NAME = 'import_export'
@@ -56,6 +56,7 @@ class IEMessage(IProcessDesc):
 
     Defines the message shown for the import/export operation.
     """
+
     def __init__(self, *_args, **io_params):
         self.sid = io_params['sid']
         self.schema = io_params['schema']
@@ -79,7 +80,7 @@ class IEMessage(IProcessDesc):
 
         replace_next = False
         for arg in _args:
-            if arg and len(arg) >= 2 and arg[:2] == '--':
+            if arg and len(arg) >= 2 and arg.startswith('--'):
                 if arg == '--command':
                     replace_next = True
                 self._cmd += ' ' + arg
@@ -99,7 +100,12 @@ class IEMessage(IProcessDesc):
 
         if s is None:
             return _("Not available")
-        return "{0} ({1}:{2})".format(s.name, s.host, s.port)
+        host_port_str = ''
+        if s.host:
+            host_port_str = '({0}:{1})'.format(
+                s.host, s.port) if s.port else '{0}'.format(s.host)
+
+        return "{0} {1}".format(s.name, host_port_str)
 
     @property
     def message(self):
@@ -130,13 +136,13 @@ class IEMessage(IProcessDesc):
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(errormsg=_("This URL cannot be called directly."))
 
 
 @blueprint.route("/js/import_export.js")
-@login_required
+@pga_login_required
 def script():
     """render the import/export javascript file"""
     return Response(
@@ -221,7 +227,7 @@ def _save_import_export_settings(settings):
 
 
 @blueprint.route('/job/<int:sid>', methods=['POST'], endpoint="create_job")
-@login_required
+@pga_login_required
 def create_import_export_job(sid):
     """
     Args:
@@ -322,12 +328,10 @@ def create_import_export_job(sid):
                 *args,
                 **io_params
             ),
-            cmd=utility, args=args
+            cmd=utility, args=args, manager_obj=manager
         )
-        manager.export_password_env(p.id)
 
         env = dict()
-
         env['PGHOST'] = \
             manager.local_bind_host if manager.use_ssh_tunnel else server.host
         env['PGPORT'] = \
@@ -335,6 +339,12 @@ def create_import_export_job(sid):
                 server.port)
         env['PGUSER'] = server.username
         env['PGDATABASE'] = data['database']
+
+        # Delete the empty keys
+        for key, value in dict(env).items():
+            if value is None:
+                del env[key]
+
         p.set_env_variables(server, env=env)
         p.start()
         jid = p.id
@@ -349,7 +359,7 @@ def create_import_export_job(sid):
 
 
 @blueprint.route('/get_settings/', methods=['GET'], endpoint='get_settings')
-@login_required
+@pga_login_required
 def get_import_export_settings():
     settings = get_setting('import_export_setting', None)
     if settings is None:
@@ -362,7 +372,7 @@ def get_import_export_settings():
 @blueprint.route(
     '/utility_exists/<int:sid>', endpoint='utility_exists'
 )
-@login_required
+@pga_login_required
 def check_utility_exists(sid):
     """
     This function checks the utility file exist on the given path.
@@ -372,14 +382,13 @@ def check_utility_exists(sid):
     Returns:
         None
     """
-    server = Server.query.filter_by(
-        id=sid, user_id=current_user.id
-    ).first()
+
+    server = get_server(sid)
 
     if server is None:
         return make_json_response(
             success=0,
-            errormsg=_("Could not find the specified server.")
+            errormsg=SERVER_NOT_FOUND
         )
 
     from pgadmin.utils.driver import get_driver

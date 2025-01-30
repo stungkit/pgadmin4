@@ -2,75 +2,67 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import '../helper/enzyme.helper';
-import { createMount } from '@material-ui/core/test-utils';
+
 import { SCHEMA_STATE_ACTIONS } from '../../../pgadmin/static/js/SchemaView';
 import _ from 'lodash';
 import { getNodeTableSchema, LikeSchema } from '../../../pgadmin/browser/server_groups/servers/databases/schemas/tables/static/js/table.ui';
 import * as nodeAjax from '../../../pgadmin/browser/static/js/node_ajax';
-import Notify from '../../../pgadmin/static/js/helpers/Notifier';
 import {genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
+import pgAdmin from '../fake_pgadmin';
 
 function getFieldDepChange(schema, id) {
   return _.find(schema.fields, (f)=>f.id==id)?.depChange;
 }
 
-describe('TableSchema', ()=>{
-  let mount;
-  let schemaObj;
-  let getInitData = ()=>Promise.resolve({});
+describe('TableSchema', () => {
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
-  beforeAll(()=>{
-    mount = createMount();
-    spyOn(nodeAjax, 'getNodeAjaxOptions').and.returnValue(Promise.resolve([]));
-    spyOn(nodeAjax, 'getNodeListByName').and.returnValue(Promise.resolve([]));
-    schemaObj = getNodeTableSchema({
-      server: {
-        _id: 1,
-      },
-      schema: {
-        _label: 'public',
-      }
-    }, {}, {
-      Nodes: {table: {}},
-      serverInfo: {
-        1: {
-          user: {
-            name: 'Postgres',
-          }
+  const createTableSchemaObject = () => getNodeTableSchema({
+    server: {
+      _id: 1,
+    },
+    schema: {
+      _label: 'public',
+    }
+  }, {}, {
+    Nodes: {table: {}},
+    serverInfo: {
+      1: {
+        user: {
+          name: 'Postgres',
         }
       }
-    });
+    }
+  });
+  let schemaObj = createTableSchemaObject();
+  let getInitData = ()=>Promise.resolve({});
+
+  beforeAll(() => {
+    jest.spyOn(nodeAjax, 'getNodeAjaxOptions').mockReturnValue(Promise.resolve([]));
+    jest.spyOn(nodeAjax, 'getNodeListByName').mockReturnValue(Promise.resolve([]));
   });
 
-  afterAll(() => {
-    mount.cleanUp();
-  });
-
-  beforeEach(()=>{
+  beforeEach(() => {
     genericBeforeEach();
   });
 
-  it('create', ()=>{
-    mount(getCreateView(schemaObj));
+  it('create', async () => {
+    await getCreateView(createTableSchemaObject());
   });
 
-  it('edit', ()=>{
-    mount(getEditView(schemaObj, getInitData));
+  it('edit', async () => {
+    await getEditView(createTableSchemaObject(), getInitData);
   });
 
-  it('properties', ()=>{
-    mount(getPropertiesView(schemaObj, getInitData));
+  it('properties', async () => {
+    await getPropertiesView(createTableSchemaObject(), getInitData);
   });
 
-  it('getTableOid', ()=>{
+  it('getTableOid', () => {
     schemaObj.inheritedTableList = [
       {label: 'tab1', tid: 140391},
       {label: 'tab2', tid: 180191}
@@ -78,12 +70,12 @@ describe('TableSchema', ()=>{
     expect(schemaObj.getTableOid('tab2')).toBe(180191);
   });
 
-  it('canEditDeleteRowColumns', ()=>{
+  it('canEditDeleteRowColumns', () => {
     expect(schemaObj.canEditDeleteRowColumns({inheritedfrom: 1234})).toBe(false);
     expect(schemaObj.canEditDeleteRowColumns({inheritedfrom: null})).toBe(true);
   });
 
-  it('LikeSchema typname change', ()=>{
+  it('LikeSchema typname change', () => {
     let likeSchemaObj = new LikeSchema([]);
     /* Dummy */
     likeSchemaObj.top = new LikeSchema([]);
@@ -95,19 +87,23 @@ describe('TableSchema', ()=>{
       like_indexes: false,
       like_storage: false,
       like_comments: false,
+      like_compression: false,
+      like_generated: false,
+      like_identity: false,
+      like_statistics: false
     });
   });
 
-  describe('typname change', ()=>{
+  describe('typname change', () => {
     let confirmSpy;
     let deferredDepChange;
     let oftypeColumns = [
       {name: 'id'}
     ];
-    beforeEach(()=>{
-      spyOn(schemaObj,'changeColumnOptions').and.callThrough();
-      spyOn(schemaObj, 'getTableOid').and.returnValue(140391);
-      confirmSpy = spyOn(Notify, 'confirm').and.callThrough();
+    beforeEach(() => {
+      jest.spyOn(schemaObj, 'changeColumnOptions');
+      jest.spyOn(schemaObj, 'getTableOid').mockReturnValue(140391);
+      confirmSpy = jest.spyOn(pgAdmin.Browser.notifier, 'confirm');
       deferredDepChange = _.find(schemaObj.fields, (f)=>f.id=='typname')?.deferredDepChange;
       schemaObj.ofTypeTables = [
         {label: 'type1', oftype_columns: oftypeColumns}
@@ -139,10 +135,11 @@ describe('TableSchema', ()=>{
         onDepChangeAction(depChange, done);
       });
       /* Press OK */
-      confirmSpy.calls.argsFor(0)[2]();
+      confirmSpy.mock.calls[0][2]();
     });
 
     it('initial selection with Cancel', (done)=>{
+      confirmSpy.mockClear();
       let state = {typname: 'type1'};
       let deferredPromise = deferredDepChange(state, null, null, {
         oldState: {
@@ -156,7 +153,7 @@ describe('TableSchema', ()=>{
         done();
       });
       /* Press Cancel */
-      confirmSpy.calls.argsFor(0)[3]();
+      confirmSpy.mock.calls[0][3]();
     });
 
     it('later selection', (done)=>{
@@ -185,7 +182,7 @@ describe('TableSchema', ()=>{
     });
   });
 
-  describe('coll_inherits change', ()=>{
+  describe('coll_inherits change', () => {
     let deferredDepChange;
     let inheritCol = {name: 'id'};
     let onRemoveAction = (depChange, state, done)=> {
@@ -198,10 +195,10 @@ describe('TableSchema', ()=>{
       done();
     };
 
-    beforeEach(()=>{
-      spyOn(schemaObj,'changeColumnOptions').and.callThrough();
-      spyOn(schemaObj, 'getTableOid').and.returnValue(140391);
-      spyOn(schemaObj, 'getColumns').and.returnValue(Promise.resolve([inheritCol]));
+    beforeEach(() => {
+      jest.spyOn(schemaObj, 'changeColumnOptions');
+      jest.spyOn(schemaObj, 'getTableOid').mockReturnValue(140391);
+      jest.spyOn(schemaObj, 'getColumns').mockReturnValue(Promise.resolve([inheritCol]));
       deferredDepChange = _.find(schemaObj.fields, (f)=>f.id=='coll_inherits')?.deferredDepChange;
     });
 
@@ -272,8 +269,8 @@ describe('TableSchema', ()=>{
     });
   });
 
-  it('depChange', ()=>{
-    spyOn(schemaObj, 'getTableOid').and.returnValue(140391);
+  it('depChange', () => {
+    jest.spyOn(schemaObj, 'getTableOid').mockReturnValue(140391);
     let state = {};
 
     state.is_partitioned = true;
@@ -285,7 +282,7 @@ describe('TableSchema', ()=>{
       coll_inherits: [],
     });
 
-    spyOn(schemaObj, 'getServerVersion').and.returnValue(100000);
+    jest.spyOn(schemaObj, 'getServerVersion').mockReturnValue(100000);
     schemaObj.constraintsObj.top = schemaObj;
     expect(getFieldDepChange(schemaObj.constraintsObj, 'primary_key')({is_partitioned: true})).toEqual({
       primary_key: []
@@ -301,9 +298,9 @@ describe('TableSchema', ()=>{
     });
   });
 
-  it('validate', ()=>{
+  it('validate', () => {
     let state = {is_partitioned: true};
-    let setError = jasmine.createSpy('setError');
+    let setError = jest.fn();
 
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('partition_keys', 'Please specify at least one key for partitioned table.');

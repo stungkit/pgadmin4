@@ -2,25 +2,27 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-import { makeStyles, Box, Portal } from '@material-ui/core';
-import React, {useContext, useLayoutEffect, useRef} from 'react';
+import { Box, Portal } from '@mui/material';
+import { styled } from '@mui/material/styles';
+import React, {useContext, useLayoutEffect, useRef, useEffect} from 'react';
 import { DefaultButton, PrimaryButton } from '../../../../../../static/js/components/Buttons';
-import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
-import CloseIcon from '@material-ui/icons/Close';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import CloseIcon from '@mui/icons-material/Close';
 import gettext from 'sources/gettext';
-import clsx from 'clsx';
 import JSONBigNumber from 'json-bignumber';
 import JsonEditor from '../../../../../../static/js/components/JsonEditor';
 import PropTypes from 'prop-types';
 import { RowInfoContext } from '.';
-import Notifier from '../../../../../../static/js/helpers/Notifier';
+import { usePgAdmin } from '../../../../../../static/js/PgAdminProvider';
+import CustomPropTypes from '../../../../../../static/js/custom_prop_types';
 
-const useStyles = makeStyles((theme)=>({
-  textEditor: {
+
+const StyledEditorDiv = styled(Box)(({ theme }) => ({
+  '&.Editors-textEditor': {
     position: 'absolute',
     zIndex: 1080,
     backgroundColor: theme.palette.background.default,
@@ -28,7 +30,6 @@ const useStyles = makeStyles((theme)=>({
     fontSize: '12px',
     ...theme.mixins.panelBorder.all,
     left: 0,
-    // bottom: 0,
     top: 0,
     '& textarea': {
       width: '250px',
@@ -36,38 +37,12 @@ const useStyles = makeStyles((theme)=>({
       border: 0,
       outline: 0,
       resize: 'both',
-    }
-  },
-  jsonEditor: {
-    position: 'absolute',
-    zIndex: 1080,
-    backgroundColor: theme.palette.background.default,
-    ...theme.mixins.panelBorder,
-    padding: '0.25rem',
-    '& .jsoneditor-div': {
-      fontSize: '12px',
-      minWidth: '525px',
-      minHeight: '300px',
-      ...theme.mixins.panelBorder.all,
-      outline: 0,
-      resize: 'both',
-      overflow: 'auto',
+      '& .Editors-textarea': {
+        resize: 'both',
+      },
     },
-    '& .jsoneditor': {
-      height: 'abc',
-      border: 'none',
-      '& .ace-jsoneditor .ace_marker-layer .ace_active-line': {
-        background: theme.palette.primary.light
-      }
-    }
   },
-  buttonMargin: {
-    marginLeft: '0.5rem',
-  },
-  textarea: {
-    resize: 'both'
-  },
-  input: {
+  '& .Editors-input': {
     appearance: 'none',
     width: '100%',
     height: '100%',
@@ -76,22 +51,21 @@ const useStyles = makeStyles((theme)=>({
     backgroundColor: theme.palette.background.default,
     color: theme.palette.text.primary,
     border: 0,
-    boxShadow: 'inset 0 0 0 1.5px '+theme.palette.primary.main,
+    boxShadow: 'inset 0 0 0 1.5px ' + theme.palette.primary.main,
     padding: '0 2px',
     '::selection': {
       background: theme.palette.primary.light,
-    }
+    },
   },
-  check: {
+  '& .Editors-check': {
     display: 'inline-block',
     verticalAlign: 'top',
     width: '16px',
     height: '16px',
-    border: '1px solid '+theme.palette.grey[800],
+    border: '1px solid ' + theme.palette.grey[800],
     margin: '3px',
     textAlign: 'center',
     lineHeight: '16px',
-
     '&.checked, &.unchecked': {
       background: theme.palette.grey[200],
     },
@@ -106,8 +80,81 @@ const useStyles = makeStyles((theme)=>({
         fontWeight: 'bold',
       },
     },
-  }
+  },
+  '&.Editors-jsonEditor': {
+    position: 'absolute',
+    zIndex: 1080,
+    backgroundColor: theme.palette.background.default,
+    ...theme.mixins.panelBorder,
+    padding: '0.25rem',
+    '& .jsoneditor-div': {
+      fontSize: '12px',
+      minWidth: '525px',
+      minHeight: '300px',
+      ...theme.mixins.panelBorder.all,
+      outline: 0,
+      resize: 'both',
+      overflow: 'hidden',
+    },
+    '& .jsoneditor': {
+      height: 'abc',
+      border: 'none',
+      '& .ace-jsoneditor .ace_marker-layer .ace_active-line': {
+        background: theme.palette.primary.light,
+      },
+    },
+  },
+  '& .Editors-buttonMargin': {
+    marginLeft: '0.5rem',
+  },
 }));
+
+const ResizableDiv = ({columnIndex, children, ...otherProps}) => {
+
+  const editorRef = React.useRef(null);
+  const {getCellElement} = useContext(RowInfoContext);
+
+  useEffect(()=>{
+    // Function to check if element is going outsied browser window on resize
+    // and set the height/width to keep it within the browser window.
+    const resizeEditor = () => {
+      const { innerHeight, innerWidth } = window;
+      const box = editorRef.current.getBoundingClientRect();
+      let currentHeight = parseInt(editorRef.current.firstChild.style.height);
+      let heightDiff = parseInt(box.bottom) - innerHeight;
+      let currentWidth = parseInt(editorRef.current.firstChild.style.width);
+      let widthDiff = parseInt(box.right) - innerWidth;
+
+      if (box.bottom > innerHeight) {
+        editorRef.current.firstChild.style.height = `${currentHeight - heightDiff - 20}px`;
+      }
+      if (box.right > innerWidth) {
+        editorRef.current.firstChild.style.width = `${currentWidth - widthDiff - 20}px`;
+      }
+    };
+
+    editorRef.current.addEventListener('mousedown', () => {
+      document.addEventListener('mouseup', resizeEditor, {once: true});
+    });
+
+    return () => document.removeEventListener('mouseup', resizeEditor);
+
+  },[]);
+
+  return (
+    <StyledEditorDiv ref={(ele)=>{
+      editorRef.current = ele;
+      setEditorPosition(getCellElement(columnIndex), ele, '.rdg', 12);
+    }} {...otherProps}>
+      {children}
+    </StyledEditorDiv>
+  );
+};
+ResizableDiv.displayName = 'ResizableDiv';
+ResizableDiv.propTypes = {
+  children: CustomPropTypes.children,
+  columnIndex: PropTypes.number
+};
 
 function autoFocusAndSelect(input) {
   input?.focus();
@@ -119,7 +166,7 @@ function isValidArray(val) {
   return !(val != '' && (val.charAt(0) != '{' || val.charAt(val.length - 1) != '}'));
 }
 
-function setEditorPosition(cellEle, editorEle) {
+export function setEditorPosition(cellEle, editorEle, closestEle, topValue) {
   if(!editorEle || !cellEle) {
     return;
   }
@@ -127,12 +174,12 @@ function setEditorPosition(cellEle, editorEle) {
   if(editorEle.style.left || editorEle.style.top) {
     return;
   }
-  let gridEle = cellEle.closest('.rdg');
+  let gridEle = cellEle.closest(closestEle);
   let cellRect = cellEle.getBoundingClientRect();
   let gridEleRect = gridEle.getBoundingClientRect();
   let position = {
     left: cellRect.left,
-    top:  Math.max(cellRect.top - editorEle.offsetHeight + 12, 0)
+    top:  Math.max(cellRect.top - editorEle.offsetHeight + topValue, 0)
   };
 
   if ((position.left + editorEle.offsetWidth + 10) > gridEle.offsetWidth) {
@@ -176,10 +223,10 @@ function suppressEnterKey(e) {
   }
 }
 export function TextEditor({row, column, onRowChange, onClose}) {
-  const classes = useStyles();
+
   const value = row[column.key] ?? '';
   const [localVal, setLocalVal] = React.useState(value);
-  const {getCellElement} = useContext(RowInfoContext);
+  const pgAdmin = usePgAdmin();
 
   const onChange = React.useCallback((e)=>{
     setLocalVal(e.target.value);
@@ -187,7 +234,7 @@ export function TextEditor({row, column, onRowChange, onClose}) {
 
   const onOK = ()=>{
     if(column.is_array && !isValidArray(localVal)) {
-      Notifier.error(gettext('Arrays must start with "{" and end with "}"'));
+      pgAdmin.Browser.notifier.error(gettext('Arrays must start with "{" and end with "}"'));
     } else {
       if(value == localVal) {
         onClose(false);
@@ -199,39 +246,46 @@ export function TextEditor({row, column, onRowChange, onClose}) {
     }
   };
 
-  return(
+  const onkeydown = (e)=>{
+    // If only the Enter key is pressed, then save the changes.
+    if(e.keyCode == 13 && !e.shiftKey) {
+      onOK();
+    }
+  };
+
+  return (
     <Portal container={document.body}>
-      <Box ref={(ele)=>{
-        setEditorPosition(getCellElement(column.idx), ele);
-      }} className={classes.textEditor} data-label="pg-editor" onKeyDown={suppressEnterKey} >
-        <textarea ref={autoFocusAndSelect} className={classes.textarea} value={localVal} onChange={onChange} />
+      <ResizableDiv columnIndex={column.idx}
+        className='Editors-textEditor' data-label="pg-editor" onKeyDown={suppressEnterKey} >
+        <textarea ref={autoFocusAndSelect} className='Editors-textarea' value={localVal} onChange={onChange} onKeyDown={onkeydown} />
         <Box display="flex" justifyContent="flex-end">
           <DefaultButton startIcon={<CloseIcon />} onClick={()=>onClose(false)} size="small">
             {gettext('Cancel')}
           </DefaultButton>
           {column.can_edit &&
-          <>
-            <PrimaryButton startIcon={<CheckRoundedIcon />} onClick={onOK} size="small" className={classes.buttonMargin}>
+            <PrimaryButton startIcon={<CheckRoundedIcon />} onClick={onOK} size="small" className='Editors-buttonMargin'>
               {gettext('OK')}
             </PrimaryButton>
-          </>}
+          }
         </Box>
-      </Box>
+      </ResizableDiv>
     </Portal>
   );
 }
 TextEditor.propTypes = EditorPropTypes;
 
 export function NumberEditor({row, column, onRowChange, onClose}) {
-  const classes = useStyles();
+
+  const pgAdmin = usePgAdmin();
+
   const value = row[column.key] ?? '';
   const isValidData = ()=>{
     if(!column.is_array && isNaN(value)){
-      Notifier.error(gettext('Please enter a valid number'));
+      pgAdmin.Browser.notifier.error(gettext('Please enter a valid number'));
       return false;
     } else if(column.is_array) {
       if(!isValidArray(value)) {
-        Notifier.error(gettext('Arrays must start with "{" and end with "}"'));
+        pgAdmin.Browser.notifier.error(gettext('Arrays must start with "{" and end with "}"'));
         return false;
       }
       let checkVal = value.trim().slice(1, -1);
@@ -242,7 +296,7 @@ export function NumberEditor({row, column, onRowChange, onClose}) {
       }
       for (const val of checkVal) {
         if(isNaN(val)) {
-          Notifier.error(gettext('Arrays must start with "{" and end with "}"'));
+          pgAdmin.Browser.notifier.error(gettext('Arrays must start with "{" and end with "}"'));
           return false;
         }
       }
@@ -251,7 +305,7 @@ export function NumberEditor({row, column, onRowChange, onClose}) {
   };
   const onBlur = ()=>{
     if(isValidData()) {
-      onClose(column.can_edit ? true : false);
+      onClose(column.can_edit);
       return true;
     }
     return false;
@@ -265,24 +319,26 @@ export function NumberEditor({row, column, onRowChange, onClose}) {
     }
   };
   return (
-    <input
-      className={classes.input}
-      ref={autoFocusAndSelect}
-      value={value}
-      onChange={(e)=>{
-        if(column.can_edit) {
-          onRowChange({ ...row, [column.key]: (e.target.value == '' ? null :  e.target.value)});
-        }
-      }}
-      onBlur={onBlur}
-      onKeyDown={onKeyDown}
-    />
+    <StyledEditorDiv height={'100%'}>
+      <input
+        className='Editors-input'
+        ref={autoFocusAndSelect}
+        value={value}
+        onChange={(e)=>{
+          if(column.can_edit) {
+            onRowChange({ ...row, [column.key]: (e.target.value == '' ? null :  e.target.value)});
+          }
+        }}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
+      />
+    </StyledEditorDiv>
   );
 }
 NumberEditor.propTypes = EditorPropTypes;
 
 export function CheckboxEditor({row, column, onRowChange, onClose}) {
-  const classes = useStyles();
+
   const value = row[column.key] ?? null;
   const containerRef = useRef();
   const changeValue = ()=>{
@@ -318,16 +374,17 @@ export function CheckboxEditor({row, column, onRowChange, onClose}) {
   }, []);
 
   return (
-    <div ref={containerRef} onClick={changeValue} onKeyDown={onSpaceHit} tabIndex="0" onBlur={onBlur} data-label="pg-checkbox-editor">
-      <span className={clsx(classes.check, className)}></span>
-    </div>
+    <StyledEditorDiv ref={containerRef} onClick={changeValue} onKeyDown={onSpaceHit} tabIndex="0" onBlur={onBlur} data-label="pg-checkbox-editor">
+      <span className={['Editors-check', className].join(' ')}></span>
+    </StyledEditorDiv>
   );
 }
 CheckboxEditor.propTypes = EditorPropTypes;
 
 export function JsonTextEditor({row, column, onRowChange, onClose}) {
-  const classes = useStyles();
-  const {getCellElement} = useContext(RowInfoContext);
+
+  const pgAdmin = usePgAdmin();
+
   const value = React.useMemo(()=>{
     let newVal = row[column.key] ?? null;
     /* If jsonb or array */
@@ -360,7 +417,7 @@ export function JsonTextEditor({row, column, onRowChange, onClose}) {
       return;
     }
     if(hasError) {
-      Notifier.error(gettext('Invalid JSON input'));
+      pgAdmin.Browser.notifier.error(gettext('Invalid JSON input'));
       return;
     }
     onRowChange({ ...row, [column.key]: localVal}, true);
@@ -368,9 +425,8 @@ export function JsonTextEditor({row, column, onRowChange, onClose}) {
   };
   return (
     <Portal container={document.body}>
-      <Box ref={(ele)=>{
-        setEditorPosition(getCellElement(column.idx), ele);
-      }} className={classes.jsonEditor} data-label="pg-editor" onKeyDown={suppressEnterKey} >
+      <ResizableDiv columnIndex={column.idx}
+        className='Editors-jsonEditor' data-label="pg-editor" onKeyDown={suppressEnterKey} >
         <JsonEditor
           value={localVal}
           options={{
@@ -384,13 +440,12 @@ export function JsonTextEditor({row, column, onRowChange, onClose}) {
             {gettext('Cancel')}
           </DefaultButton>
           {column.can_edit &&
-          <>
-            <PrimaryButton startIcon={<CheckRoundedIcon />} onClick={onOK} size="small" className={classes.buttonMargin}>
+            <PrimaryButton startIcon={<CheckRoundedIcon />} onClick={onOK} size="small" className='Editors-buttonMargin'>
               {gettext('OK')}
             </PrimaryButton>
-          </>}
+          }
         </Box>
-      </Box>
+      </ResizableDiv>
     </Portal>
   );
 }

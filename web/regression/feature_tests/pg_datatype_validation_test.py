@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -70,94 +70,10 @@ class PGDataypeFeatureTest(BaseFeatureTest):
         else:
             self.timezone_hh_mm = '+{}'.format(self.timezone_hh_mm)
 
-        self.database_version = connection.server_version
-
-        # For this test case we need to set "Insert bracket pairs?"
-        # SQL Editor preference to 'false' to avoid codemirror
-        # to add matching closing bracket by it self.
-        self._update_preferences()
+        self.database_version = self.server_information['server_version']
 
         # close the db connection
         connection.close()
-
-    def _update_preferences(self):
-        retry = 2
-        while retry > 0:
-            try:
-                file_menu = self.page.find_by_css_selector(
-                    NavMenuLocators.file_menu_css)
-                file_menu.click()
-
-                self.page.retry_click(
-                    (By.CSS_SELECTOR,
-                     NavMenuLocators.preference_menu_item_css),
-                    (By.XPATH,
-                     NavMenuLocators.specified_preference_tree_node
-                     .format('Browser'))
-                )
-
-                wait = WebDriverWait(self.page.driver, 10)
-
-                browser_node = self.page.find_by_xpath(
-                    NavMenuLocators.specified_preference_tree_node.
-                    format('Browser'))
-                if self.page.find_by_xpath(
-                    NavMenuLocators.specified_pref_node_exp_status.
-                        format('Browser')).\
-                        get_attribute('aria-expanded') == 'false':
-                    ActionChains(self.driver).\
-                        double_click(browser_node).perform()
-
-                self.page.retry_click(
-                    (By.XPATH, NavMenuLocators.
-                     specified_sub_node_of_pref_tree_node.
-                     format('Browser', 'Display')),
-                    (By.XPATH,
-                     NavMenuLocators.show_system_objects_pref_label_xpath))
-
-                # Wait till the preference dialogue
-                # box is displayed by checking the
-                # visibility of Show System Object label
-                wait.until(EC.presence_of_element_located(
-                    (By.XPATH,
-                     NavMenuLocators.show_system_objects_pref_label_xpath))
-                )
-
-                maximize_button = self.page.find_by_xpath(
-                    NavMenuLocators.maximize_pref_dialogue_css)
-                maximize_button.click()
-
-                specified_preference_tree_node_name = 'Query Tool'
-                sql_editor = self.page.find_by_xpath(
-                    NavMenuLocators.specified_preference_tree_node.
-                    format(specified_preference_tree_node_name))
-                if self.page.find_by_xpath(
-                    NavMenuLocators.specified_pref_node_exp_status.
-                        format(specified_preference_tree_node_name)).\
-                        get_attribute('aria-expanded') == 'false':
-                    ActionChains(self.driver).\
-                        double_click(sql_editor).perform()
-
-                option_node = \
-                    self.page.find_by_xpath("//*[@id='treeContainer']"
-                                            "//div//span[text()='Editor']")
-                option_node.click()
-
-                switch_box_element = self.page.find_by_xpath(
-                    NavMenuLocators.insert_bracket_pair_switch_btn)
-
-                switch_box_element.click()
-
-                maximize_button = self.page.find_by_xpath(
-                    NavMenuLocators.maximize_pref_dialogue_css)
-                maximize_button.click()
-                time.sleep(0.5)
-
-                # save and close the preference dialog.
-                self.page.click_modal('Save')
-                break
-            except Exception:
-                retry -= 1
 
     def _create_enum_type(self):
         query = """CREATE TYPE public.rainbow AS ENUM ('red', 'orange',
@@ -190,6 +106,8 @@ class PGDataypeFeatureTest(BaseFeatureTest):
         self._create_enum_type()
         for batch in config_data:
             query = self.construct_select_query(batch)
+            if not query:
+                continue
             self.page.execute_query(query)
             wait = WebDriverWait(self.page.driver, 5)
 
@@ -225,7 +143,8 @@ class PGDataypeFeatureTest(BaseFeatureTest):
                     cnt += 1
                     continue
 
-                if datatype in ('tstzrange', 'tstzrange[]'):
+                if datatype in ('tstzrange', 'tstzrange[]', 'tstzmultirange',
+                                'tstzmultirange[]'):
                     expected_output = expected_output.format(
                         **dict([('tz', self.timezone_hh_mm)]))
                 try:
@@ -256,7 +175,8 @@ class PGDataypeFeatureTest(BaseFeatureTest):
             else:
                 dataformatter = '{}'
 
-            if datatype in ('tstzrange', 'tstzrange[]'):
+            if datatype in ('tstzrange', 'tstzrange[]', 'tstzmultirange',
+                            'tstzmultirange[]'):
                 inputdata = inputdata.format(
                     **dict([('tz', self.timezone_hh_mm)]))
             if first:
@@ -264,7 +184,8 @@ class PGDataypeFeatureTest(BaseFeatureTest):
             else:
                 query += ',' + dataformatter.format(inputdata, datatype)
             first = False
-        return query + ';'
+        query = '' if query == 'SELECT ' else query + ';'
+        return query
 
     @staticmethod
     def check_result(datatype, source_code, string_to_find):

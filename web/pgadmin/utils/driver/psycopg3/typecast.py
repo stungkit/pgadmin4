@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2022, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -20,6 +20,7 @@ from psycopg.types.net import InetLoader
 from psycopg.adapt import Loader
 from ipaddress import ip_address, ip_interface
 from psycopg._encodings import py_codecs as encodings
+from psycopg.pq import Format as _pq_Format
 
 configure_driver_encodings(encodings)
 
@@ -87,9 +88,9 @@ RECORD_ARRAY = (2287,)
 
 PSYCOPG_SUPPORTED_BUILTIN_ARRAY_DATATYPES = (
     1016, 1005, 1006, 1007, 1021, 1022, 1231,
-    1002, 1003, 1009, 1014, 1015, 1009, 1014,
-    1015, 1000, 1115, 1185, 1183, 1270, 1182,
-    1187, 1001, 1028, 1013, 1041, 651, 1040
+    1002, 1003, 1009, 1014, 1015, 1014, 1015,
+    1000, 1115, 1185, 1183, 1270, 1182, 1187,
+    1001, 1028, 1013, 1041, 651, 1040
 )
 
 # json, jsonb
@@ -106,41 +107,39 @@ ALL_JSON_TYPES = PSYCOPG_SUPPORTED_JSON_TYPES +\
 # OID reference psycopg/lib/_ipaddress.py
 PSYCOPG_SUPPORTED_IPADDRESS_ARRAY_TYPES = (1041, 651)
 
-# uuid[]
+# uuid[], uuid
 # OID reference psycopg/lib/extras.py
-PSYCOPG_SUPPORTED_IPADDRESS_ARRAY_TYPES = (2951,)
+PSYCOPG_SUPPORTED_IPADDRESS_ARRAY_TYPES = (2951, 2950)
 
-# int4range, int8range, numrange, daterange tsrange, tstzrange[]
+# int4range, int8range, numrange, daterange tsrange, tstzrange
 # OID reference psycopg/lib/_range.py
 PSYCOPG_SUPPORTED_RANGE_TYPES = (3904, 3926, 3906, 3912, 3908, 3910)
+
+# int4multirange, int8multirange, nummultirange, datemultirange tsmultirange,
+# tstzmultirange[]
+PSYCOPG_SUPPORTED_MULTIRANGE_TYPES = (4535, 4451, 4536, 4532, 4533, 4534)
 
 # int4range[], int8range[], numrange[], daterange[] tsrange[], tstzrange[]
 # OID reference psycopg/lib/_range.py
 PSYCOPG_SUPPORTED_RANGE_ARRAY_TYPES = (3905, 3927, 3907, 3913, 3909, 3911)
 
+# int4multirange[], int8multirange[], nummultirange[],
+# datemultirange[] tsmultirange[], tstzmultirange[]
+PSYCOPG_SUPPORTED_MULTIRANGE_ARRAY_TYPES = (6155, 6150, 6157, 6151, 6152, 6153)
+
 
 def register_global_typecasters():
-    # This registers a unicode type caster for datatype 'RECORD'.
-    psycopg.adapters.register_loader(
-        2249, TextLoaderpgAdmin)
     # This registers a unicode type caster for datatype 'RECORD_ARRAY'.
     psycopg.adapters.register_loader(
         2287, TextLoaderpgAdmin)
 
     for typ in TO_STRING_DATATYPES + TO_STRING_NUMERIC_DATATYPES +\
-            PSYCOPG_SUPPORTED_RANGE_TYPES:
+            PSYCOPG_SUPPORTED_RANGE_TYPES + PSYCOPG_SUPPORTED_MULTIRANGE_TYPES:
         psycopg.adapters.register_loader(typ,
                                          TextLoaderpgAdmin)
 
-    #
-    # # define type caster to convert pg array types of above types into
-    # # array of string type
-    # pg_array_types_to_array_of_string_type = \
-    #     psycopg.extensions.new_array_type(
-    #         TO_ARRAY_OF_STRING_DATATYPES,
-    #         'TYPECAST_TO_ARRAY_OF_STRING', pg_types_to_string_type
-    #     )
-
+    # Define type caster to convert pg array types of above types into
+    # array of string type
     for typ in TO_ARRAY_OF_STRING_DATATYPES:
         psycopg.adapters.register_loader(typ, TextLoaderpgAdmin)
 
@@ -164,31 +163,33 @@ def register_string_typecasters(connection):
     # characters. Here we unescape them using unicode_escape
     # and send ahead. When insert update is done, the characters
     # are escaped again and sent to the DB.
-
-    postgres_encoding, python_encoding = \
-        get_encoding(connection.info.encoding)
-    if postgres_encoding != 'UTF-8' and postgres_encoding != 'UTF8':
-
-        for typ in (19, 18, 25, 1042, 1043, 0):
-            if connection:
-                connection.adapters.register_loader(typ, TextLoaderpgAdmin)
+    for typ in (19, 18, 25, 1042, 1043, 0):
+        if connection:
+            connection.adapters.register_loader(typ, TextLoaderpgAdmin)
 
 
 def register_binary_typecasters(connection):
     # The new classes can be registered globally, on a connection, on a cursor
 
     connection.adapters.register_loader(17,
-                                        pgAdminByteaLoader)
+                                        ByteaLoader)
 
     connection.adapters.register_loader(1001,
-                                        pgAdminByteaLoader)
+                                        ByteaLoader)
+
+    connection.adapters.register_loader(17,
+                                        ByteaBinaryLoader)
+
+    connection.adapters.register_loader(1001,
+                                        ByteaBinaryLoader)
 
 
 def register_array_to_string_typecasters(connection=None):
     type_array = PSYCOPG_SUPPORTED_BUILTIN_ARRAY_DATATYPES +\
         PSYCOPG_SUPPORTED_JSON_ARRAY_TYPES +\
         PSYCOPG_SUPPORTED_IPADDRESS_ARRAY_TYPES +\
-        PSYCOPG_SUPPORTED_RANGE_ARRAY_TYPES +\
+        PSYCOPG_SUPPORTED_RANGE_ARRAY_TYPES + \
+        PSYCOPG_SUPPORTED_MULTIRANGE_ARRAY_TYPES + \
         TO_ARRAY_OF_STRING_DATATYPES
 
     for typ in type_array:
@@ -197,7 +198,7 @@ def register_array_to_string_typecasters(connection=None):
                                                 TextLoaderpgAdmin)
 
 
-class pgAdminInetLoader(InetLoader):
+class InetLoader(InetLoader):
     def load(self, data):
         if isinstance(data, memoryview):
             data = bytes(data)
@@ -209,10 +210,18 @@ class pgAdminInetLoader(InetLoader):
 
 
 # The new classes can be registered globally, on a connection, on a cursor
-psycopg.adapters.register_loader("inet", pgAdminInetLoader)
+psycopg.adapters.register_loader("inet", InetLoader)
+psycopg.adapters.register_loader("cidr", InetLoader)
 
 
-class pgAdminByteaLoader(Loader):
+class ByteaLoader(Loader):
+    def load(self, data):
+        return 'binary data' if data is not None else None
+
+
+class ByteaBinaryLoader(Loader):
+    format = _pq_Format.BINARY
+
     def load(self, data):
         return 'binary data' if data is not None else None
 
@@ -222,10 +231,14 @@ class TextLoaderpgAdmin(TextLoader):
         postgres_encoding, python_encoding = get_encoding(
             self.connection.info.encoding)
         if postgres_encoding not in ['SQLASCII', 'SQL_ASCII']:
+            # In case of errors while decoding data, instead of raising error
+            # replace errors with empty space.
+            # Error - utf-8 code'c can not decode byte 0x7f:
+            # invalid continuation byte
             if isinstance(data, memoryview):
-                return bytes(data).decode(self._encoding)
+                return bytes(data).decode(self._encoding, errors='replace')
             else:
-                return data.decode(self._encoding)
+                return data.decode(self._encoding, errors='replace')
         else:
             # SQL_ASCII Database
             try:

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -31,10 +31,12 @@ from flask_mail import Mail
 from flask_paranoid import Paranoid
 from flask_security import Security, SQLAlchemyUserDatastore, current_user
 from flask_security.utils import login_user, logout_user
+from flask_migrate import Migrate
 from werkzeug.datastructures import ImmutableDict
 from werkzeug.local import LocalProxy
 from werkzeug.utils import find_modules
 from jinja2 import select_autoescape
+from flask_wtf.csrf import CSRFError
 
 from pgadmin.model import db, Role, Server, SharedServer, ServerGroup, \
     User, Keys, Version, SCHEMA_VERSION as CURRENT_SCHEMA_VERSION
@@ -44,12 +46,13 @@ from pgadmin.utils.session import create_session_interface, pga_unauthorised
 from pgadmin.utils.versioned_template_loader import VersionedTemplateLoader
 from datetime import timedelta, datetime
 from pgadmin.setup import get_version, set_version, check_db_tables
-from pgadmin.utils.ajax import internal_server_error, make_json_response
+from pgadmin.utils.ajax import internal_server_error, make_json_response, \
+    unauthorized
 from pgadmin.utils.csrf import pgCSRFProtect
 from pgadmin import authenticate
 from pgadmin.utils.security_headers import SecurityHeaders
 from pgadmin.utils.constants import KERBEROS, OAUTH2, INTERNAL, LDAP, WEBSERVER
-
+from jsonformatter import JsonFormatter
 
 # Explicitly set the mime-types so that a corrupted windows registry will not
 # affect pgAdmin 4 to be load properly. This will avoid the issues that may
@@ -68,6 +71,8 @@ socketio = SocketIO(manage_session=False, async_mode='threading',
                     logger=False, engineio_logger=False, debug=False,
                     ping_interval=25, ping_timeout=120)
 
+_INDEX_PATH = 'browser.index'
+
 
 class PgAdmin(Flask):
     def __init__(self, *args, **kwargs):
@@ -77,6 +82,7 @@ class PgAdmin(Flask):
             loader=VersionedTemplateLoader(self)
         )
         self.logout_hooks = []
+        self.before_app_start = []
 
         super().__init__(*args, **kwargs)
 
@@ -104,13 +110,6 @@ class PgAdmin(Flask):
                 yield blueprint
 
     @property
-    def stylesheets(self):
-        stylesheets = []
-        for module in self.submodules:
-            stylesheets.extend(getattr(module, "stylesheets", []))
-        return set(stylesheets)
-
-    @property
     def messages(self):
         messages = dict()
         for module in self.submodules:
@@ -126,8 +125,8 @@ class PgAdmin(Flask):
         # into endpoints
         #############################################################
         wsgi_root_path = ''
-        if url_for('browser.index') != '/browser/':
-            wsgi_root_path = url_for('browser.index').replace(
+        if url_for(_INDEX_PATH) != '/browser/':
+            wsgi_root_path = url_for(_INDEX_PATH).replace(
                 '/browser/', ''
             )
 
@@ -149,28 +148,6 @@ class PgAdmin(Flask):
         yield 'pgadmin.root', wsgi_root_path
 
     @property
-    def javascripts(self):
-        scripts = []
-        scripts_names = []
-
-        # Remove duplicate javascripts from the list
-        for module in self.submodules:
-            module_scripts = getattr(module, "javascripts", [])
-            for s in module_scripts:
-                if s['name'] not in scripts_names:
-                    scripts.append(s)
-                    scripts_names.append(s['name'])
-
-        return scripts
-
-    @property
-    def panels(self):
-        panels = []
-        for module in self.submodules:
-            panels.extend(module.get_panels())
-        return panels
-
-    @property
     def menu_items(self):
         from operator import attrgetter
 
@@ -186,6 +163,15 @@ class PgAdmin(Flask):
         if hasattr(module, 'on_logout') and \
                 isinstance(getattr(module, 'on_logout'), MethodType):
             self.logout_hooks.append(module)
+
+    def register_before_app_start(self, callback):
+        self.before_app_start.append(callback)
+
+    def run_before_app_start(self):
+        # call before app starts or is exported
+        with self.app_context(), self.test_request_context():
+            for callback in self.before_app_start:
+                callback()
 
 
 def _find_blueprint():
@@ -232,6 +218,7 @@ def create_app(app_name=None):
     app.config.from_object(config)
     app.config.update(dict(PROPAGATE_EXCEPTIONS=True))
 
+    config.SETTINGS_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
     ##########################################################################
     # Setup logging and log the application startup
     ##########################################################################
@@ -275,14 +262,26 @@ def create_app(app_name=None):
                                          config.LOG_ROTATION_MAX_LOG_FILES)
 
         fh.setLevel(config.FILE_LOG_LEVEL)
-        fh.setFormatter(logging.Formatter(config.FILE_LOG_FORMAT))
+
+        if config.JSON_LOGGER:
+            json_formatter = JsonFormatter(config.FILE_LOG_FORMAT_JSON)
+            fh.setFormatter(json_formatter)
+        else:
+            fh.setFormatter(logging.Formatter(config.FILE_LOG_FORMAT))
+
         app.logger.addHandler(fh)
         logger.addHandler(fh)
 
     # Console logging
     ch = logging.StreamHandler()
     ch.setLevel(config.CONSOLE_LOG_LEVEL)
-    ch.setFormatter(logging.Formatter(config.CONSOLE_LOG_FORMAT))
+
+    if config.JSON_LOGGER:
+        json_formatter = JsonFormatter(config.CONSOLE_LOG_FORMAT_JSON)
+        ch.setFormatter(json_formatter)
+    else:
+        ch.setFormatter(logging.Formatter(config.CONSOLE_LOG_FORMAT))
+
     app.logger.addHandler(ch)
     logger.addHandler(ch)
 
@@ -299,9 +298,6 @@ def create_app(app_name=None):
     # Initialise i18n
     babel = Babel(app)
 
-    app.logger.debug('Available translations: %s' % babel.list_translations())
-
-    @babel.localeselector
     def get_locale():
         """Get the language for the user."""
         language = 'en'
@@ -315,7 +311,7 @@ def create_app(app_name=None):
                 if user is not None:
                     user_id = user.id
             user_language = Preferences.raw_value(
-                'misc', 'user_language', 'user_language', user_id
+                'misc', 'user_language', 'user_interface', user_id
             )
             if user_language is not None:
                 language = user_language
@@ -335,6 +331,7 @@ def create_app(app_name=None):
 
         return language
 
+    babel.init_app(app, locale_selector=get_locale)
     ##########################################################################
     # Setup authentication
     ##########################################################################
@@ -355,6 +352,7 @@ def create_app(app_name=None):
 
     # Create database connection object and mailer
     db.init_app(app)
+    Migrate(app, db)
 
     ##########################################################################
     # Upgrade the schema (if required)
@@ -403,81 +401,82 @@ def create_app(app_name=None):
             backup_db_file()
 
     def run_migration_for_sqlite():
-        with app.app_context():
-            # Run migration for the first time i.e. create database
-            # If version not available, user must have aborted. Tables are not
-            # created and so its an empty db
-            if not os.path.exists(SQLITE_PATH) or get_version() == -1:
-                # If running in cli mode then don't try to upgrade, just raise
-                # the exception
-                if not cli_mode:
-                    upgrade_db()
-                else:
-                    if not os.path.exists(SQLITE_PATH):
-                        raise FileNotFoundError(
-                            'SQLite database file "' + SQLITE_PATH +
-                            '" does not exists.')
-                    raise RuntimeError(
-                        'The configuration database file is not valid.')
+        # Run migration for the first time i.e. create database
+        # If version not available, user must have aborted. Tables are not
+        # created and so its an empty db
+        if not os.path.exists(SQLITE_PATH) or get_version() == -1:
+            # If running in cli mode then don't try to upgrade, just raise
+            # the exception
+            if not cli_mode:
+                upgrade_db()
             else:
-                schema_version = get_version()
+                if not os.path.exists(SQLITE_PATH):
+                    raise FileNotFoundError(
+                        'SQLite database file "' + SQLITE_PATH +
+                        '" does not exists.')
+                raise RuntimeError(
+                    'The configuration database file is not valid.')
+        else:
+            schema_version = get_version()
 
-                # Run migration if current schema version is greater than the
-                # schema version stored in version table
-                if CURRENT_SCHEMA_VERSION > schema_version:
-                    # Take a backup of the old database file.
-                    try:
-                        prev_database_file_name = \
-                            "{0}.prev.bak".format(SQLITE_PATH)
-                        shutil.copyfile(SQLITE_PATH, prev_database_file_name)
-                    except Exception as e:
-                        app.logger.error(e)
+            # Run migration if current schema version is greater than the
+            # schema version stored in version table
+            if CURRENT_SCHEMA_VERSION > schema_version:
+                # Take a backup of the old database file.
+                try:
+                    prev_database_file_name = \
+                        "{0}.prev.bak".format(SQLITE_PATH)
+                    shutil.copyfile(SQLITE_PATH, prev_database_file_name)
+                except Exception as e:
+                    app.logger.error(e)
 
-                    upgrade_db()
-                else:
-                    # check all tables are present in the db.
-                    is_db_error, invalid_tb_names = check_db_tables()
-                    if is_db_error:
-                        app.logger.error(
-                            'Table(s) {0} are missing in the'
-                            ' database'.format(invalid_tb_names))
-                        backup_db_file()
+                upgrade_db()
+            else:
+                # check all tables are present in the db.
+                is_db_error, invalid_tb_names = check_db_tables()
+                if is_db_error:
+                    app.logger.error(
+                        'Table(s) {0} are missing in the'
+                        ' database'.format(invalid_tb_names))
+                    backup_db_file()
 
-                # Update schema version to the latest
-                if CURRENT_SCHEMA_VERSION > schema_version:
-                    set_version(CURRENT_SCHEMA_VERSION)
-                    db.session.commit()
+            # Update schema version to the latest
+            if CURRENT_SCHEMA_VERSION > schema_version:
+                set_version(CURRENT_SCHEMA_VERSION)
+                db.session.commit()
 
-            if os.name != 'nt':
-                os.chmod(config.SQLITE_PATH, 0o600)
+        if os.name != 'nt':
+            os.chmod(config.SQLITE_PATH, 0o600)
 
     def run_migration_for_others():
-        with app.app_context():
-            # Run migration for the first time i.e. create database
-            # If version not available, user must have aborted. Tables are not
-            # created and so its an empty db
-            try:
-                if get_version() == -1:
-                    db_upgrade(app)
-                else:
-                    schema_version = get_version()
+        # Run migration for the first time i.e. create database
+        # If version not available, user must have aborted. Tables are not
+        # created and so its an empty db
+        if get_version() == -1:
+            db_upgrade(app)
+        else:
+            schema_version = get_version()
 
-                    # Run migration if current schema version is greater than
-                    # the schema version stored in version table.
-                    if CURRENT_SCHEMA_VERSION > schema_version:
-                        db_upgrade(app)
-                        # Update schema version to the latest
-                        set_version(CURRENT_SCHEMA_VERSION)
-                        db.session.commit()
-            except Exception as e:
-                app.logger.error(e)
+            # Run migration if current schema version is greater than
+            # the schema version stored in version table.
+            if CURRENT_SCHEMA_VERSION > schema_version:
+                db_upgrade(app)
+                # Update schema version to the latest
+                set_version(CURRENT_SCHEMA_VERSION)
+                db.session.commit()
 
-    # Run the migration as per specified by the user.
-    if config.CONFIG_DATABASE_URI is not None and \
-            len(config.CONFIG_DATABASE_URI) > 0:
-        run_migration_for_others()
-    else:
-        run_migration_for_sqlite()
+    from pgadmin.browser.server_groups.servers.utils import (
+        delete_adhoc_servers)
+    with app.app_context():
+        # Run the migration as per specified by the user.
+        if config.CONFIG_DATABASE_URI is not None and \
+                len(config.CONFIG_DATABASE_URI) > 0:
+            run_migration_for_others()
+        else:
+            run_migration_for_sqlite()
+
+        # Delete all the adhoc(temporary) servers from the pgAdmin database.
+        delete_adhoc_servers()
 
     Mail(app)
 
@@ -512,13 +511,10 @@ def create_app(app_name=None):
         'WTF_CSRF_TIME_LIMIT': getattr(config, 'CSRF_TIME_LIMIT', None),
         'WTF_CSRF_METHODS': ['GET', 'POST', 'PUT', 'DELETE'],
         # Disable deliverable check for email addresss
-        'SECURITY_EMAIL_VALIDATOR_ARGS': config.SECURITY_EMAIL_VALIDATOR_ARGS
+        'SECURITY_EMAIL_VALIDATOR_ARGS': config.SECURITY_EMAIL_VALIDATOR_ARGS,
+        # Disable CSRF for unauthenticated endpoints
+        'SECURITY_CSRF_IGNORE_UNAUTH_ENDPOINTS': True
     }))
-
-    if 'SCRIPT_NAME' in os.environ and os.environ["SCRIPT_NAME"]:
-        app.config.update(dict({
-            'APPLICATION_ROOT': os.environ["SCRIPT_NAME"]
-        }))
 
     app.config.update(dict({
         'INTERNAL': INTERNAL,
@@ -530,8 +526,9 @@ def create_app(app_name=None):
 
     security.init_app(app, user_datastore)
 
-    # register custom unauthorised handler.
-    app.login_manager.unauthorized_handler(pga_unauthorised)
+    # Flask-Security-Too > 5.4.* requires custom unauth handeler
+    # to be registeres with it.
+    security.unauthn_handler(pga_unauthorised)
 
     # Set the permanent session lifetime to the specified value in config file.
     app.permanent_session_lifetime = timedelta(
@@ -545,7 +542,7 @@ def create_app(app_name=None):
     # Make the Session more secure against XSS & CSRF when running in web mode
     if config.SERVER_MODE and config.ENHANCED_COOKIE_PROTECTION:
         paranoid = Paranoid(app)
-        paranoid.redirect_view = 'browser.index'
+        paranoid.redirect_view = _INDEX_PATH
 
     ##########################################################################
     # Load all available server drivers
@@ -719,8 +716,9 @@ def create_app(app_name=None):
                                svr_superuser, svr_port, svr_discovery_id,
                                svr_comment)
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(str(e))
+            db.session.rollback()
 
     @user_logged_in.connect_via(app)
     @user_logged_out.connect_via(app)
@@ -837,8 +835,9 @@ def create_app(app_name=None):
         # but the user session may still be active. Logout the user
         # to get the key again when login
         if config.SERVER_MODE and current_user.is_authenticated and \
-            app.PGADMIN_EXTERNAL_AUTH_SOURCE not in [
-                KERBEROS, OAUTH2, WEBSERVER] and \
+            'auth_source_manager' in session and \
+            session['auth_source_manager']['current_source'] not in \
+            [KERBEROS, OAUTH2, WEBSERVER] and \
                 current_app.keyManager.get() is None and \
                 request.endpoint not in ('security.login', 'security.logout'):
             logout_user()
@@ -851,7 +850,7 @@ def create_app(app_name=None):
                     config.COOKIE_DEFAULT_DOMAIN != 'localhost':
                 domain['domain'] = config.COOKIE_DEFAULT_DOMAIN
             response.set_cookie('PGADMIN_INT_KEY', value=request.args['key'],
-                                path=config.COOKIE_DEFAULT_PATH,
+                                path=config.SESSION_COOKIE_PATH,
                                 secure=config.SESSION_COOKIE_SECURE,
                                 httponly=config.SESSION_COOKIE_HTTPONLY,
                                 samesite=config.SESSION_COOKIE_SAMESITE,
@@ -901,9 +900,6 @@ def create_app(app_name=None):
         from flask_compress import Compress
         Compress(app)
 
-    from pgadmin.misc.themes import themes
-    themes(app)
-
     @app.context_processor
     def inject_blueprint():
         """
@@ -928,7 +924,14 @@ def create_app(app_name=None):
         current_app.logger.error(e, exc_info=True)
         return e
 
-    # Intialize the key manager
+    # Send unauthorized response if CSRF errors occurs.
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(error):
+        err_msg = str(error.description) + \
+            gettext(' You need to refresh the page.')
+        return unauthorized(errormsg=err_msg)
+
+    # Initialize the key manager
     app.keyManager = KeyManager()
 
     ##########################################################################

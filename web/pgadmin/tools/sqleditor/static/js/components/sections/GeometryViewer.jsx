@@ -2,13 +2,13 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import React, { useEffect, useRef }  from 'react';
+import { styled } from '@mui/material/styles';
 import ReactDOMServer from 'react-dom/server';
-import { makeStyles } from '@material-ui/styles';
 import _ from 'lodash';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap } from 'react-leaflet';
 import Leaflet, { CRS } from 'leaflet';
@@ -16,39 +16,37 @@ import {Geometry as WkxGeometry} from 'wkx';
 import {Buffer} from 'buffer';
 import gettext from 'sources/gettext';
 import Theme from 'sources/Theme';
-import clsx from 'clsx';
 import PropTypes from 'prop-types';
-import { Box } from '@material-ui/core';
-import { LayoutHelper } from '../../../../../../static/js/helpers/Layout';
+import { Box } from '@mui/material';
 import { PANELS } from '../QueryToolConstants';
 import { QueryToolContext } from '../QueryToolComponent';
 
-const useStyles = makeStyles((theme)=>({
-  mapContainer: {
+const StyledBox = styled(Box)(({theme}) => ({
+  '& .GeometryViewer-mapContainer': {
     backgroundColor: theme.palette.background.default,
     height: '100%',
     width: '100%',
     '& .leaflet-popup-content': {
       overflow: 'auto',
       margin: '8px',
+      '& .GeometryViewer-table': {
+        borderSpacing: 0,
+        width: '100%',
+        ...theme.mixins.panelBorder,
+        '& .GeometryViewer-tableCellHead': {
+          fontWeight: 'bold',
+        },
+        '& .GeometryViewer-tableCell': {
+          margin: 0,
+          padding: theme.spacing(0.5),
+          ...theme.mixins.panelBorder.bottom,
+          ...theme.mixins.panelBorder.right,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        },
+      },
     }
   },
-  table: {
-    borderSpacing: 0,
-    width: '100%',
-    ...theme.mixins.panelBorder,
-  },
-  tableCell: {
-    margin: 0,
-    padding: theme.spacing(0.5),
-    ...theme.mixins.panelBorder.bottom,
-    ...theme.mixins.panelBorder.right,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  tableCellHead: {
-    fontWeight: 'bold',
-  }
 }));
 
 function parseEwkbData(rows, column) {
@@ -70,6 +68,10 @@ function parseEwkbData(rows, column) {
       let value = item[key];
       let buffer = Buffer.from(value, 'hex');
       let geometry = WkxGeometry.parse(buffer);
+      if (((isNaN(geometry.x) || isNaN(geometry.y)) && !(_.isNil(geometry.x) && _.isNil(geometry.y)))){
+        unsupportedRows.push(item);
+        return true;
+      }
       if (geometry.hasZ) {
         geometries3D.push(geometry);
         return true;
@@ -89,7 +91,7 @@ function parseEwkbData(rows, column) {
       }
       supportedGeometries.push(geometry);
       geometryItemMap.set(geometry, item);
-    } catch (e) {
+    } catch {
       unsupportedRows.push(item);
     }
     return true;
@@ -190,15 +192,15 @@ function parseData(rows, columns, column) {
 }
 
 function PopupTable({data}) {
-  const classes = useStyles();
+
   return (
-    <table className={classes.table}>
+    <table className='GeometryViewer-table'>
       <tbody>
         {data.map((row)=>{
           return (
             <tr key={row.column}>
-              <td className={clsx(classes.tableCell, classes.tableCellHead)}>{row.column}</td>
-              <td className={classes.tableCell}>{row.value}</td>
+              <td className={'GeometryViewer-tableCell ' + 'GeometryViewer-tableCellHead'}>{row.column}</td>
+              <td className='GeometryViewer-tableCell'>{`${row.value}`}</td>
             </tr>
           );
         })}
@@ -208,13 +210,13 @@ function PopupTable({data}) {
 }
 
 PopupTable.propTypes = {
-  data: PropTypes.arrayOf({
+  data: PropTypes.arrayOf(PropTypes.shape({
     column: PropTypes.string,
-    value: PropTypes.string,
-  }),
+    value: PropTypes.any,
+  })),
 };
 
-function GeoJsonLayer({data}) {
+function GeoJsonLayer({data, setHomeCoordinates}) {
   const vectorLayerRef = useRef(null);
   const mapObj = useMap();
   useEffect(() => {
@@ -236,6 +238,7 @@ function GeoJsonLayer({data}) {
     } else {
       mapObj.setView(bounds.getCenter(), mapObj.getZoom());
     }
+    setHomeCoordinates({bounds,maxLength});
   }, [data]);
 
   return (
@@ -250,13 +253,14 @@ function GeoJsonLayer({data}) {
       style={{weight: 2}}
       onEachFeature={(feature, layer)=>{
         if(_.isFunction(data.getPopupContent)) {
-          const popupContentNode = (
-            <Theme>
-              <PopupTable data={data.getPopupContent(layer.feature.geometry)}/>
-            </Theme>
-          );
-          const popupContentHtml = ReactDOMServer.renderToString(popupContentNode);
-          layer.bindPopup(popupContentHtml, {
+          layer.bindPopup((l)=>{
+            const popupContentNode = (
+              <Theme>
+                <PopupTable data={data.getPopupContent(l.feature.geometry)}/>
+              </Theme>
+            );
+            return ReactDOMServer.renderToString(popupContentNode);
+          }, {
             closeButton: false,
             minWidth: 260,
             maxWidth: 300,
@@ -276,12 +280,15 @@ GeoJsonLayer.propTypes = {
     getPopupContent: PropTypes.func,
     infoList: PropTypes.array,
   }),
+  setHomeCoordinates: PropTypes.func,
 };
 
 function TheMap({data}) {
   const mapObj = useMap();
   const infoControl = useRef(null);
   const resetLayersKey = useRef(0);
+  const zoomControlWithHome = useRef(null);
+  const homeCoordinates = useRef(null);
   useEffect(()=>{
     infoControl.current = Leaflet.control({position: 'topright'});
     infoControl.current.onAdd = function () {
@@ -293,8 +300,63 @@ function TheMap({data}) {
       infoControl.current.addTo(mapObj);
     }
     resetLayersKey.current++;
-    return ()=>{infoControl.current && infoControl.current.remove();};
+
+    zoomControlWithHome.current = Leaflet.control.zoom({
+      zoomHomeIcon: 'home',
+      zoomHomeTitle: 'Home',
+      homeCoordinates: null,
+      homeZoom: null,
+      maxLength: null,
+    });
+
+    zoomControlWithHome.current._zoomHome = function () {
+      let obj = this;
+      if (obj.options.maxLength > 0) {
+        obj._map.fitBounds(obj.options.homeCoordinates);
+      } else {
+        obj.options.homeCoordinates && obj._map.setView(obj.options.homeCoordinates.getCenter(), obj.options.homeZoom);
+      }
+    };
+
+    zoomControlWithHome.current.onAdd = function (map) {
+      let obj = this;
+      let controlName = 'leaflet-control-zoom',
+        container = Leaflet.DomUtil.create('div', controlName + ' leaflet-bar'),
+        options = obj.options;
+
+      if (options.homeCoordinates === null) {
+        options.homeCoordinates = homeCoordinates.current?.bounds;
+      }
+      if (options.homeZoom === null) {
+        options.homeZoom = homeCoordinates.current?.bounds ? map.getBoundsZoom(homeCoordinates.current?.bounds) : 0;
+      }
+      if(options.maxLength === null) {
+        options.maxLength = homeCoordinates.current?.maxLength;
+      }
+
+      let zoomHomeText = `<i class="fa fa-${options.zoomHomeIcon}"></i>`;
+
+      obj._zoomInButton = obj._createButton(options.zoomInText, options.zoomInTitle, controlName + '-in', container, obj._zoomIn.bind(this));
+      obj._createButton(zoomHomeText, options.zoomHomeTitle, controlName + '-home', container, obj._zoomHome.bind(this));
+      obj._zoomOutButton = obj._createButton(options.zoomOutText, options.zoomOutTitle, controlName + '-out', container, obj._zoomOut.bind(this));
+
+      obj._updateDisabled();
+      map.on('zoomend zoomlevelschange', obj._updateDisabled, this);
+
+      return container;
+    };
+    zoomControlWithHome.current.addTo(mapObj);
+
+    return ()=>{
+      infoControl.current?.remove();
+      zoomControlWithHome.current?.remove();
+    };
   }, [data]);
+
+  const setHomeCoordinates = (data) => {
+    homeCoordinates.current = data;
+  };
+
   return (
     <>
       {data.selectedSRID === 4326 &&
@@ -356,7 +418,7 @@ function TheMap({data}) {
           />
         </LayersControl.BaseLayer>
       </LayersControl>}
-      <GeoJsonLayer key={resetLayersKey.current} data={data} />
+      <GeoJsonLayer key={resetLayersKey.current} data={data} setHomeCoordinates={setHomeCoordinates} />
     </>
   );
 }
@@ -371,18 +433,17 @@ TheMap.propTypes = {
 
 
 export function GeometryViewer({rows, columns, column}) {
-  const classes = useStyles();
+
   const mapRef = React.useRef();
   const contentRef = React.useRef();
   const data = parseData(rows, columns, column);
   const queryToolCtx = React.useContext(QueryToolContext);
-  const crs = data.selectedSRID === 4326 ? CRS.EPSG3857 : CRS.Simple;
 
   useEffect(()=>{
     let timeoutId;
     const contentResizeObserver = new ResizeObserver(()=>{
       clearTimeout(timeoutId);
-      if(LayoutHelper.isTabVisible(queryToolCtx.docker, PANELS.GEOMETRY)) {
+      if(queryToolCtx.docker.isTabVisible(PANELS.GEOMETRY)) {
         timeoutId = setTimeout(function () {
           mapRef.current?.invalidateSize();
         }, 100);
@@ -391,20 +452,22 @@ export function GeometryViewer({rows, columns, column}) {
     contentResizeObserver.observe(contentRef.current);
   }, []);
 
+  // Dyanmic CRS is not supported. Use srid as key and recreate the map on change
   return (
-    <Box ref={contentRef} width="100%" height="100%">
+    <StyledBox ref={contentRef} width="100%" height="100%" key={data.selectedSRID}>
       <MapContainer
-        crs={crs}
+        crs={data.selectedSRID === 4326 ? CRS.EPSG3857 : CRS.Simple}
         zoom={2} center={[20, 100]}
+        zoomControl={false}
         preferCanvas={true}
-        className={classes.mapContainer}
+        className='GeometryViewer-mapContainer'
         whenCreated={(map)=>{
           mapRef.current = map;
         }}
       >
         <TheMap data={data}/>
       </MapContainer>
-    </Box>
+    </StyledBox>
   );
 }
 

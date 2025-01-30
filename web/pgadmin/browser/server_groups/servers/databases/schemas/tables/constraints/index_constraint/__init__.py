@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -24,6 +24,8 @@ from pgadmin.browser.server_groups.servers.databases.schemas.tables.\
     constraints.index_constraint import utils as idxcons_utils
 from pgadmin.utils.driver import get_driver
 from config import PG_DEFAULT_DRIVER
+from pgadmin.browser.server_groups.servers.databases.schemas.utils \
+    import check_pgstattuple
 
 
 class IndexConstraintModule(ConstraintTypeModule):
@@ -363,7 +365,7 @@ class IndexConstraintView(PGChildNodeView):
                                         self._PROPERTIES_SQL]), did=did,
                               tid=tid,
                               constraint_type=self.constraint_type)
-        status, res = self.conn.execute_dict(SQL)
+        _, res = self.conn.execute_dict(SQL)
 
         for row in res['rows']:
             row['_type'] = self.node_type
@@ -442,7 +444,8 @@ class IndexConstraintView(PGChildNodeView):
                     row['oid'],
                     tid,
                     row['name'],
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    description=row['comment']
                 )
             )
         return make_json_response(
@@ -479,7 +482,7 @@ class IndexConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path, self._NODES_SQL]),
                               tid=tid,
                               constraint_type=self.constraint_type)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         for row in rset['rows']:
             res.append(
@@ -487,7 +490,8 @@ class IndexConstraintView(PGChildNodeView):
                     row['oid'],
                     tid,
                     row['name'],
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    description=row['comment']
                 ))
         return res
 
@@ -624,12 +628,17 @@ class IndexConstraintView(PGChildNodeView):
                     self.end_transaction()
                     return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     res['rows'][0]['oid'],
                     tid,
                     data['name'],
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    **other_node_info
                 )
             )
 
@@ -686,12 +695,17 @@ class IndexConstraintView(PGChildNodeView):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     cid,
                     tid,
                     name,
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -803,8 +817,8 @@ class IndexConstraintView(PGChildNodeView):
         data['schema'] = self.schema
         data['table'] = self.table
         try:
-            sql, name = idxcons_utils.get_sql(self.conn, data, did, tid,
-                                              self.constraint_type, cid)
+            sql, _ = idxcons_utils.get_sql(self.conn, data, did, tid,
+                                           self.constraint_type, cid)
             if not isinstance(sql, str):
                 return sql
             sql = sql.strip('\n').strip(' ')
@@ -914,13 +928,7 @@ class IndexConstraintView(PGChildNodeView):
         Returns the statistics for a particular object if cid is specified
         """
 
-        # Check if pgstattuple extension is already created?
-        # if created then only add extended stats
-        status, is_pgstattuple = self.conn.execute_scalar("""
-        SELECT (pg_catalog.count(extname) > 0) AS is_pgstattuple
-        FROM pg_catalog.pg_extension
-        WHERE extname='pgstattuple'
-        """)
+        status, is_pgstattuple = check_pgstattuple(self.conn, tid)
         if not status:
             return internal_server_error(errormsg=is_pgstattuple)
 

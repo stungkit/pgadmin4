@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -25,6 +25,7 @@ from pgadmin.utils.ajax import make_json_response, internal_server_error, \
     make_response as ajax_response, gone
 from pgadmin.browser.server_groups.servers.databases.schemas.tables.\
     columns import utils as column_utils
+from pgadmin.utils.compile_template_name import compile_template_path
 from pgadmin.utils.driver import get_driver
 from config import PG_DEFAULT_DRIVER
 from pgadmin.utils.ajax import ColParamsJSONDecoder
@@ -72,9 +73,12 @@ class ColumnsModule(CollectionNodeModule):
         Generate the collection node
         """
         assert ('tid' in kwargs or 'vid' in kwargs)
-        yield self.generate_browser_collection_node(
-            kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
-        )
+        if self.has_nodes(sid, did, scid=scid,
+                          tid=kwargs.get('tid', kwargs.get('vid', None)),
+                          base_template_path=ColumnsView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(
+                kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
+            )
 
     @property
     def script_load(self):
@@ -159,6 +163,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
 
     node_type = blueprint.node_type
     node_label = "Column"
+    BASE_TEMPLATE_PATH = 'columns/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -207,8 +212,11 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
             self.qtTypeIdent = driver.qtTypeIdent
 
             # Set the template path for the SQL scripts
-            self.template_path = 'columns/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version)
+
+            self.foreign_table_column_template_path = compile_template_path(
+                'foreign_table_columns/sql', self.manager.version)
 
             # Allowed ACL for column 'Select/Update/Insert/References'
             self.acl = ['a', 'r', 'w', 'x']
@@ -247,8 +255,13 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
 
         if not status:
             return internal_server_error(errormsg=res)
+
+        data = res['rows']
+        for column in data:
+            column_utils.column_formatter(self.conn, tid, column['attnum'],
+                                          column)
         return ajax_response(
-            response=res['rows'],
+            response=data,
             status=200
         )
 
@@ -291,7 +304,8 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                     tid,
                     row['name'],
                     icon="icon-column",
-                    datatype=row['datatype']  # We need datatype somewhere in
+                    datatype=row['datatype'],  # We need datatype somewhere in,
+                    description=row['description']
                 ),
                 status=200
             )
@@ -303,7 +317,8 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                     tid,
                     row['name'],
                     icon="icon-column",
-                    datatype=row['datatype']  # We need datatype somewhere in
+                    datatype=row['datatype'],  # We need datatype somewhere in
+                    description=row['description']
                 ))  # exclusion constraint.
 
         return make_json_response(
@@ -409,7 +424,11 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
             column_utils.type_formatter(data['cltype'])
         data = column_utils.convert_length_precision_to_string(data)
 
-        SQL = render_template("/".join([self.template_path,
+        # Check if node is foreign_table_column
+        template_path = self.foreign_table_column_template_path \
+            if self.node_type == 'foreign_table_column' else self.template_path
+
+        SQL = render_template("/".join([template_path,
                                         self._CREATE_SQL]),
                               data=data, conn=self.conn)
         status, res = self.conn.execute_scalar(SQL)
@@ -482,7 +501,12 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                 data['schema'] = self.schema
                 data['table'] = self.table
 
-                SQL = render_template("/".join([self.template_path,
+                # Check if node is foreign_table_column
+                template_path = self.foreign_table_column_template_path \
+                    if self.node_type == 'foreign_table_column' \
+                    else self.template_path
+
+                SQL = render_template("/".join([template_path,
                                                 self._DELETE_SQL]),
                                       data=data, conn=self.conn)
                 status, res = self.conn.execute_scalar(SQL)
@@ -535,12 +559,17 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
         if not status:
             return internal_server_error(errormsg=res)
 
+        other_node_info = {}
+        if 'description' in data:
+            other_node_info['description'] = data['description']
+
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 clid,
                 tid,
                 name,
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                **other_node_info
             )
         )
 
@@ -571,7 +600,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                 column_utils.type_formatter(data['cltype'])
 
         try:
-            SQL, name = self.get_sql(scid, tid, clid, data)
+            SQL, _ = self.get_sql(scid, tid, clid, data)
             if not isinstance(SQL, str):
                 return SQL
 
@@ -589,7 +618,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
         """
         Convert acl coming from client to required db parsing format.
         :param data: Data.
-        :param old_data: old data for comparision and get name.
+        :param old_data: old data for Comparison and get name.
         """
         # If name is not present in data then
         # we will fetch it from old data, we also need schema & table name
@@ -633,9 +662,15 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
         if 'attacl' in data:
             data['attacl'] = parse_priv_to_db(data['attacl'],
                                               self.acl)
+
+        # Check if node is foreign_table_column
+        template_path = self.foreign_table_column_template_path \
+            if self.node_type == 'foreign_table_column' \
+            else self.template_path
+
         # If the request for new object which do not have did
         sql = render_template(
-            "/".join([self.template_path, self._CREATE_SQL]),
+            "/".join([template_path, self._CREATE_SQL]),
             data=data, conn=self.conn, is_sql=is_sql
         )
 
@@ -653,7 +688,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                 column_utils.type_formatter(old_data['cltype'])
 
             if 'cltype' in data and data['cltype'] != old_data['cltype']:
-                length, precision, typeval = \
+                length, precision, _ = \
                     self.get_length_precision(data['cltype'])
 
                 # if new datatype does not have length or precision
@@ -671,6 +706,11 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
         data = column_utils.convert_length_precision_to_string(data)
 
         if clid is not None:
+            # Check if node is foreign_table_column
+            template_path = self.foreign_table_column_template_path \
+                if self.node_type == 'foreign_table_column' \
+                else self.template_path
+
             sql = render_template(
                 "/".join([self.template_path, self._PROPERTIES_SQL]),
                 tid=tid, clid=clid,
@@ -698,7 +738,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
             self._parse_acl_to_db_parsing(data, old_data)
 
             sql = render_template(
-                "/".join([self.template_path, self._UPDATE_SQL]),
+                "/".join([template_path, self._UPDATE_SQL]),
                 data=data, o_data=old_data, conn=self.conn,
                 is_view_only=is_view_only
             )
@@ -753,7 +793,7 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
             data = column_utils.column_formatter(self.conn, tid, clid,
                                                  data, [])
 
-            SQL, name = self.get_sql(scid, tid, None, data, is_sql=True)
+            SQL, _ = self.get_sql(scid, tid, None, data, is_sql=True)
             if not isinstance(SQL, str):
                 return SQL
 
@@ -762,8 +802,12 @@ class ColumnsView(PGChildNodeView, DataTypeReader):
                     self.conn, data['schema'], data['table'], data['name'])
             )
 
+            # Join delete sql
+            template_path = self.foreign_table_column_template_path \
+                if self.node_type == 'foreign_table_column' \
+                else self.template_path
             sql_header += render_template(
-                "/".join([self.template_path, self._DELETE_SQL]),
+                "/".join([template_path, self._DELETE_SQL]),
                 data=data, conn=self.conn
             )
             SQL = sql_header + '\n\n' + SQL

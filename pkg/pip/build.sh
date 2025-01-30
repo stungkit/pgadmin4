@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 #########################################################################
@@ -21,11 +21,11 @@ if [ ! -d .git ] && [ ! -f .git/config ]; then
 fi
 
 # Get the required package info
-APP_RELEASE=$(grep "^APP_RELEASE" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-APP_REVISION=$(grep "^APP_REVISION" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-APP_NAME=$(grep "^APP_NAME" web/config.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
+APP_RELEASE=$(grep "^APP_RELEASE" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+APP_REVISION=$(grep "^APP_REVISION" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+APP_NAME=$(grep "^APP_NAME" web/branding.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
 APP_LONG_VERSION=${APP_RELEASE}.${APP_REVISION}
-APP_SUFFIX=$(grep "^APP_SUFFIX" web/config.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
+APP_SUFFIX=$(grep "^APP_SUFFIX" web/version.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
 if [ -n "${APP_SUFFIX}" ]; then
     export APP_LONG_VERSION=${APP_LONG_VERSION}-${APP_SUFFIX}
 fi
@@ -48,7 +48,7 @@ mkdir pip-build/pgadmin4/docs
 
 # Build the clean tree
 cd web || exit
-for FILE in $(git ls-files)
+for FILE in $(git ls-files|grep -v regression)
 do
     echo Adding "${FILE}"
     # We use tar here to preserve the path, as Mac (for example) doesn't support cp --parents
@@ -56,8 +56,14 @@ do
     tar cf - "${FILE}" | (cd ../pip-build/pgadmin4; tar xf -)
 done
 
+yarn set version berry
+yarn set version 3
 yarn install
 yarn run bundle
+
+# Copy the commit_hash file, it doesn't show up in git ls-files
+echo Adding "commit_hash"
+tar cf - "commit_hash" | (cd ../pip-build/pgadmin4; tar xf -)
 
 for FILE in pgadmin/static/js/generated/*
 do
@@ -91,6 +97,12 @@ do
     # shellcheck disable=SC2164
     tar cf - ${FILE} | (cd pip-build/pgadmin4; tar xf -)
 done
+
+# Generating SBOM
+echo Generating SBOM...
+cp requirements.txt pip-build/pgadmin4
+syft pip-build/pgadmin4 -o cyclonedx-json > pip-build/pgadmin4/sbom.json
+rm pip-build/pgadmin4/requirements.txt
 
 # Create the distro config
 echo Creating distro config...

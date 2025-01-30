@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -66,7 +66,10 @@ class FtsDictionaryModule(SchemaChildModule):
         :param did: database id
         :param scid: schema id
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(
+            sid, did, scid,
+                base_template_path=FtsDictionaryView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -161,6 +164,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
     """
 
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = 'fts_dictionaries/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -225,7 +229,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
                     kwargs['did']]['datistemplate']
 
             # Set the template path for the SQL scripts
-            self.template_path = 'fts_dictionaries/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version)
 
             return f(*args, **kwargs)
@@ -308,7 +312,8 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-fts_dictionary"
+                    icon="icon-fts_dictionary",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -530,12 +535,17 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
                     _("Could not find the FTS Dictionary node to update.")
                 )
 
+        other_node_info = {}
+        if 'description' in data:
+            other_node_info['description'] = data['description']
+
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 dcid,
                 res['rows'][0]['schema'],
                 name,
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                **other_node_info
             )
         )
 
@@ -632,7 +642,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
                 data[k] = v
 
         # Fetch sql query for modified data
-        SQL, name = self.get_sql(gid, sid, did, scid, data, dcid)
+        SQL, _ = self.get_sql(gid, sid, did, scid, data, dcid)
         # Most probably this is due to error
         if not isinstance(SQL, str):
             return SQL
@@ -709,9 +719,9 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, res = self.conn.execute_dict(sql)
             if not status:
-                return internal_server_error(errormsg=res)
+                return internal_server_error(errormsg=res), ''
             elif len(res['rows']) == 0:
-                return gone(_("Could not find the FTS Dictionary node."))
+                return gone(_("Could not find the FTS Dictionary node.")), ''
 
             old_data = res['rows'][0]
             self._check_template_name_and_schema_name(data, old_data)
@@ -724,7 +734,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, new_schema = self.conn.execute_scalar(sql)
             if not status:
-                return internal_server_error(errormsg=new_schema)
+                return internal_server_error(errormsg=new_schema), ''
 
             # Replace schema oid with schema name
             new_data = data.copy()
@@ -738,7 +748,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, old_schema = self.conn.execute_scalar(sql)
             if not status:
-                return internal_server_error(errormsg=old_schema)
+                return internal_server_error(errormsg=old_schema), ''
 
             # Replace old schema oid with old schema name
             old_data['schema'] = old_schema
@@ -759,7 +769,7 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, schema = self.conn.execute_scalar(sql)
             if not status:
-                return internal_server_error(errormsg=schema)
+                return internal_server_error(errormsg=schema), ''
 
             sql = self._get_sql_for_create(data, schema)
             return sql.strip('\n'), data['name']
@@ -953,8 +963,8 @@ class FtsDictionaryView(PGChildNodeView, SchemaDiffObjectCompare):
         target_schema = kwargs.get('target_schema', None)
 
         if data:
-            sql, name = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
-                                     data=data, dcid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
+                                  data=data, dcid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

@@ -2,17 +2,17 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import gettext from 'sources/gettext';
+import { styled } from '@mui/material/styles';
 import _ from 'lodash';
 import url_for from 'sources/url_for';
 import React from 'react';
-import { Box, Paper} from '@material-ui/core';
-import { makeStyles } from '@material-ui/core/styles';
+import { Box, Paper} from '@mui/material';
 import Wizard from '../../../../static/js/helpers/wizard/Wizard';
 import WizardStep from '../../../../static/js/helpers/wizard/WizardStep';
 import { FormFooterMessage, MESSAGE_TYPE, FormNote } from '../../../../static/js/components/FormComponents';
@@ -22,40 +22,36 @@ import ImportExportSelectionSchema from './import_export_selection.ui';
 import CheckBoxTree from '../../../../static/js/components/CheckBoxTree';
 import getApiInstance from '../../../../static/js/api_instance';
 import PropTypes from 'prop-types';
-import { commonTableStyles } from '../../../../static/js/Theme';
-import clsx from 'clsx';
-import Notify from '../../../../static/js/helpers/Notifier';
 import pgAdmin from 'sources/pgadmin';
+import Table from '../../../../static/js/components/Table';
 
-const useStyles = makeStyles(() =>
+const StyledBox = styled(Box)(({theme}) =>
   ({
-    root: {
-      height: '100%'
+    height: '100%',
+    '& .ImportExportServers-noOverflow': {
+      overflow: 'hidden',
+      '& .ImportExportServers-treeContainer': {
+        flexGrow: 1,
+        minHeight: 0,
+      },
+      '& .ImportExportServers-boxText': {
+        paddingBottom: '5px'
+      },
+      '& .ImportExportServers-summaryContainer': {
+        flexGrow: 1,
+        minHeight: 0,
+        overflow: 'auto',
+      },
+      '& .ImportExportServers-noteContainer': {
+        marginTop: '5px',
+      }
     },
-    treeContainer: {
-      flexGrow: 1,
-      minHeight: 0,
-    },
-    boxText: {
-      paddingBottom: '5px'
-    },
-    noOverflow: {
-      overflow: 'hidden'
-    },
-    summaryContainer: {
-      flexGrow: 1,
-      minHeight: 0,
-      overflow: 'auto',
-    },
-    noteContainer: {
-      marginTop: '5px',
+    '& .ImportExportServers-Background':{
+      backgroundColor: theme.palette.background.default + ' !important',
     }
-  }),
-);
+  }));
 
 export default function ImportExportServers({onClose}) {
-  const classes = useStyles();
-  const tableClasses = commonTableStyles();
 
   let steps = [gettext('Import/Export'), gettext('Database Servers'), gettext('Summary')];
   const [loaderText, setLoaderText] = React.useState('');
@@ -66,7 +62,13 @@ export default function ImportExportServers({onClose}) {
   const [summaryData, setSummaryData] = React.useState([]);
   const [summaryText, setSummaryText] = React.useState('');
   const [noteText, setNoteText] = React.useState('');
+  const [selectionSchemaInstance, setSelectionSchemaInstance] = React.useState();
   const api = getApiInstance();
+
+  React.useEffect(() => {
+    const impExpSchema = new ImportExportSelectionSchema();
+    setSelectionSchemaInstance(impExpSchema);
+  }, []);
 
   const onSave = () => {
     let post_data = {'filename': selectionFormData.filename},
@@ -77,10 +79,10 @@ export default function ImportExportServers({onClose}) {
       post_data['selected_sever_ids'] = selectedServers;
       api.post(save_url, post_data)
         .then(() => {
-          Notify.alert(gettext('Export Servers'), gettext('The selected servers were exported successfully.'));
+          pgAdmin.Browser.notifier.alert(gettext('Export Servers'), gettext('The selected servers were exported successfully.'));
         })
         .catch((err) => {
-          Notify.alert(gettext('Export Error'), err.response.data.errormsg);
+          pgAdmin.Browser.notifier.alert(gettext('Export Error'), err.response.data.errormsg);
         });
     } else if (selectionFormData.imp_exp == 'i') {
       // Remove the random number added to create unique tree item,
@@ -102,10 +104,10 @@ export default function ImportExportServers({onClose}) {
             msg = gettext('The existing server groups and servers were removed, and the selected servers were imported successfully.');
           }
 
-          Notify.alert(gettext('Import Servers'), msg);
+          pgAdmin.Browser.notifier.alert(gettext('Import Servers'), msg);
         })
         .catch((err) => {
-          Notify.alert(gettext('Import error'), err.response.data.errormsg);
+          pgAdmin.Browser.notifier.alert(gettext('Import error'), err.response.data.errormsg);
         });
     }
 
@@ -152,9 +154,9 @@ export default function ImportExportServers({onClose}) {
       } else if (selectionFormData.imp_exp == 'i') {
         setSummaryText(gettext('The following servers will be imported. Click the Finish button to complete the import process.'));
         if (selectionFormData.replace_servers) {
-          setNoteText(gettext('All existing server groups and servers will be removed before the servers above are imported. On a successful import process, the browser tree will be refreshed.'));
+          setNoteText(gettext('All existing server groups and servers will be removed before the servers above are imported. On a successful import process, the object explorer will be refreshed.'));
         } else {
-          setNoteText(gettext('On a successful import process, the browser tree will be refreshed.'));
+          setNoteText(gettext('On a successful import process, the object explorer will be refreshed.'));
         }
       }
     }
@@ -176,7 +178,7 @@ export default function ImportExportServers({onClose}) {
             .catch(() => {
               setLoaderText('');
               setErrMsg(gettext('Error while fetching Server Groups and Servers.'));
-              reject();
+              reject(new Error(gettext('Error while fetching Server Groups and Servers.')));
             });
         } else if (selectionFormData.imp_exp == 'i') {
           let load_servers_url = url_for('import_export_servers.load_servers');
@@ -193,7 +195,7 @@ export default function ImportExportServers({onClose}) {
             .catch((err) => {
               setLoaderText('');
               setErrMsg(err.response.data.errormsg);
-              reject();
+              reject(new Error(err.response.data.errormsg));
             });
         }
       } else {
@@ -203,7 +205,7 @@ export default function ImportExportServers({onClose}) {
   };
 
   return (
-    <Box className={classes.root}>
+    <StyledBox>
       <Loader message={loaderText} />
       <Wizard
         title={gettext('Import/Export Servers')}
@@ -215,31 +217,34 @@ export default function ImportExportServers({onClose}) {
         beforeNext={onBeforeNext}
       >
         <WizardStep stepId={0}>
-          <SchemaView
-            formType={'dialog'}
-            getInitData={() => {/*This is intentional (SonarQube)*/}}
-            viewHelperProps={{ mode: 'create' }}
-            schema={new ImportExportSelectionSchema()}
-            showFooter={false}
-            isTabView={false}
-            onDataChange={(isChanged, changedData) => {
-              setSelectionFormData(changedData);
-            }}
-          />
+          {selectionSchemaInstance &&
+            <SchemaView
+              formType={'dialog'}
+              getInitData={() => {/*This is intentional (SonarQube)*/}}
+              viewHelperProps={{ mode: 'create' }}
+              schema={selectionSchemaInstance}
+              showFooter={false}
+              isTabView={false}
+              formClassName='ImportExportServers-Background'
+              onDataChange={(isChanged, changedData) => {
+                setSelectionFormData(changedData);
+              }}
+            />
+          }
           <FormFooterMessage type={MESSAGE_TYPE.ERROR} message={errMsg} onClose={onErrClose} />
         </WizardStep>
-        <WizardStep stepId={1} className={classes.noOverflow}>
-          <Box className={classes.boxText}>{gettext('Select the Server Groups/Servers to import/export:')}</Box>
-          <Box className={classes.treeContainer}>
+        <WizardStep stepId={1} className='ImportExportServers-noOverflow'>
+          <Box className='ImportExportServers-boxText'>{gettext('Select the Server Groups/Servers to import/export:')}</Box>
+          <Box className='ImportExportServers-treeContainer'>
             <CheckBoxTree treeData={serverData} getSelectedServers={(selServers) => {
               setSelectedServers(selServers);
             }}/>
           </Box>
         </WizardStep>
-        <WizardStep stepId={2} className={classes.noOverflow}>
-          <Box className={classes.boxText}>{gettext(summaryText)}</Box>
-          <Paper variant="outlined" elevation={0} className={classes.summaryContainer}>
-            <table className={clsx(tableClasses.table)}>
+        <WizardStep stepId={2} className='ImportExportServers-noOverflow'>
+          <Box className='ImportExportServers-boxText'>{gettext(summaryText)}</Box>
+          <Paper variant="outlined" elevation={0} className='ImportExportServers-summaryContainer'>
+            <Table>
               <thead>
                 <tr>
                   <th>Server Group</th>
@@ -256,13 +261,13 @@ export default function ImportExportServers({onClose}) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </Paper>
           {selectionFormData.imp_exp == 'i' &&
-          <FormNote className={classes.noteContainer} text={noteText}/> }
+          <FormNote className='ImportExportServers-noteContainer' text={noteText}/> }
         </WizardStep>
       </Wizard>
-    </Box>
+    </StyledBox>
   );
 }
 ImportExportServers.propTypes = {

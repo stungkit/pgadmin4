@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,15 +10,10 @@ import sys
 from flask_babel import gettext
 from pgadmin.utils.constants import PREF_LABEL_DISPLAY,\
     PREF_LABEL_KEYBOARD_SHORTCUTS, PREF_LABEL_TABS_SETTINGS, \
-    PREF_LABEL_OPTIONS, QT_DEFAULT_PLACEHOLDER, VW_EDT_DEFAULT_PLACEHOLDER
+    PREF_LABEL_OPTIONS, QT_DEFAULT_PLACEHOLDER, VW_EDT_DEFAULT_PLACEHOLDER, \
+    PREF_LABEL_BREADCRUMBS
 from flask import current_app
 import config
-
-LOCK_LAYOUT_LEVEL = {
-    'PREVENT_DOCKING': 'docking',
-    'FULL': 'full',
-    'NONE': 'none'
-}
 
 
 def register_browser_preferences(self):
@@ -26,6 +21,16 @@ def register_browser_preferences(self):
         'display', 'show_system_objects',
         gettext("Show system objects?"), 'boolean', False,
         category_label=PREF_LABEL_DISPLAY
+    )
+
+    self.show_empty_coll_nodes = self.preference.register(
+        'display', 'show_empty_coll_nodes',
+        gettext("Show empty object collections?"), 'boolean', True,
+        category_label=PREF_LABEL_DISPLAY,
+        help_str=gettext(
+            'If turned off, then all object collections which are empty '
+            'will be hidden from browser tree.'
+        )
     )
 
     self.show_user_defined_templates = self.preference.register(
@@ -47,10 +52,10 @@ def register_browser_preferences(self):
 
     self.preference.register(
         'display', 'browser_tree_state_save_interval',
-        gettext("Browser tree state saving interval"), 'integer',
+        gettext("Object explorer tree state saving interval"), 'integer',
         30, category_label=PREF_LABEL_DISPLAY,
         help_str=gettext(
-            'Browser tree state saving interval in seconds. '
+            'Object explorer state saving interval in seconds. '
             'Use -1 to disable the tree saving mechanism.'
         )
     )
@@ -83,21 +88,6 @@ def register_browser_preferences(self):
         help_str=gettext(
             'If a treeview node is expanded and has only a single '
             'child, automatically expand the child node as well.'
-        )
-    )
-
-    self.lock_layout = self.preference.register(
-        'display', 'lock_layout',
-        gettext('Lock Layout'), 'radioModern', LOCK_LAYOUT_LEVEL['NONE'],
-        category_label=PREF_LABEL_DISPLAY, options=[
-            {'label': gettext('None'), 'value': LOCK_LAYOUT_LEVEL['NONE']},
-            {'label': gettext('Prevent Docking'),
-             'value': LOCK_LAYOUT_LEVEL['PREVENT_DOCKING']},
-            {'label': gettext('Full Lock'),
-             'value': LOCK_LAYOUT_LEVEL['FULL']},
-        ],
-        help_str=gettext(
-            'Lock the UI layout at different levels'
         )
     )
 
@@ -139,7 +129,7 @@ def register_browser_preferences(self):
     self.preference.register(
         'keyboard_shortcuts',
         'browser_tree',
-        gettext('Browser tree'),
+        gettext('Object Explorer'),
         'keyboardshortcut',
         {
             'alt': True,
@@ -161,6 +151,21 @@ def register_browser_preferences(self):
             'shift': True,
             'control': False,
             'key': {'key_code': 91, 'char': '['}
+        },
+        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
+        fields=fields
+    )
+
+    self.preference.register(
+        'keyboard_shortcuts',
+        'close_tab_panel',
+        gettext('Close tab panel'),
+        'keyboardshortcut',
+        {
+            'alt': False,
+            'shift': True,
+            'control': True,
+            'key': {'key_code': 87, 'char': 'w'}
         },
         category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
         fields=fields
@@ -334,51 +339,6 @@ def register_browser_preferences(self):
 
     self.preference.register(
         'keyboard_shortcuts',
-        'grid_menu_drop_multiple',
-        gettext('Delete/Drop multiple objects'),
-        'keyboardshortcut',
-        {
-            'alt': True,
-            'shift': True,
-            'control': False,
-            'key': {'key_code': 77, 'char': 'm'}
-        },
-        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-        fields=fields
-    )
-
-    self.preference.register(
-        'keyboard_shortcuts',
-        'grid_menu_drop_cascade_multiple',
-        gettext('Drop Cascade multiple objects'),
-        'keyboardshortcut',
-        {
-            'alt': True,
-            'shift': True,
-            'control': False,
-            'key': {'key_code': 85, 'char': 'u'}
-        },
-        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-        fields=fields
-    )
-
-    self.preference.register(
-        'keyboard_shortcuts',
-        'context_menu',
-        gettext('Open context menu'),
-        'keyboardshortcut',
-        {
-            'alt': True,
-            'shift': True,
-            'control': False,
-            'key': {'key_code': 67, 'char': 'c'}
-        },
-        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-        fields=fields
-    )
-
-    self.preference.register(
-        'keyboard_shortcuts',
         'direct_debugging',
         gettext('Direct debugging'),
         'keyboardshortcut',
@@ -394,38 +354,8 @@ def register_browser_preferences(self):
 
     self.preference.register(
         'keyboard_shortcuts',
-        'dialog_tab_forward',
-        gettext('Dialog tab forward'),
-        'keyboardshortcut',
-        {
-            'alt': False,
-            'shift': True,
-            'control': True,
-            'key': {'key_code': 93, 'char': ']'}
-        },
-        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-        fields=fields
-    )
-
-    self.preference.register(
-        'keyboard_shortcuts',
-        'dialog_tab_backward',
-        gettext('Dialog tab backward'),
-        'keyboardshortcut',
-        {
-            'alt': False,
-            'shift': True,
-            'control': True,
-            'key': {'key_code': 91, 'char': '['}
-        },
-        category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-        fields=fields
-    )
-
-    self.preference.register(
-        'keyboard_shortcuts',
         'sub_menu_refresh',
-        gettext('Refresh browser tree'),
+        gettext('Refresh object explorer'),
         'keyboardshortcut',
         {
             'alt': False,
@@ -513,7 +443,7 @@ def register_browser_preferences(self):
         )
     )
 
-    ope_new_tab_options = [
+    open_new_tab_options = [
         {'label': gettext('Query Tool'), 'value': 'qt'},
         {'label': gettext('Debugger'), 'value': 'debugger'},
         {'label': gettext('Schema Diff'), 'value': 'schema_diff'},
@@ -521,14 +451,14 @@ def register_browser_preferences(self):
 
     # Allow psq tool to open in new browser tab if ENABLE_PSQL is set to True
     if config.ENABLE_PSQL:
-        ope_new_tab_options.append(
+        open_new_tab_options.append(
             {'label': gettext('PSQL Tool'), 'value': 'psql_tool'})
 
     self.open_in_new_tab = self.preference.register(
         'tab_settings', 'new_browser_tab_open',
         gettext("Open in new browser tab"), 'select', None,
         category_label=PREF_LABEL_OPTIONS,
-        options=ope_new_tab_options,
+        options=open_new_tab_options,
         help_str=gettext(
             'Select Query Tool, Debugger, Schema Diff, ERD Tool '
             'or PSQL Tool from the drop-down to set '
@@ -557,3 +487,25 @@ def register_browser_preferences(self):
                 ' back to the default title with placeholders.'
             )
         )
+
+    self.preference.register(
+        'breadcrumbs', 'breadcrumbs_enable',
+        gettext("Enable object breadcrumbs?"),
+        'boolean',
+        True, category_label=PREF_LABEL_BREADCRUMBS,
+        help_str=gettext(
+            'Enable breadcrumbs to show the complete path of an object in the '
+            'object explorer. The breadcrumbs are displayed on object mouse '
+            'hover.'
+        )
+    )
+
+    self.preference.register(
+        'breadcrumbs', 'breadcrumbs_show_comment',
+        gettext("Show comment with object breadcrumbs?"),
+        'boolean',
+        True, category_label=PREF_LABEL_BREADCRUMBS,
+        help_str=gettext(
+            'Show object comment along with breadcrumbs.'
+        )
+    )

@@ -2,52 +2,56 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import React, { useEffect } from 'react';
+import { styled } from '@mui/material/styles';
 import { generateNodeUrl } from '../../../../browser/static/js/node_ajax';
 import gettext from 'sources/gettext';
 import PropTypes from 'prop-types';
-import Notify from '../../../../static/js/helpers/Notifier';
 import getApiInstance from 'sources/api_instance';
-import { makeStyles } from '@material-ui/core/styles';
-import CodeMirror from '../../../../static/js/components/CodeMirror';
+import CodeMirror from '../../../../static/js/components/ReactCodeMirror';
 import Loader from 'sources/components/Loader';
+import withStandardTabInfo from '../../../../static/js/helpers/withStandardTabInfo';
+import { BROWSER_PANELS } from '../../../../browser/static/js/constants';
+import { usePgAdmin } from '../../../../static/js/PgAdminProvider';
 
-const useStyles = makeStyles((theme) => ({
-  textArea: {
+
+const Root = styled('div')(({theme}) => ({
+  '& .SQL-textArea': {
     height: '100% !important',
     width: '100% !important',
     background: theme.palette.grey[400],
-    overflow: 'auto !important',
     minHeight: '100%',
     minWidth: '100%',
-  },
+  }
 }));
 
-export default function SQL({ nodeData, node, did,  ...props }) {
-  const classes = useStyles();
+function SQL({nodeData, node, treeNodeInfo, isActive, isStale, setIsStale}) {
+  const did = ((!_.isUndefined(treeNodeInfo)) && (!_.isUndefined(treeNodeInfo['database']))) ? treeNodeInfo['database']._id: 0;
+  const dbConnected = !_.isUndefined(treeNodeInfo) && !_.isUndefined(treeNodeInfo['database']) ? treeNodeInfo.database.connected: false;
   const [nodeSQL, setNodeSQL] = React.useState('');
   const [loaderText, setLoaderText] = React.useState('');
-  const [msg, setMsg] = React.useState('');
+  const pgAdmin = usePgAdmin();
 
   useEffect(() => {
+    if(!isStale || !isActive) {
+      return;
+    }
     let sql = '-- ' + gettext('Please select an object in the tree view.');
-    if (node) {
+    if(node) {
       let url = generateNodeUrl.call(
         node,
-        props.treeNodeInfo,
+        treeNodeInfo,
         'sql',
         nodeData,
         true,
         node.url_jump_after_node
       );
-      setLoaderText('Loading...');
-      if (did && !props.dbConnected){
-        setLoaderText('');
+      if (did && !dbConnected){
         return;
       }
       sql =
@@ -55,6 +59,7 @@ export default function SQL({ nodeData, node, did,  ...props }) {
 
       if (node.hasSQL) {
         const api = getApiInstance();
+        setLoaderText('Loading...');
         api({
           url: url,
           type: 'GET',
@@ -64,52 +69,48 @@ export default function SQL({ nodeData, node, did,  ...props }) {
               setNodeSQL(res.data);
               setLoaderText('');
             } else {
-              setMsg(sql);
+              setNodeSQL(sql);
             }
           })
           .catch((e) => {
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Error'),
               gettext(e.response.data.errormsg)
             );
             // show failed message.
-            setMsg(gettext('Failed to retrieve data from the server.'));
+            setNodeSQL(gettext('Failed to retrieve data from the server.'));
+            setLoaderText('');
+          }).then(()=>{
             setLoaderText('');
           });
-      }else{
-        setMsg(sql);
-        setLoaderText('');
       }
     }
     if (sql != '') {
-      setMsg(sql);
+      setNodeSQL(sql);
     }
-    return () => {
-      setNodeSQL([]);
-    };
-  }, [nodeData, props.dbConnected]);
+    setIsStale(false);
+  }, [isStale, isActive, nodeData?.id]);
 
   return (
-    <>
+    (<Root style={{height: '100%'}} >
       <Loader message={loaderText}/>
       <CodeMirror
-        className={classes.textArea}
-        value={nodeSQL.length > 0 ? nodeSQL : msg}
+        className='SQL-textArea'
+        value={nodeSQL}
         readonly={true}
-        options={{
-          lineNumbers: true,
-          mode: 'text/x-pgsql',
-        }}
+        showCopyBtn
       />
-    </>
+    </Root>)
   );
 }
 
 SQL.propTypes = {
-  res: PropTypes.array,
   nodeData: PropTypes.object,
   treeNodeInfo: PropTypes.object,
   node: PropTypes.func,
-  dbConnected: PropTypes.bool,
-  did: PropTypes.number
+  isActive: PropTypes.bool,
+  isStale: PropTypes.bool,
+  setIsStale: PropTypes.func,
 };
+
+export default withStandardTabInfo(SQL, BROWSER_PANELS.SQL);

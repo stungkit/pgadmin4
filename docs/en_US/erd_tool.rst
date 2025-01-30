@@ -12,13 +12,20 @@ The Entity-Relationship Diagram (ERD) tool is a database design tool that provid
 * Save the diagram and open it later to continue working on it.
 * Generate ready to run SQL from the database design.
 * Generate the database diagram for an existing database.
-* Drag and drop tables from browser tree to the diagram.
+* Drag and drop tables from object explorer to the diagram.
 
 .. image:: images/erd_tool.png
     :alt: ERD tool window
     :align: center
 
-You can open multiple copies of the ERD tool in individual tabs simultaneously. To close a copy of the ERD tool, click the *X* in the upper-right hand corner of the tab bar.
+You can open multiple copies of the ERD tool in individual tabs simultaneously.
+You can also generate an ERD from a database, schema or a table.
+
+* The ERD for database will fetch all the tables from all the schemas of the database and plot them with foreign key links.
+* The ERD for schema will fetch all the tables from a schema and plot them with foreign key links. If any table refers to a table in another
+  schema, then that link/foreign key will be removed.
+* The ERD for table will fetch all the tables linked directly or indirectly to mentioned table. You can change the depth of traversal from :ref:`Preferences <preferences>`.
+
 
 Toolbar
 *******
@@ -41,9 +48,9 @@ File Options
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
    | Icon                 | Behavior                                                                                          | Shortcut       |
    +======================+===================================================================================================+================+
-   | *Open File*          | Click the *Open File* icon to load a previously saved diagram.                                    | Ctrl + O       |
+   | *Open File*          | Click the *Open File* icon to load a previously saved diagram.                                    | Cmd/Ctrl + O   |
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
-   | *Save*               | Click the *Save* icon to perform a quick-save of a previously saved diagram, or to save the       | Ctrl + S       |
+   | *Save*               | Click the *Save* icon to perform a quick-save of a previously saved diagram, or to save the       | Cmd/Ctrl + S   |
    |                      | diagram to a file.                                                                                |                |
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
    | *Save as*            | Click the *Save As* to open a new browser dialog and specify a new location to save the diagram.  | Ctrl + Shift + |
@@ -60,13 +67,13 @@ Export Options
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
    | Icon                 | Behavior                                                                                          | Shortcut       |
    +======================+===================================================================================================+================+
-   | *Generate SQL*       | Click the *Generate SQL* icon to generate the DDL SQL for the diagram and open a query tool       | Option + Ctrl +|
-   |                      | with the generated SQL ready for execution.                                                       | S              |
+   | *Generate SQL*       | Click the *Generate SQL* icon to generate the DDL SQL for the diagram and open a query tool       | Option/Alt +   |
+   |                      | with the generated SQL ready for execution.                                                       | Ctrl + S       |
    |                      | You can select the option *With DROP Table* if you wish to have DROP Table DDL statements before  |                |
    |                      | each CREATE Table DDL. You can see the option by clicking the down arrow beside the SQL button.   |                |
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
-   | *Download image*     | Click the *Download image* icon to save the ERD diagram in a image formate                        | Option + Ctrl +|
-   |                      |                                                                                                   | I              |
+   | *Download image*     | Click the *Download image* icon to save the ERD diagram in a image formate                        | Option/Alt +   |
+   |                      |                                                                                                   | Ctrl + I       |
    +----------------------+---------------------------------------------------------------------------------------------------+----------------+
 
 Editing Options

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,23 +10,29 @@
 """Implements pgAdmin4 User Management Utility"""
 
 import json
+
+import sys
+from unicodedata import normalize, is_normalized
+
 from flask import render_template, request, \
     Response, abort, current_app, session
 from flask_babel import gettext as _
-from flask_security import login_required, roles_required, current_user
-from flask_security.utils import encrypt_password
+from flask_security import roles_required, current_user
+from pgadmin.user_login_check import pga_login_required
+from flask_security.utils import hash_password
 from werkzeug.exceptions import InternalServerError
 
 import config
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import make_response as ajax_response, \
-    make_json_response, bad_request, internal_server_error, forbidden
+    make_json_response, bad_request, internal_server_error
 from pgadmin.utils.csrf import pgCSRFProtect
 from pgadmin.utils.constants import MIMETYPE_APP_JS, INTERNAL,\
     SUPPORTED_AUTH_SOURCES
 from pgadmin.utils.validation_utils import validate_email
 from pgadmin.model import db, Role, User, UserPreference, Server, \
     ServerGroup, Process, Setting, roles_users, SharedServer
+from pgadmin.utils.paths import create_users_storage_directory
 
 # set template path for sql scripts
 MODULE_NAME = 'user_management'
@@ -72,13 +78,13 @@ blueprint = UserManagementModule(
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(errormsg=_("This URL cannot be called directly."))
 
 
 @blueprint.route("/user_management.js")
-@login_required
+@pga_login_required
 def script():
     """render own javascript"""
     return Response(
@@ -94,7 +100,7 @@ def script():
 
 @blueprint.route("/current_user.js")
 @pgCSRFProtect.exempt
-@login_required
+@pga_login_required
 def current_user_info():
     return Response(
         response=render_template(
@@ -102,18 +108,20 @@ def current_user_info():
             is_admin='true' if current_user.has_role(
                 "Administrator") else 'false',
             user_id=current_user.id,
-            email=current_user.email,
+            email=current_user.email.replace("'","\\'") if current_user.email
+            else current_user.email,
             name=(
-                current_user.username.split('@')[0] if
+                current_user.username.split('@')[0].replace("'","\\'") if
                 config.SERVER_MODE is True
                 else 'postgres'
             ),
             allow_save_password='true' if
-            config.ALLOW_SAVE_PASSWORD and session['allow_save_password']
+            config.ALLOW_SAVE_PASSWORD and
+            session.get('allow_save_password', None)
             else 'false',
             allow_save_tunnel_password='true' if
-            config.ALLOW_SAVE_TUNNEL_PASSWORD and session[
-                'allow_save_password'] else 'false',
+            config.ALLOW_SAVE_TUNNEL_PASSWORD and
+            session.get('allow_save_password', None) else 'false',
             auth_sources=config.AUTHENTICATION_SOURCES,
             current_auth_source=session['auth_source_manager'][
                 'current_source'] if config.SERVER_MODE is True else INTERNAL
@@ -426,6 +434,22 @@ def save():
     )
 
 
+def normalise_password(password):
+    """
+    Normalise the password.
+    Flask security normalized the password prior to changing or comparing using
+    Python unicodedata.normalize(). As we are not using flask security form
+    to add/update user, we need custom function to do the same.
+    """
+    normalise_form = current_app.config.get(
+        'SECURITY_PASSWORD_NORMALIZE_FORM',
+        'NFKD'
+    )
+
+    return password if is_normalized(normalise_form, password) else\
+        normalize(normalise_form, password)
+
+
 def validate_password(data, new_data):
     """
     Check password new and confirm password match. If both passwords are not
@@ -437,7 +461,9 @@ def validate_password(data, new_data):
             'confirmPassword' in data and data['confirmPassword'] != ""):
 
         if data['newPassword'] == data['confirmPassword']:
-            new_data['password'] = encrypt_password(data['newPassword'])
+            new_data['password'] = hash_password(normalise_password(
+                data['newPassword'])
+            )
         else:
             raise InternalServerError(_("Passwords do not match."))
 
@@ -466,7 +492,7 @@ def validate_user(data):
     if 'auth_source' in data and data['auth_source'] != "":
         new_data['auth_source'] = data['auth_source']
 
-    if 'locked' in data and type(data['locked']) == bool:
+    if 'locked' in data and isinstance(data['locked'], bool):
         new_data['locked'] = data['locked']
         if data['locked']:
             new_data['login_attempts'] = config.MAX_LOGIN_ATTEMPTS
@@ -532,6 +558,9 @@ def create_user(data):
     except Exception as e:
         return False, str(e)
 
+    # Create users storage directory
+    create_users_storage_directory()
+
     return True, ''
 
 
@@ -547,10 +576,12 @@ def update_user(uid, data):
     # Username and email can not be changed for internal users
     if usr.auth_source == INTERNAL:
         non_editable_params = ('username', 'email')
+    else:
+        non_editable_params = ('username',)
 
-        for f in non_editable_params:
-            if f in data:
-                return False, _("'{0}' is not allowed to modify.").format(f)
+    for f in non_editable_params:
+        if f in data:
+            return False, _("'{0}' is not allowed to modify.").format(f)
 
     try:
         new_data = validate_user(data)
@@ -575,6 +606,7 @@ def delete_user(uid):
     This function is used to delete the users
     """
     usr = User.query.get(uid)
+
     if not usr:
         return False, _("Unable to update user '{0}'").format(uid)
 

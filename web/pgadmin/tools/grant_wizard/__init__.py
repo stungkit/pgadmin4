@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -13,7 +13,7 @@ import json
 from flask import Response, url_for
 from flask import render_template, request, current_app
 from flask_babel import gettext
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from urllib.parse import unquote
 
 from pgadmin.browser.server_groups.servers.utils import parse_priv_to_db
@@ -40,17 +40,7 @@ class GrantWizardModule(PgAdminModule):
         It is a wizard which inherits PgAdminModule
         class and define methods to load its own
         javascript file.
-
-    LABEL = gettext('Browser')
     """
-
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def show_system_objects(self):
         """
@@ -125,7 +115,7 @@ def check_precondition(f):
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(
         errormsg=gettext("This URL cannot be called directly.")
@@ -133,7 +123,7 @@ def index():
 
 
 @blueprint.route("/grant_wizard.js")
-@login_required
+@pga_login_required
 def script():
     """render own javascript"""
     return Response(response=render_template(
@@ -145,7 +135,7 @@ def script():
 @blueprint.route(
     '/acl/<int:sid>/<int:did>/', methods=['GET'], endpoint='acl'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def acl_list(sid, did):
     """render list of acls"""
@@ -265,19 +255,33 @@ def get_node_sql_with_type(node_id, node_type, server_prop,
     '/<int:sid>/<int:did>/<int:node_id>/<node_type>/',
     methods=['GET'], endpoint='objects'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def properties(sid, did, node_id, node_type):
     """It fetches the properties of object types
        and render into selection page of wizard
     """
 
+    res_data, msg = get_data(sid, did, node_id, node_type, server_info)
+
+    if res_data is None and isinstance(msg, Response):
+        return msg
+
+    return make_json_response(
+        result=res_data,
+        info=msg,
+        status=200
+    )
+
+
+def get_data(sid, did, node_id, node_type, server_data,
+             return_emtpy_schema=False):
     get_schema_sql_url = '/sql/get_schemas.sql'
 
     # unquote encoded url parameter
     node_type = unquote(node_type)
 
-    server_prop = server_info
+    server_prop = server_data
 
     res_data = []
     failed_objects = []
@@ -292,7 +296,7 @@ def properties(sid, did, node_id, node_type):
     status, res = conn.execute_dict(sql)
 
     if not status:
-        return internal_server_error(errormsg=res)
+        return None, internal_server_error(errormsg=res)
     node_types = res['rows']
 
     def _append_rows(status, res, disp_type):
@@ -303,46 +307,80 @@ def properties(sid, did, node_id, node_type):
             if len(res) > 0:
                 res_data.extend(res['rows'])
 
+    empty_schema_list = []
     for row in node_types:
+        is_empty_schema = True
         if 'oid' in row:
             node_id = row['oid']
 
         if ntype == 'schema':
             status, res = _get_rows_for_type(
                 conn, 'function', server_prop, node_id)
+
             _append_rows(status, res, 'function')
 
             status, res = _get_rows_for_type(
                 conn, 'procedure', server_prop, node_id)
+
             _append_rows(status, res, 'procedure')
 
             status, res = _get_rows_for_type(
                 conn, 'trigger_function', server_prop, node_id)
+
             _append_rows(status, res, 'trigger function')
 
             status, res = _get_rows_for_type(
                 conn, 'sequence', server_prop, node_id)
+
+            if len(res['rows']):
+                is_empty_schema = False
+
             _append_rows(status, res, 'sequence')
 
             status, res = _get_rows_for_type(
                 conn, 'table', server_prop, node_id)
+
+            if len(res['rows']):
+                is_empty_schema = False
+
             _append_rows(status, res, 'table')
 
             status, res = _get_rows_for_type(
                 conn, 'view', server_prop, node_id)
+
+            if len(res['rows']):
+                is_empty_schema = False
+
             _append_rows(status, res, 'view')
 
             status, res = _get_rows_for_type(
                 conn, 'mview', server_prop, node_id)
+
+            if len(res['rows']):
+                is_empty_schema = False
+
             _append_rows(status, res, 'materialized view')
 
             status, res = _get_rows_for_type(
                 conn, 'foreign_table', server_prop, node_id)
+
+            if len(res['rows']):
+                is_empty_schema = False
+
             _append_rows(status, res, 'foreign table')
 
             status, res = _get_rows_for_type(
                 conn, 'package', server_prop, node_id)
+
+            if (type(res) is list and len(res) > 0) or (
+                    'rows' in res and len(res['rows']) > 0):
+                is_empty_schema = False
+
             _append_rows(status, res, 'package')
+
+            if is_empty_schema and row['name'] not in empty_schema_list:
+                empty_schema_list.append(row['name'])
+
         else:
             status, res = _get_rows_for_type(conn, ntype, server_prop, node_id)
             _append_rows(status, res, 'function')
@@ -352,12 +390,10 @@ def properties(sid, did, node_id, node_type):
         msg = gettext('Unable to fetch the {} objects'.format(
             ", ".join(failed_objects))
         )
+    if return_emtpy_schema:
+        return res_data, msg, empty_schema_list
 
-    return make_json_response(
-        result=res_data,
-        info=msg,
-        status=200
-    )
+    return res_data, msg
 
 
 def get_req_data():
@@ -375,7 +411,7 @@ def set_priv_for_package(server_prop, data, acls):
     '/sql/<int:sid>/<int:did>/',
     methods=['POST'], endpoint='modified_sql'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def msql(sid, did):
     """
@@ -509,7 +545,7 @@ def parse_priv(data, acls, server_prop):
 @blueprint.route(
     '/<int:sid>/<int:did>/', methods=['POST'], endpoint='apply'
 )
-@login_required
+@pga_login_required
 @check_precondition
 def save(sid, did):
     """

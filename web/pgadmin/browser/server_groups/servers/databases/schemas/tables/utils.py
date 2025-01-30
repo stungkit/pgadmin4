@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -21,7 +21,7 @@ from pgadmin.browser.server_groups.servers.databases.schemas\
 from pgadmin.utils.ajax import make_json_response, internal_server_error, \
     gone, make_response as ajax_response
 from pgadmin.browser.server_groups.servers.databases.schemas.utils \
-    import DataTypeReader, parse_rule_definition
+    import DataTypeReader, parse_rule_definition, check_pgstattuple
 from pgadmin.browser.server_groups.servers.utils import parse_priv_from_db, \
     parse_priv_to_db
 from pgadmin.browser.utils import PGChildNodeView
@@ -49,7 +49,6 @@ from pgadmin.utils.preferences import Preferences
 from pgadmin.browser.server_groups.servers.databases.schemas.utils \
     import VacuumSettings
 from pgadmin.tools.schema_diff.node_registry import SchemaDiffRegistry
-from pgadmin.dashboard import locks
 
 
 class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
@@ -90,6 +89,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
     node_label = "Table"
     pattern = '\n{2,}'
     double_newline = '\n\n'
+    BASE_TEMPLATE_PATH = 'tables/sql/#{0}#'
 
     @staticmethod
     def check_precondition(f):
@@ -148,6 +148,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
 
             # Supported ACL for table
             self.acl = ['a', 'r', 'w', 'd', 'D', 'x', 't']
+            if ver >= 170000:
+                self.acl = ['a', 'r', 'w', 'd', 'D', 'x', 't', 'm']
 
             # Supported ACL for columns
             self.column_acl = ['a', 'r', 'w', 'x']
@@ -163,7 +165,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
 
         return wrap
 
-    def _formatter(self, did, scid, tid, data):
+    def _formatter(self, did, scid, tid, data, with_serial_cols=False):
         """
         Args:
             data: dict of query result
@@ -233,7 +235,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         # columns properties.sql, so we need to set template path
         data = column_utils.get_formatted_columns(self.conn, tid,
                                                   data, other_columns,
-                                                  table_or_type)
+                                                  table_or_type,
+                                                  with_serial=with_serial_cols)
 
         self._add_constrints_to_output(data, did, tid)
 
@@ -444,14 +447,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             )
         else:
             # For Individual table stats
-
-            # Check if pgstattuple extension is already created?
-            # if created then only add extended stats
-            status, is_pgstattuple = self.conn.execute_scalar("""
-            SELECT (count(extname) > 0) AS is_pgstattuple
-            FROM pg_catalog.pg_extension
-            WHERE extname='pgstattuple'
-            """)
+            status, is_pgstattuple = check_pgstattuple(self.conn, tid)
             if not status:
                 return internal_server_error(errormsg=is_pgstattuple)
 
@@ -492,7 +488,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
 
         return condition
 
-    def fetch_tables(self, sid, did, scid, tid=None):
+    def fetch_tables(self, sid, did, scid, tid=None, with_serial_cols=False):
         """
         This function will fetch the list of all the tables
         and will be used by schema diff.
@@ -501,6 +497,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         :param did: Database Id
         :param scid: Schema Id
         :param tid: Table Id
+        :param with_serial_cols: Boolean
         :return: Table dataset
         """
 
@@ -512,7 +509,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
 
             data = BaseTableView.properties(
                 self, 0, sid, did, scid, tid, res=data,
-                return_ajax_response=False
+                with_serial_cols=with_serial_cols,
+                return_ajax_response=False,
             )
 
             return True, data
@@ -533,6 +531,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 if status:
                     data = BaseTableView.properties(
                         self, 0, sid, did, scid, row['oid'], res=data,
+                        with_serial_cols=with_serial_cols,
                         return_ajax_response=False
                     )
 
@@ -540,7 +539,6 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                     # comparison
                     BaseTableView._get_sub_module_data_for_compare(
                         self, sid, did, scid, data, row)
-                    res[row['name']] = data
                     res[row['name']] = data
 
             return True, res
@@ -612,14 +610,14 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         # version 9.5 and above
         BaseTableView._check_rlspolicy_support(res)
 
+        # If estimated_row_count is zero or -1 then set the row count to 0
+        if not estimated_row_count or estimated_row_count < 0:
+            res['rows'][0]['rows_cnt'] = 0
         # If estimated rows are greater than threshold then
-        if estimated_row_count and \
-                estimated_row_count > table_row_count_threshold:
+        elif estimated_row_count > table_row_count_threshold:
             res['rows'][0]['rows_cnt'] = str(table_row_count_threshold) + '+'
-
         # If estimated rows is lower than threshold then calculate the count
-        elif estimated_row_count and \
-                table_row_count_threshold >= estimated_row_count:
+        elif 0 < estimated_row_count <= table_row_count_threshold:
             sql = render_template(
                 "/".join(
                     [self.table_template_path, 'get_table_row_count.sql']
@@ -632,10 +630,6 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 return False, internal_server_error(errormsg=count)
 
             res['rows'][0]['rows_cnt'] = count
-
-        # If estimated_row_count is zero then set the row count with same
-        elif not estimated_row_count:
-            res['rows'][0]['rows_cnt'] = estimated_row_count
 
         # Fetch privileges
         sql = render_template("/".join([self.table_template_path,
@@ -709,10 +703,13 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             data['relacl'] = parse_priv_to_db(data['relacl'], self.acl)
 
         if 'acl' in data:
+            driver = get_driver(PG_DEFAULT_DRIVER)
+            data.update({'revoke_all': []})
             for acl in data['acl']:
-                data.update({'revoke_all': []})
                 if len(acl['privileges']) > 0 and len(acl['privileges']) < 7:
-                    data['revoke_all'].append(acl['grantee'])
+                    data['revoke_all'].append(
+                        driver.qtIdent(None, acl['grantee'])
+                        if acl['grantee'] != 'PUBLIC' else 'PUBLIC')
 
         # if table is partitions then
         if 'relispartition' in data and data['relispartition']:
@@ -929,6 +926,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 part_data['partition_scheme'] = row['partition_scheme']
                 part_data['description'] = row['description']
                 part_data['relowner'] = row['relowner']
+                part_data['default_amname'] = data.get('default_amname')
+                part_data['amname'] = row.get('amname')
 
                 self.update_autovacuum_properties(row)
 
@@ -1099,7 +1098,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
            tid: Table ID
         """
         # checking the table existence using the function of the same class
-        schema_name, table_name = self.get_schema_and_table_name(tid)
+        _, table_name = self.get_schema_and_table_name(tid)
 
         if table_name is None:
             return gone(gettext(self.not_found_error_msg()))
@@ -1143,7 +1142,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             if row['key_type'] == 'column':
                 partition_scheme += self.qtIdent(
                     self.conn, row['pt_column'])
-                if 'collationame' in row:
+                if 'collationame' in row and row['collationame']:
                     partition_scheme += ' COLLATE %s' % row['collationame']
 
                 if 'op_class' in row:
@@ -1271,7 +1270,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 c['schema'] = data['schema']
                 c['table'] = data['name']
                 # Sql for drop column
-                if 'inheritedfrom' not in c:
+                if c.get('inheritedfrom', None) is None:
                     column_sql += render_template("/".join(
                         [self.column_template_path, self._DELETE_SQL]),
                         data=c, conn=self.conn).strip('\n') + \
@@ -1313,8 +1312,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                         old_col_data['cltype'])
 
                 # Sql for alter column
-                if 'inheritedfrom' not in c and \
-                        'inheritedfromtable' not in c:
+                if c.get('inheritedfrom', None) is None and \
+                        c.get('inheritedfromtable', None) is None:
                     column_sql += render_template("/".join(
                         [self.column_template_path, self._UPDATE_SQL]),
                         data=c, o_data=old_col_data, conn=self.conn
@@ -1330,8 +1329,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
 
                 c = column_utils.convert_length_precision_to_string(c)
 
-                if 'inheritedfrom' not in c and \
-                        'inheritedfromtable' not in c:
+                if c.get('inheritedfrom', None) is None and \
+                        c.get('inheritedfromtable', None) is None:
                     column_sql += render_template("/".join(
                         [self.column_template_path, self._CREATE_SQL]),
                         data=c, conn=self.conn).strip('\n') + \
@@ -1535,7 +1534,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             sql = self._check_for_constraints(index_constraint_sql, data, did,
                                               tid, sql)
         else:
-            error, errmsg = BaseTableView._check_for_create_sql(data)
+            error, _ = BaseTableView._check_for_create_sql(data)
             if error:
                 return gettext('-- definition incomplete'), data['name']
 
@@ -1595,7 +1594,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         parent_id = kwargs.get('parent_id', None)
 
         # checking the table existence using the function of the same class
-        schema_name, table_name = self.get_schema_and_table_name(tid)
+        _, table_name = self.get_schema_and_table_name(tid)
 
         if table_name is None:
             return gone(gettext(self.not_found_error_msg()))
@@ -1632,6 +1631,10 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             else:
                 icon = self.get_icon_css_class(res['rows'][0])
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     tid,
@@ -1642,7 +1645,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                     parent_schema_id=scid,
                     schema_id=rest['rows'][0]['scid'],
                     schema_name=rest['rows'][0]['nspname'],
-                    affected_partitions=partitions_oid
+                    affected_partitions=partitions_oid,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -1745,6 +1749,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         """
         res = kwargs.get('res')
         return_ajax_response = kwargs.get('return_ajax_response', True)
+        with_serial_cols = kwargs.get('with_serial_cols', False)
 
         data = res['rows'][0]
 
@@ -1763,7 +1768,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             'vacuum_settings_str'
         ].replace('=', ' = ')
 
-        data = self._formatter(did, scid, tid, data)
+        data = self._formatter(did, scid, tid, data,
+                               with_serial_cols=with_serial_cols)
 
         # Fetch partition of this table if it is partitioned table.
         if 'is_partitioned' in data and data['is_partitioned']:
@@ -1820,7 +1826,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 'values_to': range_to,
                 'is_default': is_default,
                 'is_sub_partitioned': row['is_sub_partitioned'],
-                'sub_partition_scheme': row['sub_partition_scheme']
+                'sub_partition_scheme': row['sub_partition_scheme'],
+                'amname': row.get('amname', '')
             })
         elif data['partition_type'] == 'list':
             if row['partition_value'] == 'DEFAULT':
@@ -1838,7 +1845,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 'values_in': range_in,
                 'is_default': is_default,
                 'is_sub_partitioned': row['is_sub_partitioned'],
-                'sub_partition_scheme': row['sub_partition_scheme']
+                'sub_partition_scheme': row['sub_partition_scheme'],
+                'amname': row.get('amname', '')
             })
         else:
             range_part = row['partition_value'].split(
@@ -1854,7 +1862,8 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 'values_modulus': range_modulus,
                 'values_remainder': range_remainder,
                 'is_sub_partitioned': row['is_sub_partitioned'],
-                'sub_partition_scheme': row['sub_partition_scheme']
+                'sub_partition_scheme': row['sub_partition_scheme'],
+                'amname': row.get('amname', '')
             })
 
     def get_partitions_sql(self, partitions, schema_diff=False):
@@ -1870,6 +1879,7 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
             part_data = dict()
             part_data['partitioned_table_name'] = partitions['name']
             part_data['parent_schema'] = partitions['schema']
+            part_data['amname'] = row.get('amname')
 
             if 'is_attach' in row and row['is_attach']:
                 schema_name, table_name = \
@@ -2038,16 +2048,17 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
         sql = render_template(
             "/".join([self.table_template_path, 'locks.sql']), did=did
         )
-        status, lock_table_result = self.conn.execute_dict(sql)
+        _, lock_table_result = self.conn.execute_dict(sql)
 
         for row in lock_table_result['rows']:
-            if row['relation'].strip('\"') == data['name']:
+            if row['relation'] and \
+                    row['relation'].strip('\"') == data['name']:
 
                 sql = render_template(
                     "/".join([self.table_template_path,
                               'get_application_name.sql']), pid=row['pid']
                 )
-                status, res = self.conn.execute_dict(sql)
+                _, res = self.conn.execute_dict(sql)
 
                 application_name = res['rows'][0]['application_name']
 
@@ -2197,3 +2208,23 @@ class BaseTableView(PGChildNodeView, BasePartitionTable, VacuumSettings):
                 res['toast_autovacuum_freeze_max_age'],
                 res['toast_autovacuum_freeze_table_age']]) or \
                 res['toast_autovacuum_enabled'] in ('t', 'f')
+
+    def get_access_methods(self):
+        """
+        This function returns the access methods for table
+        """
+
+        res = []
+        sql = render_template("/".join([self.table_template_path,
+                                        'get_access_methods.sql']))
+
+        status, rest = self.conn.execute_2darray(sql)
+        if not status:
+            return internal_server_error(errormsg=rest)
+
+        for row in rest['rows']:
+            res.append(
+                {'label': row['amname'], 'value': row['amname']}
+            )
+
+        return res

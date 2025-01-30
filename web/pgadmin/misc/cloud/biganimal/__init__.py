@@ -2,7 +2,7 @@
 # #
 # # pgAdmin 4 - PostgreSQL Tools
 # #
-# # Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# # Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # # This software is released under the PostgreSQL Licence
 # #
 # ##########################################################################
@@ -14,15 +14,13 @@ import json
 import pickle
 from flask_babel import gettext
 from flask import session, current_app
-from flask_security import login_required
-from werkzeug.datastructures import Headers
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.utils import PgAdminModule
 from pgadmin.misc.cloud.utils import _create_server, CloudProcessDesc
 from pgadmin.misc.bgprocess.processes import BatchProcess
-from pgadmin.utils.ajax import make_json_response,\
-    internal_server_error, bad_request, success_return
+from pgadmin.utils.ajax import make_json_response
 from config import root
-from pgadmin.utils.constants import MIMETYPE_APP_JSON
+from pgadmin.utils.constants import MIMETYPE_APP_JSON, TWO_PARAM_STRING
 
 MODULE_NAME = 'biganimal'
 
@@ -33,13 +31,6 @@ EHA_CLUSTER_ARCH = 'eha'  # Extreme High Availability
 
 class BigAnimalModule(PgAdminModule):
     """Cloud module to deploy on EDB BigAnimal"""
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def get_exposed_url_endpoints(self):
         return ['biganimal.verification',
@@ -50,7 +41,8 @@ class BigAnimalModule(PgAdminModule):
                 'biganimal.instance_types',
                 'biganimal.volume_types',
                 'biganimal.volume_properties',
-                'biganimal.providers']
+                'biganimal.providers',
+                'biganimal.projects']
 
 
 blueprint = BigAnimalModule(MODULE_NAME, __name__,
@@ -59,19 +51,20 @@ blueprint = BigAnimalModule(MODULE_NAME, __name__,
 
 @blueprint.route('/verification_ack/',
                  methods=['GET'], endpoint='verification_ack')
-@login_required
+@pga_login_required
 def biganimal_verification_ack():
     """Check the Verification is done or not."""
     biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
     status, error = biganimal_obj.polling_for_token()
-    session['biganimal']['provider_obj'] = pickle.dumps(biganimal_obj, -1)
+    if status:
+        session['biganimal']['provider_obj'] = pickle.dumps(biganimal_obj, -1)
     return make_json_response(success=status,
                               errormsg=error)
 
 
 @blueprint.route('/verification/',
                  methods=['GET'], endpoint='verification')
-@login_required
+@pga_login_required
 def verification():
     """Verify Credentials."""
     biganimal = BigAnimalProvider()
@@ -82,30 +75,41 @@ def verification():
     return make_json_response(data=verification_uri)
 
 
-@blueprint.route('/regions/<provider_id>',
+@blueprint.route('/projects/',
+                 methods=['GET'], endpoint='projects')
+@pga_login_required
+def biganimal_projects():
+    """Get Providers."""
+    biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
+    projects, error = biganimal_obj.get_projects()
+    return make_json_response(data=projects, errormsg=error)
+
+
+@blueprint.route('/providers/<project_id>',
+                 methods=['GET'], endpoint='providers')
+@pga_login_required
+def biganimal_providers(project_id):
+    """Get Providers."""
+    biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
+    providers, error = biganimal_obj.get_providers(project_id)
+    session['biganimal']['provider_obj'] = pickle.dumps(biganimal_obj, -1)
+    return make_json_response(data=providers, errormsg=error)
+
+
+@blueprint.route('/regions/',
                  methods=['GET'], endpoint='regions')
-@login_required
-def biganimal_regions(provider_id):
+@pga_login_required
+def biganimal_regions():
     """Get Regions."""
     biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
-    status, regions = biganimal_obj.get_regions(provider_id)
+    _, regions = biganimal_obj.get_regions()
     session['biganimal']['provider_obj'] = pickle.dumps(biganimal_obj, -1)
     return make_json_response(data=regions)
 
 
-@blueprint.route('/providers/',
-                 methods=['GET'], endpoint='providers')
-@login_required
-def biganimal_providers():
-    """Get Providers."""
-    biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
-    status, providers = biganimal_obj.get_providers()
-    return make_json_response(data=providers)
-
-
 @blueprint.route('/db_types/',
                  methods=['GET'], endpoint='db_types')
-@login_required
+@pga_login_required
 def biganimal_db_types():
     """Get Database Types."""
     biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
@@ -115,7 +119,7 @@ def biganimal_db_types():
 
 @blueprint.route('/db_versions/<cluster_type>/<pg_type>',
                  methods=['GET'], endpoint='db_versions')
-@login_required
+@pga_login_required
 def biganimal_db_versions(cluster_type, pg_type):
     """Get Database Version."""
     biganimal_obj = pickle.loads(session['biganimal']['provider_obj'])
@@ -125,7 +129,7 @@ def biganimal_db_versions(cluster_type, pg_type):
 
 @blueprint.route('/instance_types/<region_id>/<provider_id>',
                  methods=['GET'], endpoint='instance_types')
-@login_required
+@pga_login_required
 def biganimal_instance_types(region_id, provider_id):
     """Get Instance Types."""
     if not region_id or not provider_id:
@@ -138,7 +142,7 @@ def biganimal_instance_types(region_id, provider_id):
 
 @blueprint.route('/volume_types/<region_id>/<provider_id>',
                  methods=['GET'], endpoint='volume_types')
-@login_required
+@pga_login_required
 def biganimal_volume_types(region_id, provider_id):
     """Get Volume Types."""
     if not region_id or not provider_id:
@@ -150,7 +154,7 @@ def biganimal_volume_types(region_id, provider_id):
 
 @blueprint.route('/volume_properties/<region_id>/<provider_id>/<volume_type>',
                  methods=['GET'], endpoint='volume_properties')
-@login_required
+@pga_login_required
 def biganimal_volume_properties(region_id, provider_id, volume_type):
     """Get Volume Properties."""
     if not region_id or not provider_id:
@@ -165,7 +169,7 @@ def biganimal_volume_properties(region_id, provider_id, volume_type):
 
 class BigAnimalProvider():
     """BigAnimal provider class"""
-    BASE_URL = 'https://portal.biganimal.com/api/v2'
+    BASE_URL = 'https://portal.biganimal.com/api/v3'
 
     def __init__(self):
         self.provider = {}
@@ -177,6 +181,7 @@ class BigAnimalProvider():
         self.token_status = -1
         self.regions = []
         self.get_auth_provider()
+        self.project_id = None
 
     def _get_headers(self):
         return {
@@ -186,15 +191,15 @@ class BigAnimalProvider():
 
     def get_auth_provider(self):
         """Get Authentication Provider Relevant Information."""
-        provider_resp = requests.get("{0}/{1}".format(self.BASE_URL,
-                                                      'auth/provider'))
+        provider_resp = requests.get(TWO_PARAM_STRING.format(self.BASE_URL,
+                                                             'auth/provider'))
         if provider_resp.status_code == 200 and provider_resp.content:
             self.provider = json.loads(provider_resp.content)
 
     def get_device_code(self):
         """Get device code"""
-        _url = "{0}/{1}".format(self.provider['issuerUri'],
-                                'oauth/device/code')
+        _url = TWO_PARAM_STRING.format(self.provider['issuerUri'],
+                                       'oauth/device/code')
         _headers = {"content-type": "application/x-www-form-urlencoded"}
         _data = {
             'client_id': self.provider['clientId'],
@@ -211,7 +216,8 @@ class BigAnimalProvider():
 
     def polling_for_token(self):
         # Polling for the Token
-        _url = "{0}/{1}".format(self.provider['issuerUri'], 'oauth/token')
+        _url = TWO_PARAM_STRING.format(self.provider['issuerUri'],
+                                       'oauth/token')
         _headers = {"content-type": "application/x-www-form-urlencoded"}
         _data = {
             'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
@@ -239,7 +245,7 @@ class BigAnimalProvider():
         return False, None
 
     def exchange_token(self):
-        _url = "{0}/{1}".format(self.BASE_URL, 'auth/token')
+        _url = TWO_PARAM_STRING.format(self.BASE_URL, 'auth/token')
         _headers = {"content-type": "application/json",
                     "accept": "application/json"}
         _data = {'token': self.raw_access_token}
@@ -260,7 +266,7 @@ class BigAnimalProvider():
         There is no direct way to do this, so just checking the create cluster
         permission.
         """
-        _url = "{0}/{1}".format(
+        _url = TWO_PARAM_STRING.format(
             self.BASE_URL,
             'user-info')
         resp = requests.get(_url, headers=self._get_headers())
@@ -281,34 +287,33 @@ class BigAnimalProvider():
                         return True
         return False
 
-    def get_providers(self):
+    def get_providers(self, project_id):
         """Get cloud providers"""
-        _url = '{0}/cloud-providers'.format(
-            self.BASE_URL)
+        if not project_id:
+            return False, gettext('Project not provided.')
+        _url = '{0}/projects/{1}/cloud-providers'.format(
+            self.BASE_URL, project_id)
         providers = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
+            self.project_id = project_id
             provider_resp = json.loads(resp.content)
             for value in provider_resp['data']:
                 providers.append({
                     'label': value['cloudProviderName'],
                     'value': value['cloudProviderId'],
-                    'connected': value['connected']
-                })
-            return True, providers
+                    'connected': value['connected']})
+            return providers, None
         elif resp.content:
             provider_resp = json.loads(resp.content)
-            return False, provider_resp['error']['message']
+            return [], provider_resp['error']['message']
         else:
-            return False, gettext('Error retrieving providers.')
+            return [], gettext('Error retrieving providers.')
 
-    def get_regions(self, provider_id):
+    def get_regions(self):
         """Get regions"""
-        if not provider_id:
-            return False, gettext('Provider not provided.')
-        _url = '{0}/cloud-providers/{1}/regions'.format(
-            self.BASE_URL,
-            provider_id)
+        _url = '{0}/projects/{1}/regions'.format(
+            self.BASE_URL, self.project_id)
         regions = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
@@ -328,9 +333,8 @@ class BigAnimalProvider():
 
     def get_postgres_types(self):
         """Get Postgres Types."""
-        _url = "{0}/{1}".format(
-            self.BASE_URL,
-            'pg-types')
+        _url = "{0}/projects/{1}/pg-types".format(
+            self.BASE_URL, self.project_id)
         pg_types = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
@@ -349,10 +353,9 @@ class BigAnimalProvider():
         if not cluster_type or not pg_type:
             return []
 
-        _url = "{0}/pg-versions?clusterArchitectureIds={1}" \
-               "&pgTypeIds={2}".format(self.BASE_URL,
-                                       cluster_type,
-                                       pg_type)
+        _url = "{0}/projects/{1}/pg-versions?clusterArchitectureIds={2}" \
+               "&pgTypeIds={3}".format(self.BASE_URL, self.project_id,
+                                       cluster_type, pg_type)
         pg_versions = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
@@ -368,15 +371,14 @@ class BigAnimalProvider():
         """GEt Instance Types."""
         if region_id not in self.regions or not provider_id:
             return []
-        _url = '{0}/cloud-providers/{1}/regions/{2}/instance-types?' \
-               'sort=instanceTypeName'.format(self.BASE_URL,
-                                              provider_id,
-                                              region_id)
+        _url = '{0}/projects/{1}/cloud-providers/{2}/regions/{3}/' \
+               'instance-types?sort=instanceTypeName'.\
+            format(self.BASE_URL, self.project_id, provider_id, region_id)
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
             pg_types = json.loads(resp.content)
-            _sorted_data = sorted(pg_types['data'], key=lambda x: int(x['cpu'])
-                                  )
+            _sorted_data = sorted(pg_types['data'],
+                                  key=lambda x: int(x['cpu']))
             return _sorted_data
         return []
 
@@ -385,10 +387,8 @@ class BigAnimalProvider():
         if region_id not in self.regions:
             return []
 
-        _url = '{0}/cloud-providers/{1}/regions/{2}/volume-types'.format(
-            self.BASE_URL,
-            provider_id,
-            region_id)
+        _url = '{0}/projects/{1}/cloud-providers/{2}/regions/{3}/volume-types'\
+            .format(self.BASE_URL, self.project_id, provider_id, region_id)
         volume_types = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
@@ -399,8 +399,7 @@ class BigAnimalProvider():
                         'label': value['volumeTypeName'],
                         'value': value['volumeTypeId'],
                         'supportedInstanceFamilyNames': value[
-                            'supportedInstanceFamilyNames']
-                    })
+                            'supportedInstanceFamilyNames']})
         return volume_types
 
     def get_volume_properties(self, region_id, provider_id, volume_type):
@@ -408,11 +407,10 @@ class BigAnimalProvider():
         if region_id not in self.regions:
             return []
 
-        _url = '{0}/cloud-providers/{1}/regions/{2}/volume-types/{3}/' \
-               'volume-properties'.format(self.BASE_URL,
-                                          provider_id,
-                                          region_id,
-                                          volume_type)
+        _url = '{0}/projects/{1}/cloud-providers/{2}/regions/{3}/' \
+               'volume-types/{4}/volume-properties'\
+            .format(self.BASE_URL, self.project_id, provider_id, region_id,
+                    volume_type)
         volume_properties = []
         resp = requests.get(_url, headers=self._get_headers())
         if resp.status_code == 200 and resp.content:
@@ -423,6 +421,24 @@ class BigAnimalProvider():
                     'value': value['volumePropertiesId']
                 })
         return volume_properties
+
+    def get_projects(self):
+        projects = []
+        _url = '{0}/projects'.format(self.BASE_URL)
+        resp = requests.get(_url, headers=self._get_headers())
+        if resp.status_code == 200 and resp.content:
+            project_resp = json.loads(resp.content)
+            for value in project_resp['data']:
+                projects.append({
+                    'label': value['projectName'],
+                    'value': value['projectId']
+                })
+            return projects, None
+        elif resp.content:
+            project_resp = json.loads(resp.content)
+            return [], project_resp['error']['message']
+        else:
+            return [], gettext('Error retrieving projects.')
 
 
 def clear_biganimal_session():
@@ -451,6 +467,10 @@ def deploy_on_biganimal(data):
             'create-instance',
             '--name',
             data['instance_details']['name'],
+            '--project',
+            str(data['cluster_details']['project']),
+            '--cloud-provider',
+            str(data['cluster_details']['provider']),
             '--region',
             str(data['instance_details']['region']),
             '--db-type',
@@ -467,6 +487,8 @@ def deploy_on_biganimal(data):
             str(data['instance_details'].get('volume_size', None)),
             '--volume-IOPS',
             str(data['instance_details'].get('volume_IOPS', None)),
+            '--throughput',
+            str(data['instance_details'].get('disk_throughput', None)),
             '--instance-type',
             str(_instance_size),
             '--private-network',
@@ -476,10 +498,7 @@ def deploy_on_biganimal(data):
             '--nodes',
             str(nodes),
             '--replicas',
-            str(data['cluster_details']['replicas']),
-            '--cloud-provider',
-            str(data['cluster_details']['provider']),
-            ]
+            str(data['cluster_details']['replicas'])]
 
     if 'biganimal_public_ip' in data['instance_details']:
         args.append('--public-ip')

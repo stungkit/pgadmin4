@@ -1,8 +1,7 @@
-import { IFileTreeHandle, FileEntry, Directory, TreeModel, FileType, IFileEntryItem, IItemRenderer, FileOrDir } from 'react-aspen'
-import { IDisposable } from 'notificar'
-import { TreeModelX } from './TreeModelX'
-import React, { MouseEventHandler } from 'react'
-import { MenuItem } from '../../helpers/Menu'
+import { IFileTreeHandle, FileEntry, Directory, FileType, IFileEntryItem, IItemRenderer, FileOrDir } from 'react-aspen';
+import { IDisposable } from 'notificar';
+import { TreeModelX } from './TreeModelX';
+import React from 'react';
 
 
 export interface IFileTreeXTriggerEvents {
@@ -10,7 +9,7 @@ export interface IFileTreeXTriggerEvents {
 }
 
 export interface IItemRendererX extends IItemRenderer {
-    getBoundingClientRectForItem(item: FileEntry | Directory): ClientRect
+    getBoundingClientRectForItem(item: FileEntry | Directory): DOMRect
 }
 
 // Here imagination is your limit! IFileTreeHandle has core low-level features you can build on top of as your application needs

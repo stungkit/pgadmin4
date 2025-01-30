@@ -11,6 +11,32 @@ notes for it.
 .. toctree::
    :maxdepth: 1
 
+
+   release_notes_9_0
+   release_notes_8_14
+   release_notes_8_13
+   release_notes_8_12
+   release_notes_8_11
+   release_notes_8_10
+   release_notes_8_9
+   release_notes_8_8
+   release_notes_8_7
+   release_notes_8_6
+   release_notes_8_5
+   release_notes_8_4
+   release_notes_8_3
+   release_notes_8_2
+   release_notes_8_1
+   release_notes_8_0
+   release_notes_7_8
+   release_notes_7_7
+   release_notes_7_6
+   release_notes_7_5
+   release_notes_7_4
+   release_notes_7_3
+   release_notes_7_2
+   release_notes_7_1
+   release_notes_7_0
    release_notes_6_21
    release_notes_6_20
    release_notes_6_19

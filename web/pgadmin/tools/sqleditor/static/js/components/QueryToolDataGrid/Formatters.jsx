@@ -2,29 +2,30 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import React from 'react';
+import { styled } from '@mui/material/styles';
 import _ from 'lodash';
-import { makeStyles } from '@material-ui/core';
 import PropTypes from 'prop-types';
 import CustomPropTypes from '../../../../../../static/js/custom_prop_types';
 
-const useStyles = makeStyles((theme)=>({
-  disabledCell: {
+
+const StyledNullAndDefaultFormatter = styled(NullAndDefaultFormatter)(({theme}) => ({
+  '& .Formatters-disabledCell': {
     opacity: theme.palette.action.disabledOpacity,
   }
 }));
 
 function NullAndDefaultFormatter({value, column, children, style}) {
-  const classes = useStyles();
+
   if (_.isUndefined(value) && column.has_default_val) {
-    return <div className={classes.disabledCell} style={style}>[default]</div>;
+    return <div className='Formatters-disabledCell' style={style}>[default]</div>;
   } else if ((_.isUndefined(value) && column.not_null) ||
       (_.isUndefined(value) || _.isNull(value))) {
-    return <div className={classes.disabledCell} style={style}>[null]</div>;
+    return <div className='Formatters-disabledCell' style={style}>[null]</div>;
   }
   return children;
 }
@@ -64,11 +65,11 @@ NumberFormatter.propTypes = FormatterPropTypes;
 
 export function BinaryFormatter({row, column}) {
   let value = row[column.key];
-  const classes = useStyles();
+
   return (
-    <NullAndDefaultFormatter value={value} column={column}>
-      <span className={classes.disabledCell}>[{value}]</span>
-    </NullAndDefaultFormatter>
+    <StyledNullAndDefaultFormatter value={value} column={column}>
+      <span className='Formatters-disabledCell'>[{value}]</span>
+    </StyledNullAndDefaultFormatter>
   );
 }
 BinaryFormatter.propTypes = FormatterPropTypes;

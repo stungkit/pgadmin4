@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -199,9 +199,9 @@ def dump_header():
 def dump_runtime():
     print_title("Runtime Dependencies")
     print_table_header()
-    print_row("Python", "3.6+", "PSF", "https://www.python.org/")
-    print_row("nw", "0.50.2", "MIT",
-              "git://github.com/nwjs/npm-installer.git")
+    print_row("Python", "3.8+", "PSF", "https://www.python.org/")
+    print_row("Electron", "30.0.5", "MIT",
+              "https://www.npmjs.com/package/electron")
 
     # Make sure to change the count of hardcoded_deps if we will
     # manually add some more dependencies in future.

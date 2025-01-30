@@ -3,14 +3,13 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 from unittest.mock import patch
 
 from pgadmin.utils.route import BaseTestGenerator
-from pgadmin.utils.constants import PSYCOPG2
 from pgadmin.browser.server_groups.servers.databases.tests import utils as \
     database_utils
 from regression.python_test_utils import test_utils
@@ -18,6 +17,8 @@ import json
 from pgadmin.utils import server_utils
 import secrets
 import config
+from pgadmin.tools.sqleditor.tests.execute_query_test_utils \
+    import async_poll
 
 
 class TestDownloadCSV(BaseTestGenerator):
@@ -36,7 +37,8 @@ class TestDownloadCSV(BaseTestGenerator):
                 is_valid_tx=True,
                 is_valid=True,
                 download_as_txt=False,
-                filename='test.csv'
+                filename='test.csv',
+                query_commited=True
             )
         ),
         (
@@ -50,7 +52,8 @@ class TestDownloadCSV(BaseTestGenerator):
                 is_valid_tx=False,
                 is_valid=False,
                 download_as_txt=False,
-                filename='test.csv'
+                filename='test.csv',
+                query_commited=False
             )
         ),
         (
@@ -64,7 +67,8 @@ class TestDownloadCSV(BaseTestGenerator):
                 is_valid_tx=True,
                 is_valid=False,
                 download_as_txt=False,
-                filename='test.csv'
+                filename='test.csv',
+                query_commited=False
             )
         ),
         (
@@ -78,7 +82,8 @@ class TestDownloadCSV(BaseTestGenerator):
                 is_valid_tx=True,
                 is_valid=True,
                 download_as_txt=True,
-                filename=None
+                filename=None,
+                query_commited=False
             )
         ),
         (
@@ -92,7 +97,8 @@ class TestDownloadCSV(BaseTestGenerator):
                 is_valid_tx=True,
                 is_valid=True,
                 download_as_txt=False,
-                filename=None
+                filename=None,
+                query_commited=False
             )
         ),
     ]
@@ -118,13 +124,10 @@ class TestDownloadCSV(BaseTestGenerator):
         url = '/sqleditor/query_tool/start/{0}'.format(trans_id)
         response = self.tester.post(url, data=json.dumps({"sql": sql_query}),
                                     content_type='html/json')
-
         self.assertEqual(response.status_code, 200)
 
-        # Query tool polling
-        url = '/sqleditor/poll/{0}'.format(trans_id)
-        response = self.tester.get(url)
-        return response
+        return async_poll(tester=self.tester,
+                          poll_url='/sqleditor/poll/{0}'.format(trans_id))
 
     def runTest(self):
 
@@ -139,7 +142,9 @@ class TestDownloadCSV(BaseTestGenerator):
         self.trans_id = str(secrets.choice(range(1, 9999999)))
         url = self.init_url.format(
             self.trans_id, test_utils.SERVER_GROUP, self._sid, self._did)
-        response = self.tester.post(url)
+        response = self.tester.post(url, data=json.dumps({
+            "dbname": self._db_name
+        }))
         self.assertEqual(response.status_code, 200)
 
         res = self.initiate_sql_query_tool(self.trans_id, self.sql)
@@ -153,13 +158,8 @@ class TestDownloadCSV(BaseTestGenerator):
         # Disable the console logging from Flask logger
         self.app.logger.disabled = True
         if not self.is_valid and self.is_valid_tx:
-            if config.PG_DEFAULT_DRIVER == PSYCOPG2:
-                # When user enters wrong query, poll will throw 500,
-                # so expecting 500, as poll is never called for a wrong query.
-                self.assertEqual(res.status_code, 500)
-            else:
-                # The result will be null but status code will be 200
-                self.assertEqual(res.status_code, 200)
+            # The result will be null and status code will be 500
+            self.assertEqual(res.status_code, 500)
         elif self.filename is None:
             if self.download_as_txt:
                 with patch('pgadmin.tools.sqleditor.blueprint.'
@@ -189,9 +189,14 @@ class TestDownloadCSV(BaseTestGenerator):
                                   headers['Content-Disposition'])
 
         else:
+            data = {
+                "query": self.sql,
+                "filename": self.filename,
+                "query_commited": self.query_commited
+            }
             response = self.tester.post(
                 url,
-                data={"query": self.sql, "filename": self.filename}
+                data=data
             )
             headers = dict(response.headers)
             # Enable the console logging from Flask logger

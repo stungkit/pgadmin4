@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -26,7 +26,7 @@ class FtsDictionaryDeleteMultipleTestCase(BaseTestGenerator):
 
     scenarios = [
         # Fetching default URL for FTS dictionary node.
-        ('Fetch FTS dictionary Node URL', dict(
+        ('Delete Multiple FTS dictionary Node', dict(
             url='/browser/fts_dictionary/obj/'))
     ]
 

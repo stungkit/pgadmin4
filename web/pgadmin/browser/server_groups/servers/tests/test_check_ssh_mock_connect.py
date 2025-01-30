@@ -2,18 +2,18 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
-from config import PG_DEFAULT_DRIVER
 from pgadmin.utils.route import BaseTestGenerator
 from regression.python_test_utils import test_utils as utils
 from . import utils as servers_utils
 from unittest.mock import patch, MagicMock
 import json
-from PG_DEFAULT_DRIVER import OperationalError
+from psycopg import OperationalError
+from pgadmin.utils.constants import TWO_PARAM_STRING
 
 
 class ServersSSHConnectTestCase(BaseTestGenerator):
@@ -52,13 +52,14 @@ class ServersSSHConnectTestCase(BaseTestGenerator):
             self.manager.connection().connect.side_effect = \
                 MagicMock(side_effect=OperationalError())
 
-            url = self.url + '{0}/{1}'.format(utils.SERVER_GROUP, 1)
+            url = self.url + TWO_PARAM_STRING.format(utils.SERVER_GROUP, 1)
 
             class TestMockServer():
                 def __init__(self, name, id, username, use_ssh_tunnel,
                              tunnel_host, tunnel_port,
                              tunnel_username, tunnel_authentication,
-                             tunnel_identity_file, tunnel_password, service):
+                             tunnel_identity_file, tunnel_password,
+                             tunnel_keep_alive, service):
                     self.name = name
                     self.id = id
                     self.username = username
@@ -72,7 +73,9 @@ class ServersSSHConnectTestCase(BaseTestGenerator):
                     self.tunnel_identity_file = \
                         tunnel_identity_file
                     self.tunnel_password = tunnel_password
+                    self.tunnel_keep_alive = tunnel_keep_alive
                     self.service = service
+                    self.save_password = 0
                     self.shared = None
 
             mock_server_obj = TestMockServer(
@@ -86,6 +89,7 @@ class ServersSSHConnectTestCase(BaseTestGenerator):
                 self.mock_data['tunnel_authentication'],
                 self.mock_data['tunnel_identity_file'],
                 self.mock_data['tunnel_password'],
+                self.mock_data['tunnel_keep_alive'],
                 self.mock_data['service'],
             )
 
@@ -97,4 +101,4 @@ class ServersSSHConnectTestCase(BaseTestGenerator):
 
             response = self.connect_to_server(url, self.server)
 
-            self.assertEqual(response.status_code, 500)
+            self.assertIn(response.status_code, [401, 428])

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -16,38 +16,28 @@ let webpackShimConfig = {
     'moment': {
       exports: 'moment',
     },
-    'jquery': {
-      'exports': '$',
-    },
-    'bootstrap': {
-      'deps': ['jquery'],
-    },
   },
 
   // Map module id to file path used in 'define(['baseurl', 'misc']). It is
   // used by webpack while creating bundle
   resolveAlias: {
-    'top': path.join(__dirname, './pgadmin'),
-    'bundled_codemirror': path.join(__dirname, './pgadmin/static/bundle/codemirror'),
+    'top': path.join(__dirname, './pgadmin/'),
     'bundled_browser': path.join(__dirname, './pgadmin/static/bundle/browser'),
-    'sources': path.join(__dirname, './pgadmin/static/js'),
-    'pgadmin': path.join(__dirname, './pgadmin/static/js/pgadmin'),
+    'sources': path.join(__dirname, './pgadmin/static/js/'),
     'translations': path.join(__dirname, './pgadmin/tools/templates/js/translations'),
     'sources/gettext': path.join(__dirname, './pgadmin/static/js/gettext'),
     'sources/utils': path.join(__dirname, './pgadmin/static/js/utils'),
     'tools': path.join(__dirname, './pgadmin/tools/'),
     'pgbrowser': path.join(__dirname, './pgadmin/browser/static/js/'),
+    'security.pages': path.join(__dirname, './pgadmin/static/js/SecurityPages/index.jsx'),
 
     // Vendor JS
-    'wcdocker': path.join(__dirname, './node_modules/webcabin-docker/Build/wcDocker.min'),
     'moment': path.join(__dirname, './node_modules/moment/moment'),
-    'jquery.contextmenu': path.join(__dirname, './node_modules/jquery-contextmenu/dist/jquery.contextMenu'),
     'dropzone': path.join(__dirname, './node_modules/dropzone/dist/dropzone'),
     'bignumber': path.join(__dirname, './node_modules/bignumber.js/bignumber'),
     'json-bignumber': path.join(__dirname, './node_modules/json-bignumber/dist/JSONBigNumber.min'),
     'jsoneditor.min': path.join(__dirname, './node_modules/jsoneditor/dist/jsoneditor.min'),
     'jsoneditor': path.join(__dirname, './node_modules/jsoneditor'),
-    'snap.svg': path.join(__dirname, './node_modules/snapsvg-cjs/dist/snap.svg-cjs'),
     'color-picker': path.join(__dirname, './node_modules/@simonwep/pickr/dist/pickr.es5.min'),
     'mousetrap': path.join(__dirname, './node_modules/mousetrap'),
     'pathfinding':  path.join(__dirname, 'node_modules/pathfinding'),
@@ -58,33 +48,22 @@ let webpackShimConfig = {
     'stylis': path.join(__dirname, 'node_modules/stylis'),
     'popper.js': path.join(__dirname, 'node_modules/popper.js'),
 
-    //xterm
-    'xterm': path.join(__dirname, './node_modules/xterm/lib/xterm.js'),
-    'xterm-addon-fit': path.join(__dirname, './node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'),
-    'xterm-addon-web-links': path.join(__dirname, './node_modules/xterm-addon-web-links/lib/xterm-addon-web-links.js'),
-    'xterm-addon-search': path.join(__dirname, './node_modules/xterm-addon-search/lib/xterm-addon-search.js'),
-
     //socket
     'socketio': path.join(__dirname, './node_modules/socket.io-client/dist/socket.io.js'),
 
     'pgadmin.about': path.join(__dirname, './pgadmin/about/static/js/about'),
     'pgadmin.authenticate.kerberos': path.join(__dirname, './pgadmin/authenticate/static/js/kerberos'),
     'pgadmin.browser': path.join(__dirname, './pgadmin/browser/static/js/browser'),
-    'pgadmin.browser.bgprocessmanager': path.join(__dirname, './pgadmin/misc/bgprocess/static/js'),
+    'pgadmin.browser.bgprocessmanager': path.join(__dirname, './pgadmin/misc/bgprocess/static/js/'),
     'pgadmin.browser.collection': path.join(__dirname, './pgadmin/browser/static/js/collection'),
     'pgadmin.browser.events': path.join(__dirname, './pgadmin/browser/static/js/events'),
-    'pgadmin.browser.endpoints': '/browser/js/endpoints',
-    'pgadmin.browser.constants': '/browser/js/constants',
-    'pgadmin.browser.frame': path.join(__dirname, './pgadmin/browser/static/js/frame'),
+    'pgadmin.browser.endpoints': path.join(__dirname, './pgadmin/browser/static/js/endpoints'),
+    'pgadmin.browser.constants': path.join(__dirname, './pgadmin/browser/static/js/constants'),
     'pgadmin.browser.keyboard': path.join(__dirname, './pgadmin/browser/static/js/keyboard'),
-    'pgadmin.browser.layout': path.join(__dirname, './pgadmin/browser/static/js/layout'),
-    'pgadmin.browser.preferences': path.join(__dirname, './pgadmin/browser/static/js/preferences'),
     'pgadmin.browser.activity': path.join(__dirname, './pgadmin/browser/static/js/activity'),
-    'pgadmin.browser.messages': '/browser/js/messages',
+    'pgadmin.browser.messages': path.join(__dirname, './pgadmin/browser/js/messages'),
     'pgadmin.browser.node': path.join(__dirname, './pgadmin/browser/static/js/node'),
-    'pgadmin.browser.panel': path.join(__dirname, './pgadmin/browser/static/js/panel'),
-    'pgadmin.browser.toolbar': path.join(__dirname, './pgadmin/browser/static/js/toolbar'),
-    'pgadmin.browser.utils': '/browser/js/utils',
+    'pgadmin.browser.utils': path.join(__dirname, './pgadmin/browser/js/utils'),
     'pgadmin.dashboard': path.join(__dirname, './pgadmin/dashboard/static/js/Dashboard'),
     'pgadmin.help': path.join(__dirname, './pgadmin/help/static/js/help'),
     'pgadmin.misc.cloud': path.join(__dirname, './pgadmin/misc/cloud/static/js/cloud'),
@@ -101,6 +80,10 @@ let webpackShimConfig = {
     'pgadmin.node.compound_trigger': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/compound_triggers/static/js/compound_trigger'),
     'pgadmin.node.constraints': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/constraints/static/js/constraints'),
     'pgadmin.node.database': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/static/js/database'),
+    'pgadmin.node.dbms_job_scheduler': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/static/js/dbms_job_scheduler'),
+    'pgadmin.node.dbms_job': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/dbms_jobs/static/js/dbms_job'),
+    'pgadmin.node.dbms_program': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/dbms_programs/static/js/dbms_program'),
+    'pgadmin.node.dbms_schedule': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/dbms_job_scheduler/dbms_schedules/static/js/dbms_schedule'),
     'pgadmin.node.domain': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/domains/static/js/domain'),
     'pgadmin.node.domain_constraints': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/domains/domain_constraints/static/js/domain_constraints'),
     'pgadmin.node.event_trigger': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/event_triggers/static/js/event_trigger'),
@@ -114,6 +97,7 @@ let webpackShimConfig = {
     'pgadmin.node.foreign_key': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/constraints/foreign_key/static/js/foreign_key'),
     'pgadmin.node.foreign_server': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/foreign_data_wrappers/foreign_servers/static/js/foreign_server'),
     'pgadmin.node.foreign_table': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/static/js/foreign_table'),
+    'pgadmin.node.foreign_table_column': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/foreign_tables/foreign_table_columns/static/js/foreign_table_column'),
     'pgadmin.node.fts_configuration': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/fts_configurations/static/js/fts_configuration'),
     'pgadmin.node.fts_dictionary': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/fts_dictionaries/static/js/fts_dictionary'),
     'pgadmin.node.fts_parser': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/fts_parsers/static/js/fts_parser'),
@@ -131,6 +115,9 @@ let webpackShimConfig = {
     'pgadmin.node.primary_key': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/constraints/index_constraint/static/js/primary_key'),
     'pgadmin.node.procedure': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/functions/static/js/procedure'),
     'pgadmin.node.resource_group': path.join(__dirname, './pgadmin/browser/server_groups/servers/resource_groups/static/js/resource_group'),
+    'pgadmin.node.replica_node': path.join(__dirname, './pgadmin/browser/server_groups/servers/replica_nodes/static/js/replica_node'),
+    'pgadmin.node.pgd_replication_groups': path.join(__dirname, './pgadmin/browser/server_groups/servers/pgd_replication_groups/static/js/pgd_replication_groups'),
+    'pgadmin.node.pgd_replication_servers': path.join(__dirname, './pgadmin/browser/server_groups/servers/pgd_replication_groups/pgd_replication_servers/static/js/pgd_replication_servers'),
     'pgadmin.node.role': path.join(__dirname, './pgadmin/browser/server_groups/servers/roles/static/js/role'),
     'pgadmin.node.rule': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/rules/static/js/rule'),
     'pgadmin.node.schema': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/static/js/schema'),
@@ -150,24 +137,23 @@ let webpackShimConfig = {
     'pgadmin.node.row_security_policy': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/row_security_policies/static/js/row_security_policy'),
     'pgadmin.preferences': path.join(__dirname, './pgadmin/preferences/static/js/'),
     'pgadmin.settings': path.join(__dirname, './pgadmin/settings/static/js/settings'),
-    'pgadmin.server.supported_servers': '/browser/server/supported_servers',
+    'pgadmin.server.supported_servers': path.join(__dirname, '/browser/server/supported_servers'),
     'pgadmin.tables.js': path.join(__dirname, './pgadmin/browser/server_groups/servers/databases/schemas/tables/static/js/'),
     'pgadmin.tools.backup': path.join(__dirname, './pgadmin/tools/backup/static/js/backup'),
     'pgadmin.tools.debugger': path.join(__dirname, './pgadmin/tools/debugger/static/js/'),
     'pgadmin.tools.debugger.ui': path.join(__dirname, './pgadmin/tools/debugger/static/js/debugger_ui'),
     'pgadmin.tools.debugger.utils': path.join(__dirname, './pgadmin/tools/debugger/static/js/debugger_utils'),
-    'pgadmin.tools.file_manager': path.join(__dirname, './pgadmin/misc/file_manager/static/js'),
+    'pgadmin.tools.file_manager': path.join(__dirname, './pgadmin/misc/file_manager/static/js/index'),
     'pgadmin.tools.grant_wizard': path.join(__dirname, './pgadmin/tools/grant_wizard/static/js/grant_wizard'),
     'pgadmin.tools.import_export': path.join(__dirname, './pgadmin/tools/import_export/static/js/import_export'),
     'pgadmin.tools.import_export_servers': path.join(__dirname, './pgadmin/tools/import_export_servers/static/js/'),
     'pgadmin.tools.maintenance': path.join(__dirname, './pgadmin/tools/maintenance/static/js/maintenance'),
     'pgadmin.tools.restore': path.join(__dirname, './pgadmin/tools/restore/static/js/restore'),
     'pgadmin.tools.schema_diff': path.join(__dirname, './pgadmin/tools/schema_diff/static/js/'),
-    'pgadmin.tools.search_objects': path.join(__dirname, './pgadmin/tools/search_objects/static/js'),
-    'pgadmin.tools.erd': path.join(__dirname, './pgadmin/tools/erd/static/js'),
-    'pgadmin.tools.psql_module': path.join(__dirname, './pgadmin/tools/psql/static/js/psql_module'),
-    'pgadmin.tools.psql': path.join(__dirname, './pgadmin/tools/psql/static/js'),
-    'pgadmin.tools.sqleditor': path.join(__dirname, './pgadmin/tools/sqleditor/static/js'),
+    'pgadmin.tools.search_objects': path.join(__dirname, './pgadmin/tools/search_objects/static/js/'),
+    'pgadmin.tools.erd': path.join(__dirname, './pgadmin/tools/erd/static/js/'),
+    'pgadmin.tools.psql': path.join(__dirname, './pgadmin/tools/psql/static/js/'),
+    'pgadmin.tools.sqleditor': path.join(__dirname, './pgadmin/tools/sqleditor/static/js/'),
     'pgadmin.tools.user_management': path.join(__dirname, './pgadmin/tools/user_management/static/js/user_management'),
     'pgadmin.user_management.current_user': '/user_management/current_user',
   },
@@ -177,17 +163,16 @@ let webpackShimConfig = {
     'pgadmin.browser.endpoints',
     'pgadmin.browser.messages',
     'pgadmin.browser.utils',
-    'pgadmin.server.supported_servers',
-    'pgadmin.browser.constants',
+    'pgadmin.server.supported_servers'
   ],
   // Define list of pgAdmin common libraries to bundle them separately
   // into commons JS from app.bundle.js
   pgLibs: [
     'pgadmin.browser.collection',
-    'pgadmin.browser.events', 'pgadmin.browser.panel', 'pgadmin',
-    'pgadmin.browser.frame', 'pgadmin.browser',
+    'pgadmin.browser.events', 'pgadmin',
+    'pgadmin.browser',
     'pgadmin.browser.node',
-    'pgadmin.settings', 'pgadmin.preferences', 'pgadmin.sqlfoldcode',
+    'pgadmin.settings','pgadmin.sqlfoldcode',
   ],
   // Checks whether JS module is npm module or not
   isExternal: function(module) {
@@ -202,10 +187,7 @@ let webpackShimConfig = {
   },
   isBrowserNode: function(module) {
     if (module.rawRequest === undefined) { return false; }
-    if(module.rawRequest.startsWith('pgadmin.node')) {
-      return true;
-    }
-    return false;
+    return module.rawRequest.startsWith('pgadmin.node');
   },
   matchModules: function(module, match_modules) {
     if (module.rawRequest === undefined) { return false; }
@@ -222,17 +204,5 @@ let webpackShimConfig = {
     }
     return false;
   },
-
-  /* These will be skipped when webpack picks css/scss files recursively to bundle */
-  css_bundle_skip: [
-    './pgadmin/static',
-  ],
-
-  /* These will be included in array formed by recursive traversing for css/scss files */
-  css_bundle_include: [
-    './pgadmin/static/js/components/PgTree/scss/styles.scss',
-    './pgadmin/static/scss/pgadmin.scss',
-    './pgadmin/static/css/pgadmin.css',
-  ],
 };
 module.exports = webpackShimConfig;

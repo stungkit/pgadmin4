@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -59,6 +59,8 @@ class SchemaDiffObjectCompare:
                          'did': kwargs.get('target_did')}
         ignore_owner = kwargs.get('ignore_owner', False)
         ignore_whitespaces = kwargs.get('ignore_whitespaces', False)
+        ignore_tablespace = kwargs.get('ignore_tablespace', False)
+        ignore_grants = kwargs.get('ignore_grants', False)
 
         group_name = kwargs.get('group_name')
         source_schema_name = kwargs.get('source_schema_name', None)
@@ -102,7 +104,9 @@ class SchemaDiffObjectCompare:
                                     ignore_keys=self.keys_to_ignore,
                                     source_schema_name=source_schema_name,
                                     ignore_owner=ignore_owner,
-                                    ignore_whitespaces=ignore_whitespaces)
+                                    ignore_whitespaces=ignore_whitespaces,
+                                    ignore_tablespace=ignore_tablespace,
+                                    ignore_grants=ignore_grants)
 
     def ddl_compare(self, **kwargs):
         """

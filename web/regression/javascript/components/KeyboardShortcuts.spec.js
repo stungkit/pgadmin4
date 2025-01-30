@@ -2,25 +2,21 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import jasmineEnzyme from 'jasmine-enzyme';
 import React from 'react';
-import '../helper/enzyme.helper';
+
 import { withTheme } from '../fake_theme';
-import { createMount } from '@material-ui/core/test-utils';
-import {
-  OutlinedInput,
-} from '@material-ui/core';
+import { fireEvent, render } from '@testing-library/react';
+
+import * as keyShort from '../../../pgadmin/static/js/keyboard_shortcuts';
 import KeyboardShortcuts from '../../../pgadmin/static/js/components/KeyboardShortcuts';
-import { InputCheckbox } from '../../../pgadmin/static/js/components/FormComponents';
 
 /* MUI Components need to be wrapped in Theme for theme vars */
 describe('KeyboardShortcuts', () => {
-  let mount;
   let defult_value = {
     'control': true,
     'alt': true,
@@ -49,64 +45,66 @@ describe('KeyboardShortcuts', () => {
     type: 'checkbox'
   }];
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
-  beforeAll(() => {
-    mount = createMount();
-  });
-
-  afterAll(() => {
-    mount.cleanUp();
-  });
-
-  beforeEach(() => {
-    jasmineEnzyme();
-  });
-
   describe('KeyboardShortcuts', () => {
-    let ThemedFormInputKeyboardShortcuts = withTheme(KeyboardShortcuts), ctrl;
-    let onChange = jasmine.createSpy('onChange');
-    beforeEach(() => {
-      ctrl = mount(
+    let ThemedFormInputKeyboardShortcuts = withTheme(KeyboardShortcuts);
+    let onChange = jest.fn();
+
+    const ctrlRender = ()=>{
+      return render(
         <ThemedFormInputKeyboardShortcuts
           value={defult_value}
           fields={fields}
           controlProps={{
             extraprop: 'test',
-            keyDown: onChange
+            'keydown': onChange
           }}
           onChange={onChange}
         />);
+    };
+
+    beforeAll(()=>{
+      jest.spyOn(keyShort, 'isMac').mockReturnValue(true);
     });
 
     it('init', () => {
-      expect(ctrl.find(OutlinedInput).prop('value')).toBe('a');
+      const ctrl = ctrlRender();
+      expect(ctrl.container.querySelector('input').getAttribute('value')).toBe('a');
     });
 
-    it('Key change', (done) => {
-      ctrl.find(OutlinedInput).at(0).find('input').simulate('keydown', { key: '', keyCode: 32});
+    it('Key change', () => {
+      const ctrl = ctrlRender();
+      fireEvent.keyDown(ctrl.container.querySelector('input'), {
+        key: 'Space', code: 32, keyCode: 32
+      });
       expect(onChange).toHaveBeenCalledWith({ control: true, alt: true, key: { char: 'Space', key_code: 32 }, shift: false });
-      done();
     });
 
-    it('Shift option', (done) => {
-      ctrl.find(InputCheckbox).at(0).find('input').simulate('change', { target: { checked: true, name: 'shift' } });
+    it('Shift option', () => {
+      const ctrl = ctrlRender();
+      const input = ctrl.container.querySelectorAll('button')[0];
+      fireEvent.click(input);
       expect(onChange).toHaveBeenCalledWith({ control: true, alt: true, key: { char: 'a', key_code: 97 }, shift: true });
-      done();
     });
 
-    it('Control option', (done) => {
-      ctrl.find(InputCheckbox).at(1).find('input').simulate('change', { target: { checked: false, name: 'ctrl' } });
-      expect(onChange).toHaveBeenCalledWith({ control: false, alt: true, key: { char: 'a', key_code: 97 }, shift: false });
-      done();
+    it('Control option', () => {
+      const ctrl = ctrlRender();
+      const input = ctrl.container.querySelectorAll('button')[1];
+      fireEvent.click(input);
+      expect(onChange).toHaveBeenCalledWith({ control: false, ctrl_is_meta: false, alt: true, key: { char: 'a', key_code: 97 }, shift: false });
     });
 
+    it('Cmd option', () => {
+      const ctrl = ctrlRender();
+      const input = ctrl.container.querySelectorAll('button')[2];
+      fireEvent.click(input);
+      expect(onChange).toHaveBeenCalledWith({ control: true, ctrl_is_meta: true, alt: true, key: { char: 'a', key_code: 97 }, shift: false });
+    });
 
-    it('Alt option', (done) => {
-      ctrl.find(InputCheckbox).at(2).find('input').simulate('change', { target: { checked: false, name: 'alt' } });
+    it('Alt option', () => {
+      const ctrl = ctrlRender();
+      const input = ctrl.container.querySelectorAll('button')[3];
+      fireEvent.click(input);
       expect(onChange).toHaveBeenCalledWith({ control: true, alt: false, key: { char: 'a', key_code: 97 }, shift: false });
-      done();
     });
-
   });
 });

@@ -2,31 +2,33 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import _ from 'lodash';
 import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM from 'react-dom/client';
 
 import gettext from 'sources/gettext';
-import { sprintf, registerDetachEvent } from 'sources/utils';
+import { sprintf } from 'sources/utils';
 import url_for from 'sources/url_for';
 import pgWindow from 'sources/window';
 import Kerberos from 'pgadmin.authenticate.kerberos';
 
 import { refresh_db_node } from 'tools/sqleditor/static/js/sqleditor_title';
-import { _set_dynamic_tab } from '../../../sqleditor/static/js/show_query_tool';
 import getApiInstance from '../../../../static/js/api_instance';
-import Notify from '../../../../static/js/helpers/Notifier';
-import { getFunctionId, getProcedureId, getAppropriateLabel, setDebuggerTitle } from './debugger_utils';
+import { getFunctionId, getProcedureId, getAppropriateLabel, getDebuggerTitle } from './debugger_utils';
 import FunctionArguments from './debugger_ui';
 import ModalProvider from '../../../../static/js/helpers/ModalProvider';
 import DebuggerComponent from './components/DebuggerComponent';
 import Theme from '../../../../static/js/Theme';
-import { showRenamePanel } from '../../../../static/js/Dialogs';
+import { BROWSER_PANELS } from '../../../../browser/static/js/constants';
+import { NotifierProvider } from '../../../../static/js/helpers/Notifier';
+import usePreferences, { listenPreferenceBroadcast } from '../../../../preferences/static/js/store';
+import pgAdmin from 'sources/pgadmin';
+import { PgAdminProvider } from '../../../../static/js/PgAdminProvider';
 
 export default class DebuggerModule {
   static instance;
@@ -42,7 +44,6 @@ export default class DebuggerModule {
     this.pgAdmin = pgAdmin;
     this.pgBrowser = pgBrowser;
     this.funcArgs = new FunctionArguments();
-    this.wcDocker = window.wcDocker;
     this.api = getApiInstance();
   }
 
@@ -91,7 +92,7 @@ export default class DebuggerModule {
         data: {
           object: 'procedure',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'procedure_indirect_debugger',
         node: 'procedure',
@@ -105,7 +106,7 @@ export default class DebuggerModule {
           object: 'procedure',
           debug_type: 'indirect',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'trigger_function_indirect_debugger',
         node: 'trigger_function',
@@ -119,7 +120,7 @@ export default class DebuggerModule {
           object: 'trigger_function',
           debug_type: 'indirect',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'trigger_indirect_debugger',
         node: 'trigger',
@@ -133,7 +134,7 @@ export default class DebuggerModule {
           object: 'trigger',
           debug_type: 'indirect',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'package_function_direct_debugger',
         node: 'edbfunc',
@@ -146,7 +147,7 @@ export default class DebuggerModule {
         data: {
           object: 'edbfunc',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'package_function_global_debugger',
         node: 'edbfunc',
@@ -160,7 +161,7 @@ export default class DebuggerModule {
           object: 'edbfunc',
           debug_type: 'indirect',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'package_procedure_direct_debugger',
         node: 'edbproc',
@@ -173,7 +174,7 @@ export default class DebuggerModule {
         data: {
           object: 'edbproc',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }, {
         name: 'package_procedure_global_debugger',
         node: 'edbproc',
@@ -187,74 +188,45 @@ export default class DebuggerModule {
           object: 'edbproc',
           debug_type: 'indirect',
         },
-        enable: 'can_debug',
+        enable: 'canDebug',
       }
     ]);
-
-    /* Create and load the new frame required for debugger panel */
-    this.frame = new this.pgBrowser.Frame({
-      name: 'frm_debugger',
-      title: gettext('Debugger'),
-      showTitle: true,
-      isCloseable: true,
-      isRenamable: true,
-      isPrivate: true,
-      icon: 'fa fa-bug',
-      url: 'about:blank',
-    });
-
-    this.frame.load(this.pgBrowser.docker);
   }
 
   // It will check weather the function is actually debuggable or not with pre-required condition.
   canDebug(itemData, item, data) {
-    let t = this.pgBrowser.tree,
-      i = item,
-      d = itemData;
-    // To iterate over tree to check parent node
-    while (i) {
-      if ('catalog' == d._type) {
-        //Check if we are not child of catalog
-        return false;
-      }
-      i = t.hasParent(i) ? t.parent(i) : null;
-      d = i ? t.itemData(i) : null;
-    }
-
-    // Find the function is really available in database
     let tree = this.pgBrowser.tree,
-      info = tree.selected(),
-      d_ = info ? tree.itemData(info) : undefined;
+      d = itemData,
+      treeInfo = tree.getTreeNodeHierarchy(item);
 
-    if (!d_)
+    // Disable debugging for catalog functions
+    if ('catalog' in treeInfo)
       return false;
 
-    let treeInfo = tree.getTreeNodeHierarchy(info);
+    if (!d)
+      return false;
 
     // For indirect debugging user must be super user
-    if (data && data.debug_type && data.debug_type == 'indirect' &&
-      !treeInfo.server.user.is_superuser)
+    if (data?.debug_type == 'indirect' && !treeInfo.server.user.is_superuser)
       return false;
 
     // Fetch object owner
-    let obj_owner = treeInfo.function && treeInfo.function.funcowner ||
-      treeInfo.procedure && treeInfo.procedure.funcowner ||
-      treeInfo.edbfunc && treeInfo.edbfunc.funcowner ||
-      treeInfo.edbproc && treeInfo.edbproc.funcowner;
+    let obj_owner = treeInfo.function?.funcowner || treeInfo.procedure?.funcowner ||
+      treeInfo.edbfunc?.funcowner || treeInfo.edbproc?.funcowner;
 
     // Must be a super user or object owner to create breakpoints of any kind
     if (!(treeInfo.server.user.is_superuser || obj_owner == treeInfo.server.user.name))
       return false;
 
     // For trigger node, language will be undefined - we should allow indirect debugging for trigger node
-    if ((d_.language == undefined && d_._type == 'trigger') ||
-      (d_.language == undefined && d_._type == 'edbfunc') ||
-      (d_.language == undefined && d_._type == 'edbproc')) {
+    if ((d.language == undefined && d._type == 'trigger') ||
+      (d.language == undefined && d._type == 'edbfunc') ||
+      (d.language == undefined && d._type == 'edbproc')) {
       return true;
     }
 
     let returnValue = true;
-    if (d_.language != 'plpgsql' && d_.language != 'edbspl') {
+    if (d.language != 'plpgsql' && d.language != 'edbspl') {
       returnValue = false;
     }
 
@@ -297,7 +269,7 @@ export default class DebuggerModule {
   }
 
   getUrl(_d, newTreeInfo, trans_id) {
-    let baseUrl = undefined;
+    let baseUrl;
     if (_d._type == 'function' || _d._type == 'edbfunc') {
       baseUrl = url_for(
         'debugger.initialize_target_for_function', {
@@ -325,7 +297,7 @@ export default class DebuggerModule {
   }
 
   checkDbNameChange(data, dbNode, newTreeInfo, db_label) {
-    if (data && data.data_obj && data.data_obj.db_name != newTreeInfo.database.label) {
+    if (data?.data_obj?.db_name != _.unescape(newTreeInfo.database.label)) {
       db_label = data.data_obj.db_name;
       let message = `Current database has been moved or renamed to ${db_label}. Click on the OK button to refresh the database name.`;
       refresh_db_node(message, dbNode);
@@ -393,58 +365,22 @@ export default class DebuggerModule {
               'trans_id': trans_id,
             });
 
-            let browser_preferences = self.pgBrowser.get_preferences_for_module('browser');
+            let browser_preferences = usePreferences.getState().getPreferencesForModule('browser');
             let open_new_tab = browser_preferences.new_browser_tab_open;
-            if (open_new_tab && open_new_tab.includes('debugger')) {
-              window.open(url, '_blank');
-              // Send the signal to runtime, so that proper zoom level will be set.
-              setTimeout(function () {
-                self.pgBrowser.Events.trigger('pgadmin:nw-set-new-window-open-size');
-              }, 500);
-            } else {
-              self.pgBrowser.Events.once(
-                'pgadmin-browser:frame:urlloaded:frm_debugger',
-                function (frame) {
-                  frame.openURL(url);
-                });
-
-              // Create the debugger panel as per the data received from user input dialog.
-              let dashboardPanel = self.pgBrowser.docker.findPanels(
-                  'properties'
-                ),
-                panel = self.pgBrowser.docker.addPanel(
-                  'frm_debugger', self.wcDocker.DOCK.STACKED, dashboardPanel[0]
-                ),
-                db_label = newTreeInfo.database.label;
-              panel.trans_id = trans_id;
-
-              _set_dynamic_tab(self.pgBrowser, browser_preferences['dynamic_tabs']);
-              registerDetachEvent(panel);
-
-              db_label = self.checkDbNameChange(data, dbNode, newTreeInfo, db_label);
-
-              let label = getAppropriateLabel(newTreeInfo);
-              setDebuggerTitle(panel, browser_preferences, label, newTreeInfo.schema.label, db_label, null, self.pgBrowser);
-
-              panel.focus();
-              // Register Panel Closed event
-              panel.on(self.wcDocker.EVENT.CLOSED, function () {
-                let closeUrl = url_for('debugger.close', {
-                  'trans_id': trans_id,
-                });
-                self.api({
-                  url: closeUrl,
-                  method: 'DELETE',
-                });
-              });
-
-              panel.on(self.wcDocker.EVENT.RENAME, function (panel_data) {
-                self.panel_rename_event(panel_data, panel, treeInfo);
-              });
-            }
+            const db_label = self.checkDbNameChange(data, dbNode, newTreeInfo);
+            let label = getAppropriateLabel(newTreeInfo);
+            pgAdmin.Browser.Events.trigger(
+              'pgadmin:tool:show',
+              `${BROWSER_PANELS.DEBUGGER_TOOL}_${trans_id}`,
+              url,
+              null,
+              {title: getDebuggerTitle(browser_preferences, label, newTreeInfo.schema.label, db_label, null, self.pgBrowser),
+                icon: 'fa fa-bug', manualClose: false, renamable: true},
+              Boolean(open_new_tab?.includes('debugger'))
+            );
           })
           .catch(function (e) {
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Debugger Target Initialization Error'),
               e.responseJSON.errormsg
             );
@@ -452,7 +388,7 @@ export default class DebuggerModule {
       }
     })
       .catch((err) => {
-        Notify.alert(gettext('Debugger Error'), err.response.data.errormsg);
+        pgAdmin.Browser.notifier.alert(gettext('Debugger Error'), err.response.data.errormsg);
       });
   }
 
@@ -575,54 +511,22 @@ export default class DebuggerModule {
         let url = url_for('debugger.direct', {
           'trans_id': res.data.data.debuggerTransId,
         });
-        let browser_preferences = self.pgBrowser.get_preferences_for_module('browser');
+        let browser_preferences = usePreferences.getState().getPreferencesForModule('browser');
         let open_new_tab = browser_preferences.new_browser_tab_open;
-        if (open_new_tab && open_new_tab.includes('debugger')) {
-          window.open(url, '_blank');
-          // Send the signal to runtime, so that proper zoom level will be set.
-          setTimeout(function () {
-            self.pgBrowser.Browser.Events.trigger('pgadmin:nw-set-new-window-open-size');
-          }, 500);
-        } else {
-          self.pgBrowser.Events.once(
-            'pgadmin-browser:frame:urlloaded:frm_debugger',
-            function (frame) {
-              frame.openURL(url);
-            });
+        const db_label = treeInfo.database.label;
+        self.updatedDbLabel(res, db_label, treeInfo, dbNode);
 
-          // Create the debugger panel as per the data received from user input dialog.
-          let dashboardPanel = self.pgBrowser.docker.findPanels(
-              'properties'
-            ),
-            panel = self.pgBrowser.docker.addPanel(
-              'frm_debugger', self.wcDocker.DOCK.STACKED, dashboardPanel[0]
-            ),
-            db_label = treeInfo.database.label;
-          panel.trans_id = trans_id;
+        let label = getAppropriateLabel(treeInfo);
 
-          self.updatedDbLabel(res, db_label, treeInfo, dbNode);
-
-          let label = getAppropriateLabel(treeInfo);
-          setDebuggerTitle(panel, browser_preferences, label, db_label, db_label, null, self.pgBrowser);
-
-          panel.focus();
-
-          // Panel Closed event
-          panel.on(self.wcDocker.EVENT.CLOSED, function () {
-            let closeUrl = url_for('debugger.close', {
-              'trans_id': res.data.data.debuggerTransId,
-            });
-            self.api({
-              url: closeUrl,
-              method: 'DELETE',
-            });
-          });
-
-          // Panel Rename event
-          panel.on(self.wcDocker.EVENT.RENAME, function (panel_data) {
-            self.panel_rename_event(panel_data, panel, treeInfo);
-          });
-        }
+        pgAdmin.Browser.Events.trigger(
+          'pgadmin:tool:show',
+          `${BROWSER_PANELS.DEBUGGER_TOOL}_${res.data.data.debuggerTransId}`,
+          url,
+          null,
+          {title: getDebuggerTitle(browser_preferences, label, db_label, db_label, null, self.pgBrowser),
+            icon: 'fa fa-bug', manualClose: false, renamable: true},
+          Boolean(open_new_tab?.includes('debugger'))
+        );
       })
       .catch(self.raiseError);
   }
@@ -637,13 +541,11 @@ export default class DebuggerModule {
             self.startGlobalDebugger();
           },
           function (error) {
-            Notify.alert(gettext('Debugger Error'), error);
+            pgAdmin.Browser.notifier.alert(gettext('Debugger Error'), error);
           }
         );
-      } else {
-        if (err.success == 0) {
-          Notify.alert(gettext('Debugger Error'), err.errormsg);
-        }
+      } else if (err.success == 0) {
+        pgAdmin.Browser.notifier.alert(gettext('Debugger Error'), err.errormsg);
       }
     } catch (e) {
       console.warn(e.stack || e);
@@ -651,7 +553,7 @@ export default class DebuggerModule {
   }
 
   /* We should get the transaction id from the server during initialization here */
-  load(container, trans_id, debug_type, function_name_with_arguments, layout) {
+  async load(container, trans_id, debug_type, function_name_with_arguments, layout) {
     this.trans_id = trans_id;
     this.debug_type = debug_type;
     this.first_time_indirect_debug = false;
@@ -662,31 +564,30 @@ export default class DebuggerModule {
     this.is_polling_required = true; // Flag to stop unwanted ajax calls
     this.function_name_with_arguments = function_name_with_arguments;
     this.layout = layout;
-    this.preferences = this.pgBrowser.get_preferences_for_module('debugger');
 
-    let panel = null;
     let selectedNodeInfo = pgWindow.pgAdmin.Browser.tree.getTreeNodeHierarchy(
       pgWindow.pgAdmin.Browser.tree.selected()
     );
+    await listenPreferenceBroadcast();
 
-    // Find debugger panel.
-    pgWindow.pgAdmin.Browser.docker.findPanels('frm_debugger').forEach(p => {
-      if (parseInt(p.trans_id) == trans_id) {
-        panel = p;
-      }
-    });
-
-    ReactDOM.render(
+    const root = ReactDOM.createRoot(container);
+    root.render(
       <Theme>
-        <ModalProvider>
-          <DebuggerComponent pgAdmin={pgWindow.pgAdmin} selectedNodeInfo={selectedNodeInfo} panel={panel}  layout={layout} params={{
-            transId: trans_id,
-            directDebugger: this,
-            funcArgsInstance: this.funcArgs
-          }} />
-        </ModalProvider>
-      </Theme>,
-      container
+        <PgAdminProvider value={pgAdmin}>
+          <ModalProvider>
+            <NotifierProvider pgAdmin={pgAdmin} pgWindow={pgWindow} />
+            <DebuggerComponent pgAdmin={pgWindow.pgAdmin} selectedNodeInfo={selectedNodeInfo}
+              panelId={`${BROWSER_PANELS.DEBUGGER_TOOL}_${this.trans_id}`}
+              panelDocker={pgWindow.pgAdmin.Browser.docker.default_workspace}
+              layout={layout} params={{
+                transId: trans_id,
+                directDebugger: this,
+                funcArgsInstance: this.funcArgs
+              }}
+            />
+          </ModalProvider>
+        </PgAdminProvider>
+      </Theme>
     );
   }
 
@@ -694,21 +595,10 @@ export default class DebuggerModule {
     try {
       let err = xhr.response.data;
       if (err.success == 0) {
-        Notify.alert(gettext('Debugger Error'), err.errormsg);
+        pgAdmin.Browser.notifier.alert(gettext('Debugger Error'), err.errormsg);
       }
     } catch (e) {
       console.warn(e.stack || e);
     }
-  }
-
-  panel_rename_event(panel_data, panel, treeInfo) {
-    let name = getAppropriateLabel(treeInfo);
-    let preferences = this.pgBrowser.get_preferences_for_module('browser');
-    let data = {
-      function_name: name,
-      schema_name: treeInfo.schema.label,
-      database_name: treeInfo.database.label
-    };
-    showRenamePanel(panel_data.$titleText[0].textContent, preferences, panel, 'debugger', data);
   }
 }

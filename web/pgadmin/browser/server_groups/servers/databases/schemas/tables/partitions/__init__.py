@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -211,7 +211,8 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
         'msql': [{'get': 'msql'}, {}],
         'detach': [{'put': 'detach'}],
         'truncate': [{'put': 'truncate'}],
-        'set_trigger': [{'put': 'enable_disable_triggers'}]
+        'set_trigger': [{'put': 'enable_disable_triggers'}],
+        'get_table_access_methods': [{}, {'get': 'get_table_access_methods'}],
     })
 
     # Schema Diff: Keys to ignore while comparing
@@ -306,7 +307,10 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
                 is_partitioned=row['is_partitioned'],
                 parent_schema_id=scid,
                 schema_id=row['schema_id'],
-                schema_name=row['schema_name']
+                schema_name=row['schema_name'],
+                description=row['description'],
+                is_detach_pending=row['inhdetachpending'] if 'inhdetachpending'
+                                                             in row else False
             )
 
         if ptid is not None:
@@ -541,6 +545,11 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
            tid: Table ID
            ptid: Partition Table ID
         """
+        data = request.form if request.form else json.loads(
+            request.data
+        )
+        mode = data.get('mode')
+
         # Fetch schema name
         status, parent_schema = self.conn.execute_scalar(
             render_template(
@@ -594,6 +603,7 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
             temp_data['partitioned_table_name'] = partitioned_table_name
             temp_data['schema'] = partition_schema
             temp_data['name'] = partition_name
+            temp_data['mode'] = mode
 
             SQL = render_template(
                 "/".join([self.partition_template_path, 'detach.sql']),
@@ -645,7 +655,7 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
             if not status:
                 return res
 
-        SQL, name = self.get_sql(did, scid, ptid, data, res)
+        SQL, _ = self.get_sql(did, scid, ptid, data, res)
         SQL = re.sub('\n{2,}', '\n\n', SQL)
         SQL = SQL.strip('\n')
         if SQL == '':
@@ -855,6 +865,29 @@ class PartitionsView(BaseTableView, DataTypeReader, SchemaDiffObjectCompare):
                                       target_data=parent_target_data)
 
         return diff + '\n'
+
+    @BaseTableView.check_precondition
+    def get_table_access_methods(self, gid, sid, did, scid, tid, ptid=None):
+        """
+        This function returns access methods for table.
+
+        Args:
+          gid: Server Group ID
+          sid: Server ID
+          did: Database ID
+          scid: Schema ID
+          tid: Table ID
+          ptid: Partition Table ID
+
+        Returns:
+          Returns list of access methods for partition table
+        """
+        res = BaseTableView.get_access_methods(self)
+
+        return make_json_response(
+            data=res,
+            status=200
+        )
 
 
 SchemaDiffRegistry(blueprint.node_type, PartitionsView, 'table')

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -60,7 +60,9 @@ class CastModule(CollectionNodeModule):
         :param sid: server id
         :param did: database id
         """
-        yield self.generate_browser_collection_node(did)
+        if self.has_nodes(sid, did,
+                          base_template_path=CastView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(did)
 
     @property
     def node_inode(self):
@@ -148,6 +150,7 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
     """
 
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = 'casts/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -208,7 +211,8 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
             ).connection_manager(kwargs['sid'])
             self.conn = self.manager.connection(did=kwargs['did'])
             # Set template path for the SQL scripts
-            self.template_path = 'casts/sql/#{0}#'.format(self.manager.version)
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
+                self.manager.version)
 
             self.datistemplate = False
             if (
@@ -282,7 +286,8 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     did,
                     row['name'],
-                    icon="icon-cast"
+                    icon="icon-cast",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -449,12 +454,17 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     cid,
                     did,
                     name,
-                    "icon-{0}".format(self.node_type)
+                    "icon-{0}".format(self.node_type),
+                    **other_node_info
                 )
             )
 
@@ -556,7 +566,7 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
          :return:
         """
         data = request.args
-        sql, name = self.get_sql(gid, sid, did, data, cid)
+        sql, _ = self.get_sql(gid, sid, did, data, cid)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -799,8 +809,8 @@ class CastView(PGChildNodeView, SchemaDiffObjectCompare):
         drop_sql = kwargs.get('drop_sql', False)
 
         if data:
-            sql, name = self.get_sql(gid=gid, sid=sid, did=did, data=data,
-                                     cid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, did=did, data=data,
+                                  cid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -10,9 +10,8 @@
 import gettext from 'sources/gettext';
 import _ from 'lodash';
 import url_for from 'sources/url_for';
-import React from 'react';
-import { Box } from '@material-ui/core';
-import { makeStyles } from '@material-ui/core/styles';
+import React, { useEffect } from 'react';
+import { Box } from '@mui/material';
 import Wizard from '../../../../static/js/helpers/wizard/Wizard';
 import WizardStep from '../../../../static/js/helpers/wizard/WizardStep';
 import PgTable from 'sources/components/PgTable';
@@ -20,108 +19,76 @@ import { getNodePrivilegeRoleSchema } from '../../../../../pgadmin/browser/serve
 import { InputSQL, FormFooterMessage, MESSAGE_TYPE } from '../../../../static/js/components/FormComponents';
 import getApiInstance from '../../../../static/js/api_instance';
 import SchemaView from '../../../../static/js/SchemaView';
-import clsx from 'clsx';
 import PropTypes from 'prop-types';
 import PrivilegeSchema from './privilege_schema.ui';
-import Notify from '../../../../static/js/helpers/Notifier';
-
-const useStyles = makeStyles(() =>
-  ({
-    root: {
-      height: '100%'
-    },
-    searchBox: {
-      marginBottom: '1em',
-      display: 'flex',
-    },
-    searchPadding: {
-      flex: 2.5
-    },
-    searchInput: {
-      flex: 1,
-      marginTop: 2,
-      borderLeft: 'none',
-      paddingLeft: 5
-    },
-    grantWizardSql: {
-      height: '90% !important',
-      width: '100%'
-    },
-    privilegeStep: {
-      height: '100%',
-      overflow: 'auto'
-    },
-    panelContent: {
-      flexGrow: 1,
-      minHeight: 0
-    }
-  }),
-);
+import { usePgAdmin } from '../../../../static/js/PgAdminProvider';
 
 export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
-  const classes = useStyles();
+
   let columns = [
     {
 
-      Header: 'Object Type',
-      accessor: 'object_type',
-      sortable: true,
-      resizable: false,
-      disableGlobalFilter: true
+      header: 'Object Type',
+      accessorKey: 'object_type',
+      enableSorting: true,
+      enableResizing: false,
+      enableFilters: false
     },
     {
-      Header: 'Schema',
-      accessor: 'nspname',
-      sortable: true,
-      resizable: false,
-      disableGlobalFilter: true
+      header: 'Schema',
+      accessorKey: 'nspname',
+      enableSorting: true,
+      enableResizing: false,
+      enableFilters: false
     },
     {
-      Header: 'Name',
-      accessor: 'name_with_args',
-      sortable: true,
-      resizable: true,
-      disableGlobalFilter: false,
-      minWidth: 280
+      header: 'Name',
+      accessorKey: 'name_with_args',
+      enableSorting: true,
+      enableResizing: true,
+      enableFilters: true,
+      minSize: 280
     },
     {
-      Header: 'parameters',
-      accessor: 'proargs',
-      sortable: false,
-      resizable: false,
-      disableGlobalFilter: false,
+      header: 'parameters',
+      accessorKey: 'proargs',
+      enableSorting: false,
+      enableResizing: false,
+      enableFilters: true,
+      enableVisibility: false,
       minWidth: 280,
-      isVisible: false
     },
     {
-      Header: 'Name',
-      accessor: 'name',
-      sortable: false,
-      resizable: false,
-      disableGlobalFilter: false,
+      header: 'Name',
+      accessorKey: 'name',
+      enableSorting: false,
+      enableResizing: false,
+      enableFilters: true,
+      enableVisibility: false,
       minWidth: 280,
-      isVisible: false
     },
     {
-      Header: 'ID',
-      accessor: 'oid',
-      sortable: false,
-      resizable: false,
-      disableGlobalFilter: false,
+      header: 'ID',
+      accessorKey: 'oid',
+      enableSorting: false,
+      enableResizing: false,
+      enableFilters: true,
+      enableVisibility: false,
       minWidth: 280,
-      isVisible: false
     }
   ];
   let steps = [gettext('Object Selection'), gettext('Privilege Selection'), gettext('Review')];
-  const [selectedObject, setSelectedObject] = React.useState([]);
+  const [selectedRows, setSelectedRows] = React.useState({});
   const [selectedAcl, setSelectedAcl] = React.useState({});
-  const [msqlData, setSQL] = React.useState('');
+  const [msqlData, setMSQLData] = React.useState('');
   const [loaderText, setLoaderText] = React.useState('');
-  const [tablebData, setTableData] = React.useState([]);
+  const [tableData, setTableData] = React.useState([]);
   const [privOptions, setPrivOptions] = React.useState({});
-  const [privileges, setPrivileges] = React.useState([]);
+  const selectedObject = React.useRef([]);
+  const privileges = React.useRef([]);
   const [privSchemaInstance, setPrivSchemaInstance] = React.useState();
   const [errMsg, setErrMsg] = React.useState('');
+  const pgAdmin = usePgAdmin();
 
   const api = getApiInstance();
   const validatePrivilege = () => {
@@ -133,11 +100,6 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
     });
     return !isValid;
   };
-
-
-  React.useEffect(() => {
-    privSchemaInstance?.privilegeRoleSchema.updateSupportedPrivs(privileges);
-  }, [privileges]);
 
   React.useEffect(() => {
     const privSchema = new PrivilegeSchema((privs) => getNodePrivilegeRoleSchema('', nodeInfo, nodeData, privs));
@@ -181,7 +143,7 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
         setLoaderText('');
       })
       .catch(() => {
-        Notify.error(gettext('Error while fetching grant wizard data.'));
+        pgAdmin.Browser.notifier.error(gettext('Error while fetching grant wizard data.'));
         setLoaderText('');
       });
   }, [nodeData]);
@@ -196,15 +158,15 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
         });
       let post_data = {
         acl: selectedAcl.privilege,
-        objects: selectedObject
+        objects: selectedObject.current
       };
       api.post(msql_url, post_data)
         .then(res => {
-          setSQL(res.data.data);
+          setMSQLData(res.data.data);
           setLoaderText('');
         })
         .catch(() => {
-          Notify.error(gettext('Error while fetching SQL.'));
+          pgAdmin.Browser.notifier.error(gettext('Error while fetching SQL.'));
         });
     }
   };
@@ -218,7 +180,7 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
       });
     const post_data = {
       acl: selectedAcl.privilege,
-      objects: selectedObject
+      objects: selectedObject.current
     };
     api.post(_url, post_data)
       .then(() => {
@@ -227,12 +189,12 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
       })
       .catch((error) => {
         setLoaderText('');
-        Notify.error(gettext(`Error while saving grant wizard data: ${error.response.data.errormsg}`));
+        pgAdmin.Browser.notifier.error(gettext(`Error while saving grant wizard data: ${error.response.data.errormsg}`));
       });
   };
 
   const disableNextCheck = (stepId) => {
-    if (selectedObject.length > 0 && stepId === 0) {
+    if (Object.keys(selectedRows).length > 0 && stepId === 0) {
       return false;
     }
 
@@ -243,14 +205,14 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
     window.open(url_for('help.static', { 'filename': 'grant_wizard.html' }), 'pgadmin_help');
   };
 
-  const getTableSelectedRows = (selRows) => {
+  useEffect(()=>{
     let selObj = [];
     let objectTypes = new Set();
-    if (selRows.length > 0) {
-
-      selRows.forEach((row) => {
+    if (Object.keys(selectedRows).length > 0) {
+      Object.keys(selectedRows).forEach((rowId) => {
+        const row = tableData[rowId];
         let object_type = '';
-        switch (row.values.object_type) {
+        switch (row.object_type) {
         case 'Function':
           object_type = 'function';
           break;
@@ -283,7 +245,7 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
         }
 
         objectTypes.add(object_type);
-        selObj.push(row.values);
+        selObj.push(row);
       });
     }
     let privs = new Set();
@@ -292,10 +254,11 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
         privs.add(priv);
       });
     });
-    setPrivileges(Array.from(privs));
-    setSelectedObject(selObj);
+    privileges.current = Array.from(privs);
+    selectedObject.current = selObj;
+    privSchemaInstance?.privilegeRoleSchema.updateSupportedPrivs(privileges.current);
     setErrMsg(selObj.length === 0 ? gettext('Please select any database object.') : '');
-  };
+  }, [selectedRows]);
 
   const onErrClose = React.useCallback(()=>{
     setErrMsg('');
@@ -312,34 +275,35 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
       loaderText={loaderText}
     >
       <WizardStep stepId={0}>
-        <Box className={classes.panelContent}>
+        <Box sx={{flexGrow: 1, minHeight: 0}}>
           <PgTable
             caveTable={false}
-            className={classes.table}
+            tableNoBorder={false}
             height={window.innerHeight - 450}
             columns={columns}
-            data={tablebData}
-            isSelectRow={true}
-            getSelectedRows={getTableSelectedRows}>
-          </PgTable>
+            data={tableData}
+            hasSelectRow={true}
+            selectedRows={selectedRows}
+            setSelectedRows={setSelectedRows}
+          />
         </Box>
         <FormFooterMessage type={MESSAGE_TYPE.ERROR} message={errMsg} onClose={onErrClose} />
       </WizardStep>
       <WizardStep
         stepId={1}
-        className={clsx(classes.privilegeStep)}>
+        sx={{ height:'100%', overflow:'auto'}}>
         {privSchemaInstance &&
-                  <SchemaView
-                    formType={'dialog'}
-                    getInitData={() => {/*This is intentional (SonarQube)*/}}
-                    viewHelperProps={{ mode: 'create' }}
-                    schema={privSchemaInstance}
-                    showFooter={false}
-                    isTabView={false}
-                    onDataChange={(isChanged, changedData) => {
-                      setSelectedAcl(changedData);
-                    }}
-                  />
+          <SchemaView
+            formType={'dialog'}
+            getInitData={() => {/*This is intentional (SonarQube)*/}}
+            viewHelperProps={{ mode: 'create' }}
+            schema={privSchemaInstance}
+            showFooter={false}
+            isTabView={false}
+            onDataChange={(isChanged, changedData) => {
+              setSelectedAcl(changedData);
+            }}
+          />
         }
       </WizardStep>
       <WizardStep
@@ -347,7 +311,6 @@ export default function GrantWizard({ sid, did, nodeInfo, nodeData, onClose }) {
         <Box>{gettext('The SQL below will be executed on the database server to grant the selected privileges. Please click on Finish to complete the process.')}</Box>
         <InputSQL
           onLable={true}
-          className={classes.grantWizardSql}
           readonly={true}
           value={msqlData.toString()} />
       </WizardStep>
@@ -362,5 +325,3 @@ GrantWizard.propTypes = {
   nodeData: PropTypes.object,
   onClose: PropTypes.func
 };
-
-

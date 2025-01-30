@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -71,7 +71,9 @@ class TypeModule(SchemaChildModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=TypeView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -179,6 +181,7 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     icon_str = "icon-%s"
+    BASE_TEMPLATE_PATH = 'types/{0}/sql/#{1}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -238,12 +241,8 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             # Declare allows acl on type
             self.acl = ['U']
 
-            self.template_path = "/".join([
-                'types',
-                self.manager.server_type,
-                'sql',
-                '#{0}#'
-            ]).format(self.manager.version)
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
+                self.manager.server_type, self.manager.version)
 
             return f(*args, **kwargs)
 
@@ -358,7 +357,8 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon=self.icon_str % self.node_type
+                    icon=self.icon_str % self.node_type,
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -435,7 +435,7 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             typelist += collate
             properties_list.append(typelist)
 
-            is_tlength, is_precision, typeval = \
+            is_tlength, is_precision, _ = \
                 self.get_length_precision(row.get('elemoid', None))
 
             # Split length, precision from type name for grid
@@ -468,7 +468,7 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
         :param rows: list of data
         :return: formatted response
         """
-        is_tlength, is_precision, typeval = \
+        is_tlength, is_precision, _ = \
             self.get_length_precision(data.get('elemoid', None))
 
         # Split length, precision from type name for grid
@@ -1101,12 +1101,17 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     tid,
                     scid,
                     name,
-                    icon=self.icon_str % self.node_type
+                    icon=self.icon_str % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -1222,7 +1227,7 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                 data[key] = val
 
         try:
-            sql, name = self.get_sql(gid, sid, data, scid, tid)
+            sql, _ = self.get_sql(gid, sid, data, scid, tid)
             # Most probably this is due to error
             if not isinstance(sql, str):
                 return sql
@@ -1470,7 +1475,7 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             if data[k] == '-':
                 data[k] = None
 
-        SQL, name = self.get_sql(gid, sid, data, scid, tid=None, is_sql=True)
+        SQL, _ = self.get_sql(gid, sid, data, scid, tid=None, is_sql=True)
         # Most probably this is due to error
         if not isinstance(SQL, str):
             return SQL
@@ -1522,8 +1527,11 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             scid: Schema ID
             tid: Type ID
         """
+        # For composite type typrelid is required to fetch dependencies.
+        type_where = "WHERE (dep.objid={0}::oid OR dep.objid=(select typrelid \
+            from pg_type where oid = {0}::oid))".format(tid)
         dependencies_result = self.get_dependencies(
-            self.conn, tid
+            self.conn, tid, where=type_where
         )
 
         return ajax_response(
@@ -1577,8 +1585,8 @@ class TypeView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
         if data:
             if target_schema:
                 data['schema'] = target_schema
-            sql, name = self.get_sql(gid=gid, sid=sid, scid=scid,
-                                     data=data, tid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, scid=scid, data=data,
+                                  tid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

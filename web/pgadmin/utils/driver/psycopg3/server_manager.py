@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -33,6 +33,9 @@ from psycopg.conninfo import make_conninfo
 
 if config.SUPPORT_SSH_TUNNEL:
     from sshtunnel import SSHTunnelForwarder, BaseSSHTunnelForwarderError
+
+CONN_STRING = 'CONN:{0}'
+DB_STRING = 'DB:{0}'
 
 
 class ServerManager(object):
@@ -78,8 +81,10 @@ class ServerManager(object):
         self.db_info = dict()
         self.server_types = None
         self.db_res = server.db_res
+        self.name = server.name
         self.passexec = \
-            PasswordExec(server.passexec_cmd, server.passexec_expiration) \
+            PasswordExec(server.passexec_cmd, server.host, server.port,
+                         server.username, server.passexec_expiration) \
             if server.passexec_cmd else None
         self.service = server.service
 
@@ -94,6 +99,7 @@ class ServerManager(object):
                 else server.tunnel_authentication
             self.tunnel_identity_file = server.tunnel_identity_file
             self.tunnel_password = server.tunnel_password
+            self.tunnel_keep_alive = server.tunnel_keep_alive
         else:
             self.use_ssh_tunnel = 0
             self.tunnel_host = None
@@ -102,12 +108,14 @@ class ServerManager(object):
             self.tunnel_authentication = None
             self.tunnel_identity_file = None
             self.tunnel_password = None
+            self.tunnel_keep_alive = 0
 
         self.kerberos_conn = server.kerberos_conn
         self.gss_authenticated = False
         self.gss_encrypted = False
         self.connection_params = server.connection_params
         self.create_connection_string(self.db, self.user)
+        self.prepare_threshold = server.prepare_threshold
 
         for con in self.connections:
             self.connections[con]._release()
@@ -199,12 +207,15 @@ class ServerManager(object):
             if did is not None and did in self.db_info:
                 self.db_info[did]['datname'] = database
         else:
+            conn_str = CONN_STRING.format(conn_id)
             if did is None:
                 database = self.db
             elif did in self.db_info:
                 database = self.db_info[did]['datname']
+            elif conn_id and conn_str in self.connections:
+                database = self.connections[conn_str].db
             else:
-                maintenance_db_id = 'DB:{0}'.format(self.db)
+                maintenance_db_id = DB_STRING.format(self.db)
                 if maintenance_db_id in self.connections:
                     conn = self.connections[maintenance_db_id]
                     # try to connect maintenance db if not connected
@@ -232,7 +243,8 @@ WHERE db.oid = {0}""".format(did))
                                 "Could not find the specified database."
                             ))
 
-        if not get_crypt_key()[0]:
+        if not get_crypt_key()[0] and (
+                config.SERVER_MODE or not config.USE_OS_SECRET_STORAGE):
             # the reason its not connected might be missing key
             raise CryptKeyMissing()
 
@@ -243,8 +255,8 @@ WHERE db.oid = {0}""".format(did))
             else:
                 raise ConnectionLost(self.sid, None, None)
 
-        my_id = ('CONN:{0}'.format(conn_id)) if conn_id is not None else \
-            ('DB:{0}'.format(database))
+        my_id = (CONN_STRING.format(conn_id)) if conn_id is not None else \
+            (DB_STRING.format(database))
 
         self.pinged = datetime.datetime.now()
 
@@ -312,8 +324,7 @@ WHERE db.oid = {0}""".format(did))
                 # Check SSH Tunnel needs to be created
                 if self.use_ssh_tunnel == 1 and \
                         not self.tunnel_created:
-                    status, error = self.create_ssh_tunnel(
-                        data['tunnel_password'])
+                    self.create_ssh_tunnel(data['tunnel_password'])
 
                     # Check SSH Tunnel is alive or not.
                     self.check_ssh_tunnel_alive()
@@ -384,16 +395,14 @@ WHERE db.oid = {0}""".format(did))
             conn = self.connections[conn_id]
             # only try to reconnect if connection was connected previously
             # and auto_reconnect is true.
-            wasConnected = conn.wasConnected
+            was_connected = conn.wasConnected
             auto_reconnect = conn.auto_reconnect
             if conn.wasConnected and conn.auto_reconnect:
                 try:
                     # Check SSH Tunnel needs to be created
                     if self.use_ssh_tunnel == 1 and \
                        not self.tunnel_created:
-                        status, error = self.create_ssh_tunnel(
-                            self.tunnel_password
-                        )
+                        self.create_ssh_tunnel(self.tunnel_password)
 
                         # Check SSH Tunnel is alive or not.
                         self.check_ssh_tunnel_alive()
@@ -404,7 +413,7 @@ WHERE db.oid = {0}""".format(did))
                 except CryptKeyMissing:
                     # maintain the status as this will help to restore once
                     # the key is available
-                    conn.wasConnected = wasConnected
+                    conn.wasConnected = was_connected
                     conn.auto_reconnect = auto_reconnect
                 except Exception as e:
                     self.connections.pop(conn_id)
@@ -442,9 +451,9 @@ WHERE db.oid = {0}""".format(did))
                 return True, False, my_id
 
         if conn_id is not None:
-            my_id = 'CONN:{0}'.format(conn_id)
+            my_id = CONN_STRING.format(conn_id)
         elif database is not None:
-            my_id = 'DB:{0}'.format(database)
+            my_id = DB_STRING.format(database)
 
         return False, True, my_id
 
@@ -532,8 +541,10 @@ WHERE db.oid = {0}""".format(did))
             crypt_key_present, crypt_key = get_crypt_key()
             if not crypt_key_present:
                 return False, crypt_key
-
             password = decrypt(self.password, crypt_key).decode()
+            os.environ[str(env)] = password
+        elif self.passexec:
+            password = self.passexec.get()
             os.environ[str(env)] = password
 
     def create_ssh_tunnel(self, tunnel_password):
@@ -558,7 +569,6 @@ WHERE db.oid = {0}""".format(did))
                 # password is in bytes, for python3 we need it in string
                 if isinstance(tunnel_password, bytes):
                     tunnel_password = tunnel_password.decode()
-
             except Exception as e:
                 current_app.logger.exception(e)
                 return False, gettext("Failed to decrypt the SSH tunnel "
@@ -580,7 +590,8 @@ WHERE db.oid = {0}""".format(did))
                     ssh_pkey=get_complete_file_path(self.tunnel_identity_file),
                     ssh_private_key_password=tunnel_password,
                     remote_bind_address=(self.host, self.port),
-                    logger=ssh_logger
+                    logger=ssh_logger,
+                    set_keepalive=int(self.tunnel_keep_alive)
                 )
             else:
                 self.tunnel_object = SSHTunnelForwarder(
@@ -588,7 +599,8 @@ WHERE db.oid = {0}""".format(did))
                     ssh_username=self.tunnel_username,
                     ssh_password=tunnel_password,
                     remote_bind_address=(self.host, self.port),
-                    logger=ssh_logger
+                    logger=ssh_logger,
+                    set_keepalive=int(self.tunnel_keep_alive)
                 )
             # flag tunnel threads in daemon mode to fix hang issue.
             self.tunnel_object.daemon_forward_servers = True
@@ -636,12 +648,15 @@ WHERE db.oid = {0}""".format(did))
         parameters.
         """
         dsn_args = dict()
-        dsn_args['host'] = \
-            self.local_bind_host if self.use_ssh_tunnel else self.host
+        dsn_args['host'] = self.host
         dsn_args['port'] = \
             self.local_bind_port if self.use_ssh_tunnel else self.port
         dsn_args['dbname'] = database
         dsn_args['user'] = user
+        if self.service is not None:
+            dsn_args['service'] = self.service
+        if self.use_ssh_tunnel:
+            dsn_args['hostaddr'] = self.local_bind_host
 
         # Make a copy to display the connection string on GUI.
         display_dsn_args = dsn_args.copy()
@@ -657,15 +672,15 @@ WHERE db.oid = {0}""".format(did))
                 with_complete_path = False
                 orig_value = value
                 # Getting complete file path if the key is one of the below.
-                if key in ['passfile', 'sslcert', 'sslkey', 'sslrootcert',
-                           'sslcrl', 'service', 'sslcrldir']:
+                if key in ['passfile', 'sslcert', 'sslkey','sslcrl',
+                           'sslcrldir'] or \
+                        (key == 'sslrootcert' and value != 'system'):
                     with_complete_path = True
                     value = get_complete_file_path(value)
 
-                # In case of host address need to check ssh tunnel flag.
-                if key == 'hostaddr':
-                    value = self.local_bind_host if self.use_ssh_tunnel else \
-                        value
+                # If key is hostaddr and ssh tunnel is in use don't overwrite.
+                if key == 'hostaddr' and self.use_ssh_tunnel:
+                    continue
 
                 dsn_args[key] = value
                 display_dsn_args[key] = orig_value if with_complete_path else \

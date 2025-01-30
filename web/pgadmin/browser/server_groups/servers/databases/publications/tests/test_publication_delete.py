@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -54,9 +54,7 @@ class PublicationDeleteTestCase(BaseTestGenerator):
             str(uuid.uuid4())[1:8])
 
         self.publication_id = \
-            publication_utils.create_publication(self.server,
-                                                 self.db_name,
-                                                 self.publication_name)
+            publication_utils.create_publication(self)
 
     def delete_publication(self):
         return self.tester.delete(

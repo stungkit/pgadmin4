@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -39,11 +39,10 @@ export class DomainConstSchema extends BaseUISchema {
         id: 'convalidated', label: gettext('Validate?'), cell: 'checkbox',
         type: 'checkbox',
         readonly: function(state) {
-          let currCon = _.find(obj.top.origData.constraints, (con)=>con.conoid == state.conoid);
-          if (!obj.isNew(state) && currCon.convalidated) {
-            return true;
-          }
-          return false;
+          let currCon = _.find(
+            obj.top.origData.constraints, (con) => con.conoid == state.conoid
+          );
+          return !obj.isNew(state) && currCon.convalidated;
         },
       }
     ];

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -12,8 +12,6 @@ import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import url_for from 'sources/url_for';
 import { getNodeListByName, generateNodeUrl } from '../../../../../static/js/node_ajax';
 import pgBrowser from 'top/browser/static/js/browser';
-import { getUtilityView } from '../../../../../static/js/utility_view';
-import Notify from '../../../../../../static/js/helpers/Notifier';
 import { isEmptyString } from 'sources/validators';
 import pgAdmin from 'sources/pgadmin';
 
@@ -101,7 +99,7 @@ export default class RoleReassign extends BaseUISchema{
         helpMessage: gettext('New owner of the affected objects'),
         deps: ['role_op'],
         disabled: (state)=>{
-          return state.role_op == 'drop'? true: false;
+          return state.role_op == 'drop';
         },
         depChange: (state) =>{
           if (state.role_op == 'drop'){
@@ -180,17 +178,6 @@ export default class RoleReassign extends BaseUISchema{
   }
 }
 
-function saveCallBack (data) {
-  if (data.errormsg) {
-    Notify.alert(
-      gettext('Error'),
-      gettext(data.errormsg)
-    );
-  } else {
-    Notify.success(gettext(data.info));
-  }
-}
-
 function getUISchema(treeNodeInfo, itemNodeData ) {
   return new RoleReassign(
     {
@@ -211,13 +198,7 @@ export function showRoleReassign() {
     treeNodeInfo = pgBrowser.tree.getTreeNodeHierarchy(item),
     itemNodeData = pgBrowser.tree.findNodeByDomElement(item).getData();
 
-  pgBrowser.Node.registerUtilityPanel();
-  let panel = pgBrowser.Node.addUtilityPanel(pgBrowser.stdW.md, 480),
-    j = panel.$container.find('.obj_properties').first();
-  panel.title(gettext(`Reassign/Drop Owned - ${data.label}`));
-  panel.focus();
-
-  const baseUrl = generateNodeUrl.call( pgAdmin.Browser.Nodes[data._type], treeNodeInfo, 'reassign', data, true);
+  const urlBase = generateNodeUrl.call( pgAdmin.Browser.Nodes[data._type], treeNodeInfo, 'reassign', data, true);
 
   let schema = getUISchema(treeNodeInfo, itemNodeData),
     sqlHelpUrl = '',
@@ -227,6 +208,9 @@ export function showRoleReassign() {
       'filename': 'role_reassign_dialog.html',
     });
 
-  getUtilityView(
-    schema, treeNodeInfo, 'create', 'dialog', j[0], panel, saveCallBack, extraData, 'Reassign/Drop', baseUrl, sqlHelpUrl, helpUrl);
+  pgAdmin.Browser.Events.trigger('pgadmin:utility:show', item,
+    gettext(`Reassign/Drop Owned - ${data.label}`),{
+      schema, extraData, urlBase, sqlHelpUrl, helpUrl, saveBtnName: gettext('Reassign/Drop'),
+    }, pgAdmin.Browser.stdW.md
+  );
 }

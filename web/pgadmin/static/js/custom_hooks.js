@@ -1,5 +1,15 @@
-import {useRef, useEffect, useState, useCallback, useLayoutEffect} from 'react';
+/////////////////////////////////////////////////////////////
+//
+// pgAdmin 4 - PostgreSQL Tools
+//
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
+// This software is released under the PostgreSQL Licence
+//
+//////////////////////////////////////////////////////////////
+import React, {useRef, useEffect, useState, useCallback, useLayoutEffect} from 'react';
 import moment from 'moment';
+import { isMac } from './keyboard_shortcuts';
+import { getBrowser } from './utils';
 
 /* React hook for setInterval */
 export function useInterval(callback, delay) {
@@ -18,6 +28,32 @@ export function useInterval(callback, delay) {
     }
   }, [delay]);
 }
+
+/* React hook for handling double and single click events */
+export function useSingleAndDoubleClick(handleSingleClick, handleDoubleClick, delay = 250) {
+  const clickCountRef = useRef(0);
+  const timerRef = useRef(null);
+
+  const handleClick = (e) => {
+    // Handle the logic here, no need to pass the event
+    clickCountRef.current += 1;
+
+    // Clear any previous timeout to ensure the double-click logic is triggered only once
+    clearTimeout(timerRef.current);
+
+    // Set the timeout to handle click logic after the delay
+    timerRef.current = setTimeout(() => {
+      if (clickCountRef.current === 1) handleSingleClick(e);
+      else if (clickCountRef.current === 2) handleDoubleClick(e);
+
+      // Reset the click count and props after handling
+      clickCountRef.current = 0;
+    }, delay);
+  };
+
+  return handleClick;
+}
+
 
 export function useDelayedCaller(callback) {
   let timer;
@@ -52,10 +88,10 @@ export function useDelayDebounce(callback, args, delay) {
 }
 
 export function useOnScreen(ref) {
-  const [isIntersecting, setIntersecting] = useState(false);
+  const [intersecting, setIntersecting] = useState(false);
   const observer = new IntersectionObserver(
     ([entry]) => {
-      setIntersecting(entry.isIntersecting);
+      setIntersecting(entry.intersecting);
     }
   );
   useEffect(() => {
@@ -66,7 +102,7 @@ export function useOnScreen(ref) {
     return () => { observer.disconnect(); };
   }, []);
 
-  return isIntersecting;
+  return intersecting;
 }
 
 export function useIsMounted() {
@@ -150,9 +186,11 @@ export function useKeyboardShortcuts(shortcuts, eleRef) {
   const matchFound = (shortcut, e)=>{
     if(!shortcut) return false;
     let keyCode = e.which || e.keyCode;
+    const ctrlKey = (isMac() && shortcut.ctrl_is_meta) ? e.metaKey : e.ctrlKey;
+
     return Boolean(shortcut.alt) == e.altKey &&
       Boolean(shortcut.shift) == e.shiftKey &&
-      Boolean(shortcut.control) == e.ctrlKey &&
+      Boolean(shortcut.control) == ctrlKey &&
       shortcut.key.key_code == keyCode;
   };
   useEffect(()=>{
@@ -193,4 +231,55 @@ export function useWindowSize() {
     return () => window.removeEventListener('resize', updateSize);
   }, []);
   return size;
+}
+
+export function useForceUpdate() {
+  return React.useReducer(() => ({}), {})[1];
+}
+
+export function useBeforeUnload({ enabled, isNewTab, beforeClose, closePanel }) {
+  const onBeforeUnload = useCallback((e)=>{
+    e.preventDefault();
+    e.returnValue = 'prevent';
+  }, []);
+
+  const onBeforeUnloadElectron = useCallback((e)=>{
+    e.preventDefault();
+    e.returnValue = 'prevent';
+    beforeClose?.(forceClose);
+  }, []);
+
+  function forceClose() {
+    if(getBrowser().name == 'Electron' && isNewTab) {
+      window.removeEventListener('beforeunload', onBeforeUnloadElectron);
+      // somehow window.close was not working may becuase the removeEventListener
+      // was not completely executed. Add timeout.
+      setTimeout(()=>window.close(), 50);
+    } else {
+      closePanel?.();
+    }
+  }
+
+  useEffect(()=>{
+    if(getBrowser().name == 'Electron'  && isNewTab) {
+      if(enabled) {
+        window.addEventListener('beforeunload', onBeforeUnloadElectron);
+      } else {
+        window.removeEventListener('beforeunload', onBeforeUnloadElectron);
+      }
+    } else if(getBrowser().name != 'Electron') {
+      if(enabled){
+        window.addEventListener('beforeunload', onBeforeUnload);
+      } else {
+        window.removeEventListener('beforeunload', onBeforeUnload);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnloadElectron);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [enabled]);
+
+  return {forceClose};
 }

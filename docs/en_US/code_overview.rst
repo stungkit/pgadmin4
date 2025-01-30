@@ -5,14 +5,14 @@
 **********************
 
 The bulk of pgAdmin is a Python web application written using the Flask framework
-on the backend, and HTML5 with CSS3, Bootstrap and jQuery on the front end. A
+on the backend, and HTML5 with CSS3,ReactJS on the front end. A
 desktop runtime is also included for users that prefer a desktop application to
-a web application, which is written using NWjs (Node Webkit).
+a web application, which is written using Electron.
 
 Runtime
 *******
 
-The runtime is based on NWjs which integrates a browser and the Python server
+The runtime is based on Electron which integrates a browser and the Python server
 creating a standalone application. The source code can be found in the
 **/runtime** directory in the source tree.
 
@@ -194,7 +194,7 @@ Nodes
 *****
 
 Nodes are very similar to modules, it represents an individual node or,
-collection object on the browser treeview. To recognised as a node module, a
+collection object on the object explorer treeview. To recognised as a node module, a
 Python package (along with javascript modules) must be created. This must:
 
 1) Be placed within the **web/pgadmin/browser/** directory, and
@@ -207,8 +207,7 @@ Front End
 
 pgAdmin uses javascript extensively for the front-end implementation. It uses
 require.js to allow the lazy loading (or, say load only when required),
-bootstrap and MaterialUI for UI look and feel, React for generating
-properties/create dialog for selected node. We have
+ReactJS with CSS and MaterialUI for UI look and feel. We have
 divided each module in small chunks as much as possible. Not all javascript
 modules are required to be loaded (i.e. loading a javascript module for
 database will make sense only when a server node is loaded completely.) Please

@@ -2,25 +2,23 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import { Box } from '@material-ui/core';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Box } from '@mui/material';
+import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 
 import gettext from 'sources/gettext';
 import url_for from 'sources/url_for';
 import Loader from 'sources/components/Loader';
 
-import Layout, { LayoutHelper } from '../../../../../static/js/helpers/Layout';
+import Layout, { LayoutDocker } from '../../../../../static/js/helpers/Layout';
 import EventBus from '../../../../../static/js/helpers/EventBus';
-import getApiInstance from '../../../../../static/js/api_instance';
-import Notify from '../../../../../static/js/helpers/Notifier';
+import getApiInstance, { callFetch } from '../../../../../static/js/api_instance';
 
-import { evalFunc } from '../../../../../static/js/utils';
 import { PANELS, DEBUGGER_EVENTS, MENUS } from '../DebuggerConstants';
 import { retrieveNodeName } from '../../../../sqleditor/static/js/show_view_data';
 import { useModal } from '../../../../../static/js/helpers/ModalProvider';
@@ -31,11 +29,12 @@ import { Stack } from './Stack';
 import { Results } from './Results';
 import { LocalVariablesAndParams } from './LocalVariablesAndParams';
 import DebuggerArgumentComponent from './DebuggerArgumentComponent';
+import usePreferences from '../../../../../preferences/static/js/store';
 
 export const DebuggerContext = React.createContext();
 export const DebuggerEventsContext = React.createContext();
 
-export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, eventBusObj, layout, params }) {
+export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panelId, panelDocker, eventBusObj, layout, params }) {
   const savedLayout = layout;
   const containerRef = React.useRef(null);
   const docker = useRef(null);
@@ -44,20 +43,13 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
   const eventBus = useRef(eventBusObj || (new EventBus()));
   const [loaderText, setLoaderText] = React.useState('');
   const editor = useRef(null);
+  const preferencesStore = usePreferences();
   let timeOut = null;
-  const [qtState, _setQtState] = useState({
-    preferences: {
-      browser: {}, debugger: {},
-    },
-    is_new_tab: window.location == window.parent?.location,
-    params: {
-      ...params,
-      node_name: retrieveNodeName(selectedNodeInfo),
-    }
+
+  const [preferences, setPreferences] = useState({
+    browser: preferencesStore.getPreferencesForModule('browser'),
+    debugger: preferencesStore.getPreferencesForModule('debugger'),
   });
-  const setQtState = (state) => {
-    _setQtState((prev) => ({ ...prev, ...evalFunc(null, state, prev) }));
-  };
 
   const disableToolbarButtons = () => {
     eventBus.current.fireEvent(DEBUGGER_EVENTS.DISABLE_MENU);
@@ -73,15 +65,6 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
 
     eventBus.current.fireEvent(DEBUGGER_EVENTS.GET_TOOL_BAR_BUTTON_STATUS, { disabled: false });
   };
-
-  const reflectPreferences = useCallback(() => {
-    setQtState({
-      preferences: {
-        browser: pgAdmin.Browser.get_preferences_for_module('browser'),
-        debugger: pgAdmin.Browser.get_preferences_for_module('debugger'),
-      }
-    });
-  }, []);
 
   // Function to get the breakpoint information from the server
   const getBreakpointInformation = (transId, callBackFunc) => {
@@ -129,13 +112,13 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         url: baseUrl,
         method: 'POST',
         data: {
-          'breakpoint_list': breakpoint_list.lenght > 0 ? breakpoint_list.join() : null,
+          'breakpoint_list': breakpoint_list.length > 0 ? breakpoint_list.join() : null,
         },
       })
         .then(function (res) {
           if (res.data.data.status) {
             executeQuery(transId);
-            setUnsetBreakpoint(res, breakpoint_list);
+            editor.current.clearBreakpoints();
           }
           enableToolbarButtons();
         })
@@ -148,38 +131,48 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
     try {
       let err = xhr.response.data;
       if (err.success == 0) {
-        Notify.alert(gettext('Debugger Error'), err.errormsg, () => {
-          if (panel) {
-            panel.close();
-          }
+        let header_msg = gettext('Debugger Error'),
+          err_msg = err.errormsg;
 
+        // Stopped Debugger forcefully. 57014 is the SQL State
+        if (err.errormsg.indexOf('57014') !== -1) {
+          header_msg = gettext('Debugger Aborted');
+          err_msg = gettext('Debugger has been aborted. '
+           + 'On clicking the ok button, debugger panel will be closed.');
+        }
+
+        pgAdmin.Browser.notifier.alert(header_msg, err_msg, () => {
+          if (panelId) {
+            panelDocker.close(panelId, true);
+          }
         });
       }
-    } catch (e) {
+    } catch {
       alert(xhr);
-      Notify.alert(
+      pgAdmin.Browser.notifier.alert(
         gettext('Debugger Error'),
         gettext('Error while starting debugging listener.')
       );
     }
   };
 
-  const raisePollingError = () => {
-    Notify.alert(
+  const raisePollingError = (error) => {
+    console.error(error);
+    pgAdmin.Browser.notifier.alert(
       gettext('Debugger Error'),
       gettext('Error while polling result.')
     );
   };
 
   const raiseClearBrekpointError = () => {
-    Notify.alert(
+    pgAdmin.Browser.notifier.alert(
       gettext('Debugger Error'),
       gettext('Error while clearing all breakpoint.')
     );
   };
 
   const raiseFetchingBreakpointError = () => {
-    Notify.alert(
+    pgAdmin.Browser.notifier.alert(
       gettext('Debugger Error'),
       gettext('Error while fetching breakpoint information.')
     );
@@ -204,14 +197,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           // If status is Busy then poll the result by recursive call to the poll function
           messages(transId);
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Not connected to server or connection with the server has been closed.'),
             res.data.result
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while fetching messages information.')
         );
@@ -235,14 +228,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           // If status is Success then find the port number to attach the executer.
           executeQuery(transId);
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while starting debugging session.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while starting debugging session.')
         );
@@ -269,7 +262,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           ) {
             editor.current.setValue(res.data.data.result[0].src);
 
-            setActiveLine(res.data.data.result[0].linenumber - 2);
+            editor.current.setActiveLine(res.data.data.result[0].linenumber - 1);
           }
           // Call function to create and update Stack information ....
           getStackInformation(transId);
@@ -277,43 +270,19 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
             pollEndExecutionResult(transId);
           }
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while executing requested debugging information.')
           );
         }
       })
-      .catch(function () {
-        Notify.alert(
+      .catch(function (error) {
+        console.error(error);
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while executing requested debugging information.')
         );
       });
-  };
-
-  const setActiveLine = (lineNo) => {
-    /* If lineNo sent, remove active line */
-    if (lineNo && editor.current.activeLineNo) {
-      editor.current.removeLineClass(
-        editor.current.activeLineNo, 'wrap', 'CodeMirror-activeline-background'
-      );
-    }
-
-    /* If lineNo not sent, set it to active line */
-    if (!lineNo && editor.current.activeLineNo) {
-      lineNo = editor.current.activeLineNo;
-    }
-
-    /* Set new active line only if positive */
-    if (lineNo > 0) {
-      editor.current.activeLineNo = lineNo;
-      editor.current.addLineClass(
-        editor.current.activeLineNo, 'wrap', 'CodeMirror-activeline-background'
-      );
-
-      /* centerOnLine is codemirror extension in bundle/codemirror.js */
-      editor.current.centerOnLine(editor.current.activeLineNo);
-    }
   };
 
   const selectFrame = (frameId) => {
@@ -330,11 +299,11 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         if (res.data.data.status) {
           editor.current.setValue(res.data.data.result[0].src);
           updateBreakpoint(params.transId, true);
-          setActiveLine(res.data.data.result[0].linenumber - 2);
+          editor.current.setActiveLine(res.data.data.result[0].linenumber - 1);
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while selecting frame.')
         );
@@ -353,12 +322,6 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         url: baseUrl,
         method: 'POST',
       })
-        .then(function (res) {
-          if (res.data.data.status) {
-            enableToolbarButtons();
-            pollResult(params.transId);
-          }
-        })
         .catch(raiseJSONError);
       enableToolbarButtons();
       pollResult(params.transId);
@@ -372,29 +335,31 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         url: baseUrl,
         method: 'POST',
       })
-        .then(function (res) {
-          if (res.data.data.status) {
-            messages(params.transId);
-          }
-        })
         .catch(raiseJSONError);
       messages(params.transId);
     }
-  }, []);
 
-  const setUnsetBreakpoint = (res, breakpoint_list) => {
-    if (res.data.data.status) {
-      for (let brk_val of breakpoint_list) {
-        let info = editor.current.lineInfo((brk_val - 1));
-
-        if (info) {
-          if (info.gutterMarkers != undefined) {
-            editor.current.setGutterMarker((brk_val - 1), 'breakpoints', null);
-          }
+    const closeConn = ()=>{
+      /* Using fetch with keepalive as the browser may
+      cancel the axios request on tab close. keepalive will
+      make sure the request is completed */
+      callFetch(
+        url_for('debugger.close', {
+          'trans_id': params.transId,
+        }), {
+          keepalive: true,
+          method: 'DELETE',
         }
-      }
-    }
-  };
+      )
+        .then(()=>{/* Success */})
+        .catch((err)=>console.error(err));
+    };
+    window.addEventListener('unload', closeConn);
+
+    return ()=>{
+      window.removeEventListener('unload', closeConn);
+    };
+  }, []);
 
   const triggerClearBreakpoint = () => {
     let clearBreakpoint = (br_list) => {
@@ -417,8 +382,8 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           'breakpoint_list': breakpoint_list.join(),
         },
       })
-        .then(function (res) {
-          setUnsetBreakpoint(res, breakpoint_list);
+        .then(function () {
+          editor.current.clearBreakpoints();
           enableToolbarButtons();
         })
         .catch(raiseClearBrekpointError);
@@ -444,63 +409,11 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
 
   };
 
-  const debuggerMark = () => {
-    let marker = document.createElement('div');
-    marker.style.color = '#822';
-    marker.innerHTML = '●';
-    return marker;
-  };
-
   const triggerToggleBreakpoint = () => {
     disableToolbarButtons();
-    let info = editor.current.lineInfo(editor.current.activeLineNo);
-    let baseUrl = '';
-
-    // If gutterMarker is undefined that means there is no marker defined previously
-    // So we need to set the breakpoint command here...
-    if (info.gutterMarkers == undefined) {
-      baseUrl = url_for('debugger.set_breakpoint', {
-        'trans_id': params.transId,
-        'line_no': editor.current.activeLineNo + 1,
-        'set_type': '1',
-      });
-    } else {
-      baseUrl = url_for('debugger.set_breakpoint', {
-        'trans_id': params.transId,
-        'line_no': editor.current.activeLineNo + 1,
-        'set_type': '0',
-      });
-    }
-
-    api({
-      url: baseUrl,
-      method: 'GET',
-    })
-      .then(function (res) {
-        if (res.data.data.status) {
-          // Call function to create and update local variables ....
-          let info_local = editor.current.lineInfo(editor.current.activeLineNo);
-
-          if (info_local.gutterMarkers != undefined) {
-            editor.current.setGutterMarker(editor.current.activeLineNo, 'breakpoints', null);
-          } else {
-            editor.current.setGutterMarker(editor.current.activeLineNo, 'breakpoints', debuggerMark());
-          }
-
-          enableToolbarButtons();
-        } else if (res.data.status === 'NotConnected') {
-          Notify.alert(
-            gettext('Debugger Error'),
-            gettext('Error while toggling breakpoint.')
-          );
-        }
-      })
-      .catch(function () {
-        Notify.alert(
-          gettext('Debugger Error'),
-          gettext('Error while toggling breakpoint.')
-        );
-      });
+    const lineNo = editor.current.getActiveLine();
+    editor.current.toggleBreakpoint(lineNo);
+    enableToolbarButtons();
   };
 
   const stopDebugging = () => {
@@ -518,7 +431,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
       .then(function (res) {
         if (res.data.data.status) {
           // Remove active time in the editor
-          setActiveLine(-1);
+          editor.current.setActiveLine(-1);
           // Clear timeout on stop debugger.
           clearTimeout(timeOut);
 
@@ -534,16 +447,16 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
 
           // Set the message to inform the user that execution
           // is completed.
-          Notify.success(res.data.info, 3000);
+          pgAdmin.Browser.notifier.success(res.data.info, 3000);
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while executing stop in debugging session.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while executing stop in debugging session.')
         );
@@ -616,22 +529,20 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
       url: base_url,
       method: 'POST',
     })
-      .then(function () {
-        if (params.directDebugger.debug_type) {
-          pollEndExecutionResult(params.transId);
-        }
-      })
       .catch(raisePollingError);
+    if (params.directDebugger.debug_type) {
+      pollEndExecutionResult(params.transId);
+    }
   }
 
   const pollEndExecuteError = (res) => {
     params.directDebugger.direct_execution_completed = true;
-    setActiveLine(-1);
+    editor.current.setActiveLine(-1);
 
     //Set the notification message to inform the user that execution is
     // completed with error.
     if (!params.directDebugger.is_user_aborted_debugging) {
-      Notify.error(res.data.info, 3000);
+      pgAdmin.Browser.notifier.error(res.data.info, 3000);
     }
 
     // Update the message tab of the debugger
@@ -652,7 +563,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
 
   const updateResultAndMessages = (res) => {
     if (res.data.data.result != null) {
-      setActiveLine(-1);
+      editor.current.setActiveLine(-1);
       // Call function to update results information and set result panel focus
       eventBus.current.fireEvent(DEBUGGER_EVENTS.SET_RESULTS, res.data.data.col_info, res.data.data.result);
       eventBus.current.fireEvent(DEBUGGER_EVENTS.FOCUS_PANEL, PANELS.RESULTS);
@@ -661,7 +572,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
       params.directDebugger.polling_timeout_idle = true;
 
       //Set the message to inform the user that execution is completed.
-      Notify.success(res.data.info, 3000);
+      pgAdmin.Browser.notifier.success(res.data.info, 3000);
 
       // Update the message tab of the debugger
       updateMessages(res.data.data.status_message);
@@ -721,14 +632,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
                 /*
                 "result" is undefined only in case of EDB procedure.
                 As Once the EDB procedure execution is completed then we are
-                not getting any result so we need ignore the result.
+                not getting any result so we need to ignore the result.
                 */
-                setActiveLine(-1);
+                editor.current.setActiveLine(-1);
                 params.directDebugger.direct_execution_completed = true;
                 params.directDebugger.polling_timeout_idle = true;
 
                 //Set the message to inform the user that execution is completed.
-                Notify.success(res.data.info, 3000);
+                pgAdmin.Browser.notifier.success(res.data.info, 3000);
 
                 // Update the message tab of the debugger
                 updateMessages(res.data.data.status_message);
@@ -751,7 +662,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
               // Update the message tab of the debugger
               updateMessages(res.data.data.status_message);
             } else if (res.data.status === 'NotConnected') {
-              Notify.alert(
+              pgAdmin.Browser.notifier.alert(
                 gettext('Debugger poll end execution error'),
                 res.data.result
               );
@@ -793,14 +704,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           if (res.data.data.status) {
             pollResult(params.transId);
           } else {
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Debugger Error'),
               gettext('Error while executing continue in debugging session.')
             );
           }
         })
         .catch(function () {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while executing continue in debugging session.')
           );
@@ -824,14 +735,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         if (res.data.data.status) {
           pollResult(params.transId);
         } else {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while executing step over in debugging session.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while executing step over in debugging session.')
         );
@@ -840,7 +751,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
   };
 
   const getBreakpointList = (br_list) => {
-    let breakpoint_list = new Array();
+    let breakpoint_list = [];
     for (let val of br_list) {
       if (val.linenumber != -1) {
         breakpoint_list.push(val.linenumber);
@@ -850,26 +761,9 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
     return breakpoint_list;
   };
 
-  // Function to get the latest breakpoint information and update the
-  // gutters of codemirror
+  // Function to get the latest breakpoint information
   const updateBreakpoint = (transId, updateLocalVar = false) => {
-    let callBackFunc = (br_list) => {
-      // If there is no break point to clear then we should return from here.
-      if ((br_list.length == 1) && (br_list[0].linenumber == -1))
-        return;
-
-      let breakpoint_list = getBreakpointList(br_list);
-
-
-      for (let brk_val of breakpoint_list) {
-        let info = editor.current.lineInfo((brk_val - 1));
-
-        if (info.gutterMarkers != undefined) {
-          editor.current.setGutterMarker((brk_val - 1), 'breakpoints', null);
-        } else {
-          editor.current.setGutterMarker((brk_val - 1), 'breakpoints', debuggerMark());
-        }
-      }
+    let callBackFunc = () => {
       if (updateLocalVar) {
         // Call function to create and update local variables ....
         getLocalVariables(params.transId);
@@ -912,14 +806,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
             params.directDebugger.debug_restarted = false;
           }
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while fetching variable information.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while fetching variable information.')
         );
@@ -944,14 +838,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           // Call function to create and update stack information
           getLocalVariables(params.transId);
         } else if (res.data.data.status === 'NotConnected') {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while fetching stack information.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while fetching stack information.')
         );
@@ -965,7 +859,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
       try {
         updateBreakpoint(transId);
       } catch (err) {
-        Notify.alert(gettext('Error in update'), err);
+        pgAdmin.Browser.notifier.alert(gettext('Error in update'), err);
       }
 
     }
@@ -974,7 +868,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
   const updateInfo = (res, transId) => {
     if (!params.directDebugger.debug_type && !params.directDebugger.first_time_indirect_debug) {
       setLoaderText('');
-      setActiveLine(-1);
+      editor.current.setActiveLine(-1);
       clearAllBreakpoint(transId);
 
       params.directDebugger.first_time_indirect_debug = true;
@@ -985,7 +879,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
       // If the source is really changed then only update the breakpoint information
       updateBreakpointInfo(res, transId);
 
-      setActiveLine(res.data.data.result[0].linenumber - 2);
+      editor.current.setActiveLine(res.data.data.result[0].linenumber - 1);
       // Update the stack, local variables and parameters information
       setTimeout(function () {
         getStackInformation(transId);
@@ -1059,7 +953,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
               params.directDebugger.polling_timeout_idle = true;
               checkDebuggerStatus(transId);
             } else if (res.data.data.status === 'NotConnected') {
-              Notify.alert(
+              pgAdmin.Browser.notifier.alert(
                 gettext('Debugger Error: poll_result'),
                 gettext('Error while polling result.')
               );
@@ -1085,14 +979,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
         if (res.data.data.status) {
           pollResult(params.transId);
         } else {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Debugger Error'),
             gettext('Error while executing step into in debugging session.')
           );
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while executing step into in debugging session.')
         );
@@ -1116,14 +1010,14 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           getLocalVariables(params.transId);
           // Show the message to the user that deposit value is success or failure
           if (res.data.data.result) {
-            Notify.success(res.data.data.info, 3000);
+            pgAdmin.Browser.notifier.success(res.data.data.info, 3000);
           } else {
-            Notify.error(res.data.data.info, 3000);
+            pgAdmin.Browser.notifier.error(res.data.data.info, 3000);
           }
         }
       })
       .catch(function () {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Error while depositing variable value.')
         );
@@ -1161,36 +1055,36 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
     });
 
     eventBus.current.registerListener(DEBUGGER_EVENTS.FOCUS_PANEL, (panelId) => {
-      LayoutHelper.focus(docker.current, panelId);
+      docker.current.focus(panelId);
     });
 
     eventBus.current.registerListener(
       DEBUGGER_EVENTS.TRIGGER_RESET_LAYOUT, () => {
         docker.current?.resetLayout();
       });
-
-
   }, []);
 
 
-  useEffect(() => {
-    reflectPreferences();
-    pgAdmin.Browser.onPreferencesChange('debugger', function () {
-      reflectPreferences();
-    });
-    // /* Clear the timeout if unmounted */
-    return () => {
-      clearTimeout(timeOut);
-    };
-  }, []);
+  useEffect(() => usePreferences.subscribe(
+    state => {
+      setPreferences({
+        browser: state.getPreferencesForModule('browser'),
+        debugger: state.getPreferencesForModule('debugger'),
+      });
+    }
+  ), []);
 
   const DebuggerContextValue = React.useMemo(() => ({
     docker: docker.current,
     api: api,
     modal: modal,
-    params: qtState.params,
-    preferences: qtState.preferences,
-  }), [qtState.params, qtState.preferences]);
+    params: {
+      ...params,
+      node_name: retrieveNodeName(selectedNodeInfo),
+    },
+    preferences: preferences,
+    containerRef: containerRef,
+  }), [preferences]);
 
   // Define the debugger layout components such as DebuggerEditor to show queries and
   let defaultLayout = {
@@ -1202,7 +1096,7 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           children: [
             {
               tabs: [
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.DEBUGGER, title: gettext('Debugger'), content: <DebuggerEditor getEditor={(edRef) => {
                     editor.current = edRef;
                   }} params={{ transId: params.transId, debuggerDirect: params.directDebugger }} />
@@ -1216,19 +1110,19 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
           children: [
             {
               tabs: [
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.PARAMETERS, title: gettext('Parameters'), content: <LocalVariablesAndParams type={1} />,
                 }),
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.LOCAL_VARIABLES, title: gettext('Local Variables'), content: <LocalVariablesAndParams type={2} />,
                 }),
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.MESSAGES, title: gettext('Messages'), content: <DebuggerMessages />,
                 }),
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.RESULTS, title: gettext('Result'), content: <Results />,
                 }),
-                LayoutHelper.getPanel({
+                LayoutDocker.getPanel({
                   id: PANELS.STACK, title: gettext('Stack'), content: <Stack />,
                 }),
               ],
@@ -1262,7 +1156,8 @@ export default function DebuggerComponent({ pgAdmin, selectedNodeInfo, panel, ev
 DebuggerComponent.propTypes = {
   pgAdmin: PropTypes.object,
   selectedNodeInfo: PropTypes.object,
-  panel: PropTypes.object,
+  panelId: PropTypes.string,
+  panelDocker: PropTypes.object,
   eventBusObj: PropTypes.object,
   layout: PropTypes.string,
   params: PropTypes.object

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -14,7 +14,7 @@ from functools import wraps
 
 import pgadmin.browser.server_groups.servers.databases as database
 from flask import render_template, make_response, request, jsonify
-from flask_babel import gettext as _
+from flask_babel import gettext
 from pgadmin.browser.server_groups.servers.databases.schemas.tables.\
     constraints.type import ConstraintRegistry, ConstraintTypeModule
 from pgadmin.browser.utils import PGChildNodeView
@@ -24,6 +24,8 @@ from pgadmin.browser.server_groups.servers.databases.schemas.tables.\
     constraints.exclusion_constraint import utils as exclusion_utils
 from pgadmin.utils.driver import get_driver
 from config import PG_DEFAULT_DRIVER
+from pgadmin.browser.server_groups.servers.databases.schemas.utils \
+    import check_pgstattuple
 
 
 class ExclusionConstraintModule(ConstraintTypeModule):
@@ -51,7 +53,7 @@ class ExclusionConstraintModule(ConstraintTypeModule):
     """
 
     _NODE_TYPE = 'exclusion_constraint'
-    _COLLECTION_LABEL = _("Exclusion Constraints")
+    _COLLECTION_LABEL = gettext("Exclusion Constraints")
 
     def __init__(self, *args, **kwargs):
         """
@@ -272,7 +274,7 @@ class ExclusionConstraintView(PGChildNodeView):
             return res
 
         if len(res) == 0:
-            return gone(_(
+            return gone(gettext(
                 """Could not find the exclusion constraint in the table."""
             ))
 
@@ -345,7 +347,7 @@ class ExclusionConstraintView(PGChildNodeView):
                                         self._PROPERTIES_SQL]),
                               did=did,
                               tid=tid)
-        status, res = self.conn.execute_dict(SQL)
+        _, res = self.conn.execute_dict(SQL)
 
         for row in res['rows']:
             row['_type'] = self.node_type
@@ -374,10 +376,11 @@ class ExclusionConstraintView(PGChildNodeView):
                                         self._NODES_SQL]),
                               tid=tid,
                               exid=exid)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         if len(rset['rows']) == 0:
-            return gone(_("""Could not find the exclusion constraint."""))
+            return gone(
+                gettext("""Could not find the exclusion constraint."""))
 
         res = self.blueprint.generate_browser_node(
             rset['rows'][0]['oid'],
@@ -411,7 +414,7 @@ class ExclusionConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path,
                                         self._NODES_SQL]),
                               tid=tid)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         for row in rset['rows']:
             res.append(
@@ -419,7 +422,8 @@ class ExclusionConstraintView(PGChildNodeView):
                     row['oid'],
                     tid,
                     row['name'],
-                    icon="icon-exclusion_constraint"
+                    icon="icon-exclusion_constraint",
+                    description=row['comment']
                 ))
         return make_json_response(
             data=res,
@@ -456,7 +460,7 @@ class ExclusionConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path,
                                         self._NODES_SQL]),
                               tid=tid)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         for row in rset['rows']:
             res.append(
@@ -528,7 +532,7 @@ class ExclusionConstraintView(PGChildNodeView):
             return make_json_response(
                 status=400,
                 success=0,
-                errormsg=_(
+                errormsg=gettext(
                     "Could not find required parameter ({})."
                 ).format(arg_missing)
             )
@@ -639,12 +643,17 @@ class ExclusionConstraintView(PGChildNodeView):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     exid,
                     tid,
                     name,
-                    icon="icon-%s" % self.node_type
+                    icon="icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
 
@@ -689,10 +698,10 @@ class ExclusionConstraintView(PGChildNodeView):
                 if not res['rows']:
                     return make_json_response(
                         success=0,
-                        errormsg=_(
+                        errormsg=gettext(
                             'Error: Object not found.'
                         ),
-                        info=_(
+                        info=gettext(
                             'The specified exclusion constraint could not '
                             'be found.\n'
                         )
@@ -712,7 +721,7 @@ class ExclusionConstraintView(PGChildNodeView):
 
             return make_json_response(
                 success=1,
-                info=_("Exclusion constraint dropped.")
+                info=gettext("Exclusion constraint dropped.")
             )
 
         except Exception as e:
@@ -750,7 +759,7 @@ class ExclusionConstraintView(PGChildNodeView):
         data['schema'] = self.schema
         data['table'] = self.table
         try:
-            sql, name = \
+            sql, _ = \
                 exclusion_utils.get_sql(self.conn, data, did, tid, exid)
             if not isinstance(sql, str):
                 return sql
@@ -789,7 +798,8 @@ class ExclusionConstraintView(PGChildNodeView):
             if not status:
                 return rows
             if len(rows) == 0:
-                return gone(_("Could not find the exclusion constraint."))
+                return gone(
+                    gettext("Could not find the exclusion constraint."))
 
             data = rows[0]
             data['schema'] = self.schema
@@ -829,13 +839,7 @@ class ExclusionConstraintView(PGChildNodeView):
         Returns the statistics for a particular object if cid is specified
         """
 
-        # Check if pgstattuple extension is already created?
-        # if created then only add extended stats
-        status, is_pgstattuple = self.conn.execute_scalar("""
-        SELECT (pg_catalog.count(extname) > 0) AS is_pgstattuple
-        FROM pg_catalog.pg_extension
-        WHERE extname='pgstattuple'
-        """)
+        status, is_pgstattuple = check_pgstattuple(self.conn, tid)
         if not status:
             return internal_server_error(errormsg=is_pgstattuple)
 
@@ -848,7 +852,8 @@ class ExclusionConstraintView(PGChildNodeView):
             if not status:
                 return internal_server_error(errormsg=result)
             if len(result['rows']) == 0:
-                return gone(_("Could not find the exclusion constraint."))
+                return gone(
+                    gettext("Could not find the exclusion constraint."))
 
             data = result['rows'][0]
             name = data['name']

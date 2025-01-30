@@ -2,22 +2,19 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
 """Implements Functions/Procedures Node."""
 
-import copy
 import re
 import sys
-import traceback
 from functools import wraps
 
 import json
-from flask import render_template, request, jsonify, \
-    current_app
+from flask import render_template, request, jsonify
 from flask_babel import gettext
 
 from pgadmin.browser.server_groups.servers import databases
@@ -34,6 +31,8 @@ from pgadmin.tools.schema_diff.node_registry import SchemaDiffRegistry
 from pgadmin.utils.ajax import make_json_response, internal_server_error, \
     make_response as ajax_response, gone
 from pgadmin.utils.driver import get_driver
+from pgadmin.browser.server_groups.servers.databases.schemas.functions.utils \
+    import format_arguments_from_db
 
 
 class FunctionModule(SchemaChildModule):
@@ -81,7 +80,9 @@ class FunctionModule(SchemaChildModule):
         """
         Generate Functions collection node.
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=FunctionView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -185,7 +186,7 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
     """
 
     node_type = blueprint.node_type
-
+    BASE_TEMPLATE_PATH = 'functions/{0}/sql/#{1}#'
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
         {'type': 'int', 'id': 'sid'},
@@ -351,21 +352,9 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             self.qtIdent = driver.qtIdent
             self.qtLiteral = driver.qtLiteral
 
-            template_initial = None
-            if self.node_type == 'function':
-                template_initial = 'functions'
-            elif self.node_type == 'procedure':
-                template_initial = 'procedures'
-            elif self.node_type == 'trigger_function':
-                template_initial = 'trigger_functions'
-
             # Set the template path for the SQL scripts
-            self.sql_template_path = "/".join([
-                template_initial,
-                self.manager.server_type,
-                'sql',
-                '#{0}#'
-            ]).format(self.manager.version)
+            self.sql_template_path = self.BASE_TEMPLATE_PATH.format(
+                self.manager.server_type, self.manager.version)
 
             return f(*args, **kwargs)
 
@@ -435,7 +424,8 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     row['name'],
                     icon="icon-" + self.node_type,
                     funcowner=row['funcowner'],
-                    language=row['lanname']
+                    language=row['lanname'],
+                    description=row['description']
                 )
             )
 
@@ -447,7 +437,8 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     row['name'],
                     icon="icon-" + self.node_type,
                     funcowner=row['funcowner'],
-                    language=row['lanname']
+                    language=row['lanname'],
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -482,235 +473,6 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             response=resp_data,
             status=200
         )
-
-    def _get_argument_values(self, data):
-        """
-        This function is used to get the argument values for
-        function/procedure.
-        :param data:
-        :return:
-        """
-        proargtypes = [ptype for ptype in data['proargtypenames'].split(",")] \
-            if data['proargtypenames'] else []
-        proargmodes = data['proargmodes'] if data['proargmodes'] else \
-            ['i'] * len(proargtypes)
-        proargnames = data['proargnames'] if data['proargnames'] else []
-        proargdefaultvals = re.split(
-            r',(?=(?:[^\"\']*[\"\'][^\"\']*[\"\'])*[^\"\']*$)',
-            data['proargdefaultvals']) if data['proargdefaultvals'] else []
-        proallargtypes = data['proallargtypes'] \
-            if data['proallargtypes'] else []
-
-        return {'proargtypes': proargtypes, 'proargmodes': proargmodes,
-                'proargnames': proargnames,
-                'proargdefaultvals': proargdefaultvals,
-                'proallargtypes': proallargtypes}
-
-    def _params_list_for_display(self, proargmodes_fltrd, proargtypes,
-                                 proargnames, proargdefaultvals):
-        """
-        This function is used to prepare dictionary of arguments to
-        display on UI.
-        :param proargmodes_fltrd:
-        :param proargtypes:
-        :param proargnames:
-        :param proargdefaultvals:
-        :return:
-        """
-        # Insert null value against the parameters which do not have
-        # default values.
-        if len(proargmodes_fltrd) > len(proargdefaultvals):
-            dif = len(proargmodes_fltrd) - len(proargdefaultvals)
-            while dif > 0:
-                proargdefaultvals.insert(0, '')
-                dif -= 1
-
-        param = {"arguments": [
-            self._map_arguments_dict(
-                i, proargmodes_fltrd[i] if len(proargmodes_fltrd) > i else '',
-                proargtypes[i] if len(proargtypes) > i else '',
-                proargnames[i] if len(proargnames) > i else '',
-                proargdefaultvals[i] if len(proargdefaultvals) > i else ''
-            )
-            for i in range(len(proargtypes))]}
-        return param
-
-    def _display_properties_argument_list(self, proargmodes_fltrd,
-                                          proargtypes, proargnames,
-                                          proargdefaultvals):
-        """
-        This function is used to prepare list of arguments to display on UI.
-        :param proargmodes_fltrd:
-        :param proargtypes:
-        :param proargnames:
-        :param proargdefaultvals:
-        :return:
-        """
-        proargs = [self._map_arguments_list(
-            proargmodes_fltrd[i] if len(proargmodes_fltrd) > i else '',
-            proargtypes[i] if len(proargtypes) > i else '',
-            proargnames[i] if len(proargnames) > i else '',
-            proargdefaultvals[i] if len(proargdefaultvals) > i else ''
-        )
-            for i in range(len(proargtypes))]
-
-        return proargs
-
-    def _format_arguments_from_db(self, data):
-        """
-        Create Argument list of the Function.
-
-        Args:
-            data: Function Data
-
-        Returns:
-            Function Arguments in the following format.
-                [
-                {'proargtypes': 'integer', 'proargmodes: 'IN',
-                'proargnames': 'column1', 'proargdefaultvals': 1}, {...}
-                ]
-            Where
-                Arguments:
-                    # proargtypes: Argument Types (Data Type)
-                    # proargmodes: Argument Modes [IN, OUT, INOUT, VARIADIC]
-                    # proargnames: Argument Name
-                    # proargdefaultvals: Default Value of the Argument
-        """
-        arguments = self._get_argument_values(data)
-        proargtypes = arguments['proargtypes']
-        proargmodes = arguments['proargmodes']
-        proargnames = arguments['proargnames']
-        proargdefaultvals = arguments['proargdefaultvals']
-        proallargtypes = arguments['proallargtypes']
-
-        proargmodenames = {
-            'i': 'IN', 'o': 'OUT', 'b': 'INOUT', 'v': 'VARIADIC', 't': 'TABLE'
-        }
-
-        # We need to put default parameter at proper location in list
-        # Total number of default parameters
-        total_default_parameters = len(proargdefaultvals)
-
-        # Total number of parameters
-        total_parameters = len(proargtypes)
-
-        # Parameters which do not have default parameters
-        non_default_parameters = total_parameters - total_default_parameters
-
-        # only if we have at least one parameter with default value
-        if total_default_parameters > 0 and non_default_parameters > 0:
-            for idx in range(non_default_parameters):
-                # Set null value for parameter non-default parameter
-                proargdefaultvals.insert(idx, '')
-
-        # The proargtypes doesn't give OUT params, so we need to fetch
-        # those from database explicitly, below code is written for this
-        # purpose.
-        #
-        # proallargtypes gives all the Function's argument including OUT,
-        # but we have not used that column; as the data type of this
-        # column (i.e. oid[]) is not supported by oidvectortypes(oidvector)
-        # function which we have used to fetch the datatypes
-        # of the other parameters.
-
-        proargmodes_fltrd = copy.deepcopy(proargmodes)
-        proargnames_fltrd = []
-        cnt = 0
-        for m in proargmodes:
-            if m == 'o':  # Out Mode
-                sql = render_template("/".join([self.sql_template_path,
-                                                'get_out_types.sql']),
-                                      out_arg_oid=proallargtypes[cnt])
-                status, out_arg_type = self.conn.execute_scalar(sql)
-                if not status:
-                    return internal_server_error(errormsg=out_arg_type)
-
-                # Insert out parameter datatype
-                proargtypes.insert(cnt, out_arg_type)
-                proargdefaultvals.insert(cnt, '')
-            elif m == 'v':  # Variadic Mode
-                proargdefaultvals.insert(cnt, '')
-            elif m == 't':  # Table Mode
-                proargmodes_fltrd.remove(m)
-                proargnames_fltrd.append(proargnames[cnt])
-
-            cnt += 1
-
-        cnt = 0
-        # Map param's short form to its actual name. (ex: 'i' to 'IN')
-        for m in proargmodes_fltrd:
-            proargmodes_fltrd[cnt] = proargmodenames[m]
-            cnt += 1
-
-        # Removes Argument Names from the list if that argument is removed
-        # from the list
-        for i in proargnames_fltrd:
-            proargnames.remove(i)
-
-        # Prepare list of Argument list dict to be displayed in the Data Grid.
-        params = self._params_list_for_display(proargmodes_fltrd, proargtypes,
-                                               proargnames, proargdefaultvals)
-
-        # Prepare string formatted Argument to be displayed in the Properties
-        # panel.
-        proargs = self._display_properties_argument_list(proargmodes_fltrd,
-                                                         proargtypes,
-                                                         proargnames,
-                                                         proargdefaultvals)
-
-        proargs = {"proargs": ", ".join(proargs)}
-
-        return params, proargs
-
-    def _map_arguments_dict(self, argid, argmode, argtype, argname, argdefval):
-        """
-        Returns Dict of formatted Arguments.
-        Args:
-            argid: Argument Sequence Number
-            argmode: Argument Mode
-            argname: Argument Name
-            argtype: Argument Type
-            argdef: Argument Default Value
-        """
-        # The pg_get_expr(proargdefaults, 'pg_catalog.pg_class'::regclass) SQL
-        # statement gives us '-' as a default value for INOUT mode.
-        # so, replacing it with empty string.
-        if argmode == 'INOUT' and argdefval.strip() == '-':
-            argdefval = ''
-
-        return {"argid": argid,
-                "argtype": argtype.strip() if argtype is not None else '',
-                "argmode": argmode,
-                "argname": argname,
-                "argdefval": argdefval}
-
-    def _map_arguments_list(self, argmode, argtype, argname, argdef):
-        """
-        Returns List of formatted Arguments.
-        Args:
-            argmode: Argument Mode
-            argname: Argument Name
-            argtype: Argument Type
-            argdef: Argument Default Value
-        """
-        # The pg_get_expr(proargdefaults, 'pg_catalog.pg_class'::regclass) SQL
-        # statement gives us '-' as a default value for INOUT mode.
-        # so, replacing it with empty string.
-        if argmode == 'INOUT' and argdef.strip() == '-':
-            argdef = ''
-
-        arg = ''
-
-        if argmode:
-            arg += argmode + " "
-        if argname:
-            arg += argname + " "
-        if argtype:
-            arg += argtype + " "
-        if argdef:
-            arg += " DEFAULT " + argdef
-
-        return arg.strip(" ")
 
     def _format_proacl_from_db(self, proacl):
         """
@@ -770,7 +532,7 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
             fnid: Function Id
         """
 
-        res = [{'label': '', 'value': ''}]
+        res = []
         try:
             sql = render_template("/".join([self.sql_template_path,
                                             'get_languages.sql'])
@@ -786,7 +548,7 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                 status=200
             )
         except Exception:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
+            _, exc_value, _ = sys.exc_info()
             return internal_server_error(errormsg=str(exc_value))
 
     @check_precondition
@@ -977,7 +739,8 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     obj_name,
                     icon="icon-" + self.node_type,
                     language=resp_data['lanname'],
-                    funcowner=resp_data['funcowner']
+                    funcowner=resp_data['funcowner'],
+                    description=resp_data['description']
                 )
             )
         else:
@@ -1588,7 +1351,9 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
         resp_data = res['rows'][0]
 
         # Get formatted Arguments
-        frmtd_params, frmtd_proargs = self._format_arguments_from_db(resp_data)
+        frmtd_params, frmtd_proargs = (
+            format_arguments_from_db(self.sql_template_path, self.conn,
+                                     resp_data))
         resp_data.update(frmtd_params)
         resp_data.update(frmtd_proargs)
 
@@ -1756,23 +1521,18 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
         if len(res['rows']) == 0:
             return gone(gettext("The specified function could not be found."))
 
+        # Fetch only arguments
+        arg_string = res['rows'][0]['func_with_identity_arguments']
+        # Split argument by comma, Remove unwanted spaces and,
+        # format argument like "\n\t <args>"
+        args = ','.join(
+            ['\n\t<' + arg.strip(' ') + '>' for arg in arg_string.split(',')]
+        ) + '\n' if len(arg_string) > 0 else ''
+
         name = self.qtIdent(
             self.conn, res['rows'][0]['nspname'],
             res['rows'][0]['proname']
-        ) + '(' + res['rows'][0]['func_with_identity_arguments'] + ')'
-
-        # Fetch only arguments
-        arg_string = name[name.rfind('('):].strip('(').strip(')')
-        if len(arg_string) > 0:
-            args = arg_string.split(',')
-            # Remove unwanted spaces from arguments
-            args = [arg.strip(' ') for arg in args]
-
-            # Remove duplicate and then format arguments
-            for arg in list(set(args)):
-                formatted_arg = '\n\t<' + arg + '>'
-                name = name.replace(arg, formatted_arg)
-            name = name.replace(')', '\n)')
+        ) + '(' + args + ')'
 
         sql = "SELECT {0}".format(name)
 
@@ -1801,22 +1561,18 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                 resp_data['pronamespace']
             )
 
-        name = resp_data['pronamespace'] + "." + resp_data['name_with_args']
-
         # Fetch only arguments
-        if name.rfind('(') != -1:
-            args = name[name.rfind('('):].strip('(').strip(')').split(',')
-            # Remove unwanted spaces from arguments
-            args = [arg.strip(' ') for arg in args]
+        arg_string = resp_data['proargs']
+        # Split argument by comma, Remove unwanted spaces and,
+        # format argument like "\n\t <args>"
+        args = ','.join(
+            ['\n\t<' + arg.strip(' ') + '>' for arg in arg_string.split(',')]
+        ) + '\n' if len(arg_string) > 0 else ''
 
-            # Remove duplicate and then format arguments
-            for arg in list(set(args)):
-                formatted_arg = '\n\t<' + arg + '>'
-                name = name.replace(arg, formatted_arg)
-
-            name = name.replace(')', '\n)')
-        else:
-            name += '()'
+        name = self.qtIdent(
+            self.conn, resp_data['pronamespace'],
+            resp_data['proname']
+        ) + '(' + args + ')'
 
         if self.manager.server_type == 'pg':
             sql = "CALL {0}".format(name)
@@ -1890,10 +1646,10 @@ class FunctionView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
         if data:
             if target_schema:
                 data['schema'] = target_schema
-            status, sql = self._get_sql(gid=gid, sid=sid, did=did, scid=scid,
-                                        data=data, fnid=oid, is_sql=False,
-                                        is_schema_diff=True,
-                                        allow_code_formatting=False)
+            _, sql = self._get_sql(gid=gid, sid=sid, did=did, scid=scid,
+                                   data=data, fnid=oid, is_sql=False,
+                                   is_schema_diff=True,
+                                   allow_code_formatting=False)
             # Check if return type is changed then we need to drop the
             # function first and then recreate it.
             if 'prorettypename' in data:
@@ -2071,7 +1827,9 @@ class ProcedureModule(SchemaChildModule):
         """
         Generate Procedures collection node.
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=ProcedureView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -2096,6 +1854,7 @@ procedure_blueprint = ProcedureModule(__name__)
 
 class ProcedureView(FunctionView):
     node_type = procedure_blueprint.node_type
+    BASE_TEMPLATE_PATH = 'procedures/{0}/sql/#{1}#'
 
     def __init__(self, *args, **kwargs):
         """
@@ -2169,7 +1928,10 @@ class TriggerFunctionModule(SchemaChildModule):
         """
         Generate Trigger function collection node.
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(
+            sid, did, scid,
+                base_template_path=TriggerFunctionView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -2194,6 +1956,7 @@ trigger_function_blueprint = TriggerFunctionModule(__name__)
 
 class TriggerFunctionView(FunctionView):
     node_type = trigger_function_blueprint.node_type
+    BASE_TEMPLATE_PATH = 'trigger_functions/{0}/sql/#{1}#'
 
     def __init__(self, *args, **kwargs):
         """

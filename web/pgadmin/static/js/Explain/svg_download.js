@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -10,12 +10,12 @@ import getApiInstance from '../api_instance';
 
 function convertImageURLtoDataURI(api, image) {
   return new Promise(function(resolve, reject) {
-    let href = image.getAttribute('href') || image.getAttributeNS('https://www.w3.org/1999/xlink', 'href');
+    let href = image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
     api.get(href).then(({data})=>{
       image.setAttribute('href', 'data:image/svg+xml;base64,'+window.btoa(data));
       resolve();
     }).catch(()=>{
-      reject();
+      reject(new Error(null));
     });
   });
 }

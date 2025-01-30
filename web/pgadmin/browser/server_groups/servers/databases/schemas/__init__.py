@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -85,7 +85,11 @@ class SchemaModule(CollectionNodeModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(did)
+        if self.has_nodes(
+            sid, did,
+            base_template_path=SchemaView.BASE_TEMPLATE_PATH +
+                '/' + SchemaView._SQL_PREFIX):
+            yield self.generate_browser_collection_node(did)
 
     @property
     def script_load(self):
@@ -188,6 +192,12 @@ class CatalogModule(SchemaModule):
         """
         super().register(app, options)
 
+    def get_nodes(self, gid, sid, did):
+        """
+        Generate the collection node
+        """
+        yield self.generate_browser_collection_node(did)
+
 
 schema_blueprint = SchemaModule(__name__)
 catalog_blueprint = CatalogModule(__name__)
@@ -224,11 +234,8 @@ def check_precondition(f):
                 kwargs['did']]['datistemplate']
 
         # Set the template path for the SQL scripts
-        if self.manager.server_type == 'ppas':
-            _temp = self.ppas_template_path(self.manager.version)
-        else:
-            _temp = self.pg_template_path(self.manager.version)
-        self.template_path = self.template_initial + '/' + _temp
+        self.template_path = self.BASE_TEMPLATE_PATH.format(
+            self.manager.server_type, self.manager.version)
 
         return f(*args, **kwargs)
 
@@ -286,6 +293,7 @@ class SchemaView(PGChildNodeView):
     node_type = schema_blueprint.node_type
     _SQL_PREFIX = 'sql/'
     node_icon = 'icon-%s' % node_type
+    BASE_TEMPLATE_PATH = 'schemas/{0}/#{1}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -322,7 +330,6 @@ class SchemaView(PGChildNodeView):
         self.manager = None
         self.conn = None
         self.template_path = None
-        self.template_initial = 'schemas'
 
     @staticmethod
     def ppas_template_path(ver):
@@ -540,7 +547,8 @@ class SchemaView(PGChildNodeView):
                     row['name'],
                     icon=self.node_icon,
                     can_create=row['can_create'],
-                    has_usage=row['has_usage']
+                    has_usage=row['has_usage'],
+                    description=row['description']
                 ),
                 status=200
             )
@@ -553,7 +561,8 @@ class SchemaView(PGChildNodeView):
                     row['name'],
                     icon=self.node_icon,
                     can_create=row['can_create'],
-                    has_usage=row['has_usage']
+                    has_usage=row['has_usage'],
+                    description=row['description']
                 )
             )
 
@@ -673,7 +682,7 @@ It may have been removed by another user.
                 if k in ('comment',):
                     data[k] = v
                 else:
-                    data[k] = json.loads(v, encoding='utf-8')
+                    data[k] = json.loads(v)
             except (ValueError, TypeError, KeyError):
                 data[k] = v
 
@@ -750,12 +759,17 @@ It may have been removed by another user.
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     scid,
                     did,
                     name,
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -851,7 +865,7 @@ It may have been removed by another user.
                 data[k] = v
 
         try:
-            SQL, name = self.get_sql(gid, sid, data, scid)
+            SQL, _ = self.get_sql(gid, sid, data, scid)
             if SQL and SQL.strip('\n') and SQL.strip(' '):
                 return make_json_response(
                     data=SQL.strip('\n'),
@@ -1064,6 +1078,7 @@ class CatalogView(SchemaView):
     """
 
     node_type = catalog_blueprint.node_type
+    BASE_TEMPLATE_PATH = 'catalog/{0}/#{1}#'
 
     def __init__(self, *args, **kwargs):
         """
@@ -1071,8 +1086,6 @@ class CatalogView(SchemaView):
         """
 
         super().__init__(*args, **kwargs)
-
-        self.template_initial = 'catalog'
 
     def _formatter(self, data, scid=None):
 

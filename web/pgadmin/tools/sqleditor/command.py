@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -17,7 +17,7 @@ from werkzeug.exceptions import InternalServerError
 from pgadmin.utils.ajax import forbidden
 from pgadmin.utils.driver import get_driver
 from pgadmin.tools.sqleditor.utils.is_query_resultset_updatable \
-    import is_query_resultset_updatable
+    import is_query_resultset_updatable, _check_single_table
 from pgadmin.tools.sqleditor.utils.save_changed_data import save_changed_data
 from pgadmin.tools.sqleditor.utils.get_column_types import get_columns_types
 from pgadmin.utils.preferences import Preferences
@@ -364,6 +364,8 @@ class GridCommand(BaseCommand, SQLFilter, FetchedRowTracker):
         if self.cmd_type in (VIEW_FIRST_100_ROWS, VIEW_LAST_100_ROWS):
             self.limit = 100
 
+        self.thread_native_id = None
+
     def get_primary_keys(self, *args, **kwargs):
         return None, None
 
@@ -394,7 +396,9 @@ class GridCommand(BaseCommand, SQLFilter, FetchedRowTracker):
             # Fetch the rest of the column names
             query = render_template(
                 "/".join([self.sql_path, 'get_columns.sql']),
-                obj_id=self.obj_id
+                table_name=self.object_name,
+                table_nspname=self.nsp_name,
+                conn=conn,
             )
             status, result = conn.execute_dict(query)
             if not status:
@@ -439,6 +443,12 @@ class GridCommand(BaseCommand, SQLFilter, FetchedRowTracker):
         else:
             return 'asc'
 
+    def get_thread_native_id(self):
+        return self.thread_native_id
+
+    def set_thread_native_id(self, thread_native_id):
+        self.thread_native_id = thread_native_id
+
 
 class TableCommand(GridCommand):
     """
@@ -472,7 +482,7 @@ class TableCommand(GridCommand):
         """
 
         # Fetch the primary keys for the table
-        pk_names, primary_keys = self.get_primary_keys(default_conn)
+        _, primary_keys = self.get_primary_keys(default_conn)
 
         # Fetch OIDs status
         has_oids = self.has_oids(default_conn)
@@ -532,7 +542,9 @@ class TableCommand(GridCommand):
             # Fetch the primary key column names
             query = render_template(
                 "/".join([self.sql_path, 'primary_keys.sql']),
-                obj_id=self.obj_id
+                table_name=self.object_name,
+                table_nspname=self.nsp_name,
+                conn=conn,
             )
 
             status, result = conn.execute_dict(query)
@@ -554,58 +566,23 @@ class TableCommand(GridCommand):
     def get_all_columns_with_order(self, default_conn=None):
         """
         It is overridden method specially for Table because we all have to
-        fetch primary keys and rest of the columns both.
+        fetch primary keys.
 
         Args:
             default_conn: Connection object
 
         Returns:
             all_sorted_columns: Sorted columns for the Grid
-            all_columns: List of columns for the select2 options
         """
-        driver = get_driver(PG_DEFAULT_DRIVER)
-        if default_conn is None:
-            manager = driver.connection_manager(self.sid)
-            conn = manager.connection(did=self.did, conn_id=self.conn_id)
-        else:
-            conn = default_conn
 
         all_sorted_columns = []
         data_sorting = self.get_data_sorting()
-        all_columns = []
-        # Fetch the primary key column names
-        query = render_template(
-            "/".join([self.sql_path, 'primary_keys.sql']),
-            obj_id=self.obj_id
-        )
 
-        status, result = conn.execute_dict(query)
-
-        if not status:
-            raise ExecuteError(result)
-
-        for row in result['rows']:
-            all_columns.append(row['attname'])
-
-        # Fetch the rest of the column names
-        query = render_template(
-            "/".join([self.sql_path, 'get_columns.sql']),
-            obj_id=self.obj_id
-        )
-        status, result = conn.execute_dict(query)
-        if not status:
-            raise ExecuteError(result)
-
-        for row in result['rows']:
-            # Only append if not already present in the list
-            if row['attname'] not in all_columns:
-                all_columns.append(row['attname'])
-
-        # If user has custom data sorting then pass as it as it is
+        # If user has custom data sorting then pass as it is
         if data_sorting and len(data_sorting) > 0:
             all_sorted_columns = data_sorting
 
-        return all_sorted_columns, all_columns
+        return all_sorted_columns
 
     def can_edit(self):
         return True
@@ -677,12 +654,21 @@ class TableCommand(GridCommand):
     def get_columns_types(self, conn):
         columns_info = conn.get_column_info()
         has_oids = self.has_oids()
-        table_oid = self.obj_id
+        table_name = None
+        table_nspname = None
+        table_oid = _check_single_table(columns_info)
+        if table_oid is None:
+            table_name = self.object_name
+            table_nspname = self.nsp_name
+
         return get_columns_types(conn=conn,
                                  columns_info=columns_info,
                                  has_oids=has_oids,
                                  table_oid=table_oid,
-                                 is_query_tool=False)
+                                 is_query_tool=False,
+                                 table_name=table_name,
+                                 table_nspname=table_nspname,
+                                 )
 
 
 class ViewCommand(GridCommand):
@@ -863,6 +849,8 @@ class QueryToolCommand(BaseCommand, FetchedRowTracker):
         FetchedRowTracker.__init__(self, **kwargs)
 
         self.conn_id = kwargs['conn_id'] if 'conn_id' in kwargs else None
+        self.conn_id_ac = kwargs['conn_id_ac'] if 'conn_id_ac' in kwargs\
+            else None
         self.auto_rollback = False
         self.auto_commit = True
 
@@ -872,6 +860,7 @@ class QueryToolCommand(BaseCommand, FetchedRowTracker):
         self.pk_names = None
         self.table_has_oids = False
         self.columns_types = None
+        self.thread_native_id = None
 
     def get_sql(self, default_conn=None):
         return None
@@ -964,6 +953,9 @@ class QueryToolCommand(BaseCommand, FetchedRowTracker):
     def set_connection_id(self, conn_id):
         self.conn_id = conn_id
 
+    def set_connection_id_ac(self, conn_id):
+        self.conn_id_ac = conn_id
+
     def set_auto_rollback(self, auto_rollback):
         self.auto_rollback = auto_rollback
 
@@ -991,3 +983,9 @@ class QueryToolCommand(BaseCommand, FetchedRowTracker):
             self.object_name = result['rows'][0]['relname']
         else:
             raise InternalServerError(SERVER_CONNECTION_CLOSED)
+
+    def get_thread_native_id(self):
+        return self.thread_native_id
+
+    def set_thread_native_id(self, thread_native_id):
+        self.thread_native_id = thread_native_id

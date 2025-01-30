@@ -35,6 +35,9 @@ Click the *Definition* tab to continue.
 
 Use the fields in the *Definition* tab to define the sequence:
 
+* Use the *Current Value* field to specify the sequence object\'s current value.
+  The next nextval will return exactly the specified value, and sequence advancement
+  commences with the following nextval. *This field is only available in the edit mode*.
 * Use the *Increment* field to specify which value is added to the current
   sequence value to create a new value.
 * Provide a value in the *Start* field to specify the beginning value of the
@@ -52,10 +55,12 @@ Use the fields in the *Definition* tab to define the sequence:
   to be preallocated and stored in memory for faster access. The minimum value
   is 1 (only one value can be generated at a time, i.e., no cache), and this is
   also the default.
-* Move the *Cycled* switch to the *Yes* position to allow the sequence to wrap
+* Move the switch next to *Cycled* towards the *right position* to allow the sequence to wrap
   around when the MAXVALUE or the MINVALUE has been reached by an ascending or
   descending sequence respectively. If the limit is reached, the next number
   generated will be the MINVALUE or MAXVALUE, respectively. The default is *No*.
+* Move the switch next to *Unlogged?* towards the *right position* to make the sequence Unlogged.
+  The default is *No*. This option is available only on PostgreSQL 15 and above.
 * The *OWNED BY* option causes the sequence to be associated with a specific
   table column, such that if that column (or its whole table) is dropped, the
   sequence will be automatically dropped as well. The specified table must have

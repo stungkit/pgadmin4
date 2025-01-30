@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -28,7 +28,7 @@ class ProcedureExecSQLTestCase(BaseTestGenerator):
         ('Fetch Procedure with arguments SQL to execute', dict(
             url='/browser/procedure/exec_sql/', with_args=True,
             args="arg1 bigint",
-            expected_sql="{0} {1}.{2}( <arg1 bigint> )"))
+            expected_sql="{0} {1}.{2}( <IN arg1 bigint> )"))
     ]
 
     def runTest(self):
@@ -40,9 +40,6 @@ class ProcedureExecSQLTestCase(BaseTestGenerator):
                 self.server_version < 110000:
             message = "Procedures are not supported by PG < 110000."
             self.skipTest(message)
-
-        if self.with_args and self.server_version >= 140000:
-            self.expected_sql = "{0} {1}.{2}( <IN arg1 bigint> )"
 
         proc_name = "test_procedure_exec_sql_%s" % str(uuid.uuid4())[1:8]
         proc_info = funcs_utils.create_procedure(
@@ -60,7 +57,7 @@ class ProcedureExecSQLTestCase(BaseTestGenerator):
         exec_sql = json.loads(exec_response.data.decode('utf-8'))
 
         # Replace multiple spaces with one space and check the expected sql
-        sql = re.sub('\s+', ' ', exec_sql).strip()
+        sql = re.sub(r'\s+', ' ', exec_sql).strip()
 
         # Verify the expected EXEC SQL
         if self.server_type == "pg":

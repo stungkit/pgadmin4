@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -26,7 +26,7 @@ def load_providers():
 
         if os.path.isfile(filename):
             basename = os.path.basename(filename)
-            base, extension = os.path.splitext(basename)
+            _, extension = os.path.splitext(basename)
 
             if extension == ".py" and not basename.startswith("_"):
                 module = __import__("providers." + basename[:-3],

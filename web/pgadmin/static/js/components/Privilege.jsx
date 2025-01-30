@@ -2,33 +2,29 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-
-import { makeStyles } from '@material-ui/core';
+import { styled } from '@mui/material/styles';
 import _ from 'lodash';
 import React from 'react';
 import { InputCheckbox, InputText } from './FormComponents';
-import clsx from 'clsx';
 import PropTypes from 'prop-types';
 
-const useStyles = makeStyles(()=>({
+const Root = styled('div')(()=>({
   /* Display the privs table only when focussed */
-  root: {
-    '&:not(:focus-within) .priv-table': {
-      display: 'none',
-    }
+  '&:not(:focus-within) .priv-table': {
+    display: 'none',
   },
-  table: {
+  '& .Privilege-table': {
     borderSpacing: 0,
     width: '100%',
     fontSize: '0.8em',
+    '& .Privilege-tableCell': {
+      textAlign: 'left',
+    }
   },
-  tableCell: {
-    textAlign: 'left',
-  }
 }));
 
 export default function Privilege({value, onChange, controlProps}) {
@@ -47,10 +43,11 @@ export default function Privilege({value, onChange, controlProps}) {
     't': 'TRIGGER',
     'U': 'USAGE',
     'X': 'EXECUTE',
+    'm': 'MAINTAIN',
   };
   let all = false;
   let allWithGrant = false;
-  const classes = useStyles();
+
   let textValue = '';
   for(const v of value||[]) {
     if(v.privilege) {
@@ -129,16 +126,16 @@ export default function Privilege({value, onChange, controlProps}) {
   allWithGrant = (realVal.length === (value || []).length) && (value || []).every((d)=>d.with_grant);
 
   return (
-    <div className={classes.root}>
+    <Root>
       <InputText value={textValue} readOnly/>
-      <table className={clsx(classes.table, 'priv-table')} tabIndex="0">
+      <table className={'Privilege-table priv-table'} tabIndex="-1">
         {(realVal.length > 1) && <thead>
           <tr>
-            <td className={classes.tableCell}>
+            <td className='Privilege-tableCell'>
               <InputCheckbox name="all" controlProps={{label: 'ALL'}} id={checkboxId} size="small"
                 onChange={(e)=>onCheckAll(e, false)} value={all}/>
             </td>
-            <td className={classes.tableCell}>
+            <td className='Privilege-tableCell'>
               <InputCheckbox name="all" controlProps={{label: 'WITH GRANT OPTION'}} id={checkboxId} size="small"
                 disabled={!all} onChange={(e)=>onCheckAll(e, true)} value={allWithGrant}/>
             </td>
@@ -149,12 +146,12 @@ export default function Privilege({value, onChange, controlProps}) {
             realVal.map((d)=>{
               return (
                 <tr key={d.privilege_type}>
-                  <td className={classes.tableCell}>
+                  <td className='Privilege-tableCell'>
                     <InputCheckbox name={d.privilege_type} controlProps={{label: LABELS[d.privilege_type]}}
                       id={checkboxId} value={Boolean(d.privilege)} size="small"
                       onChange={(e)=>onCheck(e, false)}/>
                   </td>
-                  <td className={classes.tableCell}>
+                  <td className='Privilege-tableCell'>
                     <InputCheckbox name={d.privilege_type} controlProps={{label: 'WITH GRANT OPTION'}}
                       id={checkboxId} value={Boolean(d.with_grant)} size="small" disabled={!d.privilege}
                       onChange={(e)=>onCheck(e, true)}/>
@@ -165,7 +162,7 @@ export default function Privilege({value, onChange, controlProps}) {
           }
         </tbody>
       </table>
-    </div>
+    </Root>
   );
 }
 

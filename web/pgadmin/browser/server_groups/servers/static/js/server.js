@@ -2,25 +2,24 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import { getNodeListById } from '../../../../static/js/node_ajax';
 import ServerSchema from './server.ui';
-import Notify from '../../../../../static/js/helpers/Notifier';
 import { showServerPassword, showChangeServerPassword, showNamedRestorePoint } from '../../../../../static/js/Dialogs/index';
 import _ from 'lodash';
 import getApiInstance, { parseApiError } from '../../../../../static/js/api_instance';
 
 define('pgadmin.node.server', [
-  'sources/gettext', 'sources/url_for', 'jquery',
+  'sources/gettext', 'sources/url_for',
   'sources/pgadmin', 'pgadmin.browser',
   'pgadmin.user_management.current_user',
   'pgadmin.authenticate.kerberos',
 ], function(
-  gettext, url_for, $, pgAdmin, pgBrowser,
+  gettext, url_for, pgAdmin, pgBrowser,
   current_user, Kerberos,
 ) {
 
@@ -40,7 +39,32 @@ define('pgadmin.node.server', [
       hasStatistics: true,
       hasCollectiveStatistics: true,
       can_expand: function(d) {
-        return d && d.connected;
+        return d?.connected;
+      },
+      title: function(d, action) {
+        if(action == 'create') {
+          return gettext('Register - %s', this.label);
+        } else if (action == 'copy') {
+          return gettext('Copy Server - %s', d.label);
+        }
+        return d._label??'';
+      },
+      copy: function(d) {
+        // This function serves the purpose of facilitating modifications
+        // during the server copying process.
+
+        // Changing the name of the server to "Copy of <existing name>"
+        d.name = gettext('Copy of %s', d.name);
+        // If existing server is a shared server from another user then
+        // copy this server as a local server for the current user.
+        if (d?.shared && d.user_id != current_user?.id) {
+          d.gid = null;
+          d.user_id = current_user?.id;
+          d.shared = false;
+          d.server_owner = null;
+          d.shared_username = null;
+        }
+        return d;
       },
       Init: function() {
         /* Avoid multiple registration of same menus */
@@ -49,11 +73,20 @@ define('pgadmin.node.server', [
 
         this.initialized = true;
 
+        pgBrowser.add_menu_category({
+          name: 'server', label: gettext('Server'), priority: 1
+        });
+
         pgBrowser.add_menus([{
           name: 'create_server_on_sg', node: 'server_group', module: this,
           applies: ['object', 'context'], callback: 'show_obj_properties',
           category: 'register', priority: 1, label: gettext('Server...'),
           data: {action: 'create'}, enable: 'canCreate',
+        },{
+          name: 'disconnect_all_servers', node: 'server_group', module: this,
+          applies: ['object','context'], callback: 'disconnect_all_servers',
+          priority: 5, label: gettext('Disconnect from all servers'),
+          data:{action: 'disconnect_all'}, enable: 'can_disconnect_all'
         },{
           name: 'create_server', node: 'server', module: this,
           applies: ['object', 'context'], callback: 'show_obj_properties',
@@ -79,14 +112,14 @@ define('pgadmin.node.server', [
           applies: ['tools', 'context'], callback: 'reload_configuration',
           category: 'reload', priority: 10, label: gettext('Reload Configuration'),
           enable : 'enable_reload_config',data: {
-            data_disabled: gettext('Please select a server from the browser tree to reload the configuration files.'),
+            data_disabled: gettext('Please select a server from the object explorer to reload the configuration files.'),
           },
         },{
           name: 'restore_point', node: 'server', module: this,
           applies: ['tools', 'context'], callback: 'restore_point',
           category: 'restore', priority: 7, label: gettext('Add Named Restore Point...'),
           enable : 'is_applicable',data: {
-            data_disabled: gettext('Please select any server from the browser tree to Add Named Restore Point.'),
+            data_disabled: gettext('Please select any server from the object explorer to Add Named Restore Point.'),
           },
         },{
           name: 'change_password', node: 'server', module: this,
@@ -115,8 +148,8 @@ define('pgadmin.node.server', [
           label: gettext('Clear Saved Password'),
           priority: 11,
           enable: function(node) {
-            return (node && node._type === 'server' &&
-              node.is_password_saved);
+            return (node?._type === 'server' &&
+              node?.is_password_saved);
           },
         },{
           name: 'clear_sshtunnel_password', node: 'server', module: this,
@@ -124,12 +157,17 @@ define('pgadmin.node.server', [
           label: gettext('Clear SSH Tunnel Password'),
           priority: 12,
           enable: function(node) {
-            return (node && node._type === 'server' &&
-              node.is_tunnel_password_saved);
+            return (node?._type === 'server' &&
+              node?.is_tunnel_password_saved);
           },
           data: {
             data_disabled: gettext('SSH Tunnel password is not saved for selected server.'),
           },
+        }, {
+          name: 'copy_server', node: 'server', module: this,
+          applies: ['object', 'context'], callback: 'show_obj_properties',
+          label: gettext('Copy Server...'), data: {action: 'copy'},
+          priority: 4,
         }]);
 
         _.bindAll(this, 'connection_lost');
@@ -146,30 +184,33 @@ define('pgadmin.node.server', [
 
       },
       is_connected: function(node) {
-        return (node && node.connected);
+        return node?.connected;
       },
       enable_reload_config: function(node) {
         // Must be connected & is Super user
-        return (node && node._type == 'server' &&
-          node.connected && node.user.is_superuser);
+        return (node?._type == 'server' &&
+          node?.connected && node?.user?.is_superuser);
       },
       is_applicable: function(node) {
         // Must be connected & super user & not in recovery mode
-        return (node && node._type == 'server' &&
-          node.connected && node.user.is_superuser
+        return (node?._type == 'server' &&
+          node?.connected && node?.user?.is_superuser
             && !(node.in_recovery??true));
       },
       wal_pause_enabled: function(node) {
         // Must be connected & is Super user & in Recovery mode
-        return (node && node._type == 'server' &&
-          node.connected && node.user.is_superuser
-            && node.in_recovery && !(node.wal_pause??true));
+        return (node?._type == 'server' &&
+          node?.connected && node?.user?.is_superuser
+            && node?.in_recovery && !(node?.wal_pause??true));
       },
       wal_resume_enabled: function(node) {
         // Must be connected & is Super user & in Recovery mode
-        return (node && node._type == 'server' &&
-          node.connected && node.user.is_superuser
-            && node.in_recovery && node.wal_pause);
+        return (node?._type == 'server' &&
+          node?.connected && node?.user?.is_superuser
+            && node?.in_recovery && node?.wal_pause);
+      },
+      can_disconnect_all: function(node, item) {
+        return _.some(item.children, (child) => pgAdmin.Browser.tree.getData(child).connected);
       },
       callbacks: {
         /* Connect the server */
@@ -186,65 +227,43 @@ define('pgadmin.node.server', [
           return false;
         },
         /* Disconnect the server */
-        disconnect_server: function(args, notify) {
+        disconnect_server: function(args) {
           let input = args || {},
             obj = this,
             t = pgBrowser.tree,
             i = 'item' in input ? input.item : t.selected(),
             d = i ? t.itemData(i) : undefined;
-
           if (d) {
-            notify = notify || _.isUndefined(notify) || _.isNull(notify);
-
-            let disconnect = function() {
-              getApiInstance().delete(
-                obj.generate_url(i, 'connect', d, true),
-              ).then(({data: res})=> {
-                if (res.success == 1) {
-                  Notify.success(res.info);
-                  d = t.itemData(i);
-                  t.removeIcon(i);
-                  d.connected = false;
-                  if (d.shared && pgAdmin.server_mode == 'True'){
-                    d.icon = 'icon-shared-server-not-connected';
-                  }else{
-                    d.icon = 'icon-server-not-connected';
-                  }
-                  t.addIcon(i, {icon: d.icon});
-                  obj.callbacks.refresh.apply(obj, [null, i]);
-                  setTimeout(() => {
-                    t.close(i);
-                  }, 10);
-                  if (pgBrowser.serverInfo && d._id in pgBrowser.serverInfo) {
-                    delete pgBrowser.serverInfo[d._id];
-                  }
-                  else {
-                    try {
-                      Notify.error(res.errormsg);
-                    } catch (e) {
-                      console.warn(e.stack || e);
-                    }
-                    t.unload(i);
-                  }
-                }
-              }).catch(function(error) {
-                Notify.pgRespErrorNotify(error);
-                t.unload(i);
-              });
-            };
-
-            if (notify) {
-              Notify.confirm(
-                gettext('Disconnect from server'),
-                gettext('Are you sure you want to disconnect from the server %s?', d.label),
-                function() { disconnect(); },
-                function() { return true;},
-              );
-            } else {
-              disconnect();
-            }
+            disconnect_from_server(obj, d, t, i, true);
           }
-
+          return false;
+        },
+        disconnect_all_servers: function(args, item) {
+          let children = item.children ?? [],
+            obj = this,
+            t = pgBrowser.tree;
+          if (children) {
+            pgAdmin.Browser.notifier.confirm(
+              gettext('Disconnect from all servers'),
+              gettext('Are you sure you want to disconnect from all servers?'),
+              function() {
+                _.forEach(children, function(child) {
+                  let data = pgAdmin.Browser.tree.getData(child);
+                  if (data.connected) {
+                    disconnect_from_server(obj, data, t, child, false);
+                  }
+                });
+                t.deselect(item);
+                setTimeout(() => {
+                  t.select(item);
+                }, 100);
+              },
+              function() { return true;},
+              gettext('Disconnect'),
+              gettext('Cancel'),
+              'disconnect'
+            );
+          }
           return false;
         },
         /* Connect the server (if not connected), before opening this node */
@@ -287,7 +306,7 @@ define('pgadmin.node.server', [
             d = i ? t.itemData(i) : undefined;
 
           if (d) {
-            Notify.confirm(
+            pgAdmin.Browser.notifier.confirm(
               gettext('Reload server configuration'),
               gettext('Are you sure you want to reload the server configuration on %s?', d.label),
               function() {
@@ -295,13 +314,13 @@ define('pgadmin.node.server', [
                   obj.generate_url(i, 'reload', d, true),
                 ).then(({data: res})=> {
                   if (res.data.status) {
-                    Notify.success(res.data.result);
+                    pgAdmin.Browser.notifier.success(res.data.result);
                   }
                   else {
-                    Notify.error(res.data.result);
+                    pgAdmin.Browser.notifier.error(res.data.result);
                   }
                 }).catch(function(error) {
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                   t.unload(i);
                 });
               },
@@ -345,7 +364,7 @@ define('pgadmin.node.server', [
               }
               showChangeServerPassword(gettext('Change Password'), d, obj, i, is_pgpass_file_used);
             }).catch(function(error) {
-              Notify.pgRespErrorNotify(error);
+              pgAdmin.Browser.notifier.pgRespErrorNotify(error);
             });
           }
 
@@ -354,10 +373,8 @@ define('pgadmin.node.server', [
 
         on_done: function(res, t, i) {
           if (res.success == 1) {
-            Notify.success(res.info);
+            pgAdmin.Browser.notifier.success(res.info);
             t.itemData(i).wal_pause=res.data.wal_pause;
-            t.unload(i);
-            t.setInode(i);
             t.deselect(i);
             // Fetch updated data from server
             setTimeout(function() {
@@ -380,9 +397,9 @@ define('pgadmin.node.server', [
           getApiInstance().delete(
             obj.generate_url(i, 'wal_replay' , d, true)
           ).then(({data: res})=> {
-            obj.on_done(res, t, i);
+            obj.callbacks.on_done(res, t, i);
           }).catch(function(error) {
-            Notify.pgRespErrorNotify(error);
+            pgAdmin.Browser.notifier.pgRespErrorNotify(error);
             t.unload(i);
           });
         },
@@ -401,9 +418,9 @@ define('pgadmin.node.server', [
           getApiInstance().put(
             obj.generate_url(i, 'wal_replay' , d, true)
           ).then(({data: res})=> {
-            obj.on_done(res, t, i);
+            obj.callbacks.on_done(res, t, i);
           }).catch(function(error) {
-            Notify.pgRespErrorNotify(error);
+            pgAdmin.Browser.notifier.pgRespErrorNotify(error);
             t.unload(i);
           });
         },
@@ -417,7 +434,7 @@ define('pgadmin.node.server', [
             d = i  ? t.itemData(i) : undefined;
 
           if (d) {
-            Notify.confirm(
+            pgAdmin.Browser.notifier.confirm(
               gettext('Clear saved password'),
               gettext('Are you sure you want to clear the saved password for server %s?', d.label),
               function() {
@@ -425,7 +442,7 @@ define('pgadmin.node.server', [
                   obj.generate_url(i, 'clear_saved_password' , d, true)
                 ).then(({data: res})=> {
                   if (res.success == 1) {
-                    Notify.success(res.info);
+                    pgAdmin.Browser.notifier.success(res.info);
                     t.itemData(i).is_password_saved=res.data.is_password_saved;
                     t.deselect(i);
                     setTimeout(function() {
@@ -433,10 +450,10 @@ define('pgadmin.node.server', [
                     });
                   }
                   else {
-                    Notify.error(res.info);
+                    pgAdmin.Browser.notifier.error(res.info);
                   }
                 }).catch(function(error) {
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                 });
               },
               function() { return true; }
@@ -455,7 +472,7 @@ define('pgadmin.node.server', [
             d = i  ? t.itemData(i) : undefined;
 
           if (d) {
-            Notify.confirm(
+            pgAdmin.Browser.notifier.confirm(
               gettext('Clear SSH Tunnel password'),
               gettext('Are you sure you want to clear the saved password of SSH Tunnel for server %s?', d.label),
               function() {
@@ -463,14 +480,14 @@ define('pgadmin.node.server', [
                   obj.generate_url(i, 'clear_sshtunnel_password' , d, true)
                 ).then(({data: res})=> {
                   if (res.success == 1) {
-                    Notify.success(res.info);
+                    pgAdmin.Browser.notifier.success(res.info);
                     t.itemData(i).is_tunnel_password_saved=res.data.is_tunnel_password_saved;
                   }
                   else {
-                    Notify.error(res.info);
+                    pgAdmin.Browser.notifier.error(res.info);
                   }
                 }).catch(function(error) {
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                 });
               },
               function() { return true; }
@@ -490,7 +507,9 @@ define('pgadmin.node.server', [
       },
       getSchema: (treeNodeInfo, itemNodeData)=>{
         return new ServerSchema(
-          getNodeListById(pgBrowser.Nodes['server_group'], treeNodeInfo, itemNodeData),
+          getNodeListById(pgBrowser.Nodes['server_group'], treeNodeInfo, itemNodeData, {},
+          // Filter out shared servers group, it should not be visible.
+            (server)=> !server.is_shared),
           itemNodeData.user_id,
           {
             gid: treeNodeInfo['server_group']._id,
@@ -503,12 +522,12 @@ define('pgadmin.node.server', [
             d = i && t.itemData(i),
             self = this;
 
-          while (d && d._type != 'server') {
+          while (d?._type != 'server') {
             i = t.parent(i);
             d = i && t.itemData(i);
           }
 
-          if (i && d && d._type == 'server') {
+          if (i && d?._type == 'server') {
             if (_.isUndefined(d.is_connecting) || !d.is_connecting) {
               d.is_connecting = true;
 
@@ -538,7 +557,7 @@ define('pgadmin.node.server', [
               pgBrowser.Events.on(
                 'pgadmin:server:connect:cancelled', disconnect
               );
-              Notify.confirm(
+              pgAdmin.Browser.notifier.confirm(
                 gettext('Connection lost'),
                 gettext('Would you like to reconnect to the database?'),
                 function() {
@@ -547,7 +566,6 @@ define('pgadmin.node.server', [
                 function() {
                   d.is_connecting = false;
                   t.unload(i);
-                  t.setInode(i);
                   t.addIcon(i, {icon: 'icon-database-not-connected'});
                   pgBrowser.Events.trigger(
                     'pgadmin:server:connect:cancelled', i, d, self
@@ -562,12 +580,12 @@ define('pgadmin.node.server', [
 
     let checkSupportedVersion = function (version, info) {
       if (!_.isUndefined(version) && !_.isNull(version) && version < 100000) {
-        Notify.warning(gettext('You have connected to a server version that is older ' +
+        pgAdmin.Browser.notifier.warning(gettext('You have connected to a server version that is older ' +
           'than is supported by pgAdmin. This may cause pgAdmin to break in strange and ' +
           'unpredictable ways. Or a plague of frogs. Either way, you have been warned!') +
           '<br /><br />' + gettext('Server connected'), null);
       } else if (!_.isUndefined(info) && !_.isNull(info)) {
-        Notify.success(info);
+        pgAdmin.Browser.notifier.success(info);
       }
     };
 
@@ -584,13 +602,11 @@ define('pgadmin.node.server', [
               );
               data.is_connecting = false;
               tree.unload(item);
-              tree.setInode(item);
               tree.addIcon(item, {icon: 'icon-shared-server-not-connected'});
-              Notify.info('Please enter the server details to connect to the server. This server is a shared server.');
+              pgAdmin.Browser.notifier.info('Please enter the server details to connect to the server. This server is a shared server.');
             } else {
               data.is_connecting = false;
               tree.unload(item);
-              tree.setInode(item);
               tree.addIcon(item, {icon: 'icon-shared-server-not-connected'});
             }
           }
@@ -628,11 +644,11 @@ define('pgadmin.node.server', [
               },
               function() {
                 tree.addIcon(_item, {icon: 'icon-server-not-connected'});
-                Notify.pgNotifier('error', error, 'Connection error', gettext('Connect to server.'));
+                pgAdmin.Browser.notifier.pgNotifier('error', error, 'Connection error', gettext('Connect to server.'));
               }
             );
           } else {
-            Notify.pgNotifier('error', error, errormsg, function(msg) {
+            pgAdmin.Browser.notifier.pgNotifier('error', error, errormsg, function(msg) {
               setTimeout(function() {
                 if (msg == 'CRYPTKEY_SET') {
                   connect_to_server(_node, _data, _tree, _item, _wasConnected);
@@ -648,7 +664,7 @@ define('pgadmin.node.server', [
           }
         },
         onSuccess = function(res, node, _data, _tree, _item, _wasConnected) {
-          if (res && res.data) {
+          if (res?.data) {
             if (typeof res.data.icon == 'string') {
               _tree.removeIcon(_item);
               _data.icon = res.data.icon;
@@ -665,15 +681,13 @@ define('pgadmin.node.server', [
             // Check the database server against supported version.
             checkSupportedVersion(_data.version, res.info);
 
-            // obj.trigger('connected', obj, _item, _data);
-
             // Generate the event that server is connected
             pgBrowser.Events.trigger(
               'pgadmin:server:connected', _data._id, _item, _data
             );
             // Generate the event that database is connected
             pgBrowser.Events.trigger(
-              'pgadmin:database:connected', _data._id, _data.db, _item, _data
+              'pgadmin:database:connected', _item, _data
             );
 
             // Load dashboard
@@ -681,7 +695,7 @@ define('pgadmin.node.server', [
 
             /* Call enable/disable menu function after database is connected.
              To make sure all the menus for database is in the right state */
-            pgBrowser.enable_disable_menus.apply(pgBrowser, [_item]);
+            pgBrowser.enable_disable_menus(_item);
 
             // We're not reconnecting
             if (!_wasConnected) {
@@ -703,7 +717,6 @@ define('pgadmin.node.server', [
       let onCancel = function(_tree, _item, _data, _status) {
         _data.is_connecting = false;
         _tree.unload(_item);
-        _tree.setInode(_item);
         _tree.removeIcon(_item);
         if (_data.shared && pgAdmin.server_mode == 'True'){
           _tree.addIcon(_item, {icon: 'icon-shared-server-not-connected'});
@@ -758,7 +771,7 @@ define('pgadmin.node.server', [
       getApiInstance().get(url)
         .then(({data: res})=>{
           tree.setInode(item);
-          if (res && res.data) {
+          if (res?.data) {
             if (typeof res.data.icon == 'string') {
               tree.removeIcon(item);
               data.icon = res.data.icon;
@@ -770,7 +783,7 @@ define('pgadmin.node.server', [
             serverInfo[data._id] = _.extend({}, data);
 
             if(data.errmsg) {
-              Notify.error(data.errmsg);
+              pgAdmin.Browser.notifier.error(data.errmsg);
             }
             // Generate the event that server is connected
             pgBrowser.Events.trigger(
@@ -785,8 +798,83 @@ define('pgadmin.node.server', [
           }else{
             tree.addIcon(item, {icon: 'icon-server-not-connected'});
           }
-          Notify.pgRespErrorNotify(error);
+          pgAdmin.Browser.notifier.pgRespErrorNotify(error);
         });
+    };
+    let disconnect_from_server = async function(obj, data, tree, item, notify=false) {
+      let d = data,
+        i = item,
+        t = tree,
+        label = data.label;
+
+      let disconnect = function() {
+        d.label = `<span class='text-muted'>[Disconnecting...]</span> ${label}`;
+        t.setLabel(i,{label:d.label});
+        t.close(i);
+        getApiInstance().delete(
+          obj.generate_url(i, 'connect', d, true),
+        ).then(({data: res})=> {
+          if (res.success == 1) {
+            if (notify) {
+              pgAdmin.Browser.notifier.success(res.info);
+            } else {
+              pgAdmin.Browser.notifier.success(`${label} - ${res.info}`);
+            }
+            d = t.itemData(i);
+            t.removeIcon(i);
+            d.connected = false;
+            d.label = label;
+            t.setLabel(i, {label});
+            // Update server tree node data after server diconnected.
+            t.update(i,d);
+            // Generate the event that server is disconnected
+            pgBrowser.Events.trigger(
+              'pgadmin:server:disconnect',
+              {item: i, data: d}, false
+            );
+            if (d.shared && pgAdmin.server_mode == 'True'){
+              d.icon = 'icon-shared-server-not-connected';
+            }else{
+              d.icon = 'icon-server-not-connected';
+            }
+            t.addIcon(i, {icon: d.icon});
+            obj.callbacks.refresh.apply(obj, [null, i]);
+            setTimeout(() => {
+              t.close(i);
+            }, 10);
+            if (pgBrowser.serverInfo && d._id in pgBrowser.serverInfo) {
+              delete pgBrowser.serverInfo[d._id];
+            }
+            else {
+              try {
+                pgAdmin.Browser.notifier.error(res.errormsg);
+              } catch (e) {
+                console.warn(e.stack || e);
+              }
+              t.setLabel(i, {label});
+              t.unload(i);
+            }
+          }
+        }).catch(function(error) {
+          pgAdmin.Browser.notifier.pgRespErrorNotify(error);
+          t.setLabel(i, {label});
+          t.unload(i);
+        });
+      };
+
+      if (notify) {
+        pgAdmin.Browser.notifier.confirm(
+          gettext('Disconnect from server'),
+          gettext('Are you sure you want to disconnect from the server <b>%s</b>?', label),
+          function() { disconnect(); },
+          function() { return true;},
+          gettext('Disconnect'),
+          gettext('Cancel'),
+          'disconnect'
+        );
+      } else {
+        disconnect();
+      }
     };
   }
 

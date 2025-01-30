@@ -6,14 +6,19 @@
 ***************************
 
 Use options on the *Preferences* dialog to customize the behavior of the client.
-To open the *Preferences* dialog, select *Preferences* from the *File* menu.
+To open the *Preferences* dialog, select *Preferences* from the *File* menu or
+click on the *Settings* button at the bottom left corner in case of Workspace
+layout.
+
+.. image:: images/preferences_menu.png
+    :alt: Preferences menu
+    :align: center
+
 The left pane of the *Preferences* dialog displays a tree control; each node of
 the tree control provides access to options that are related to the node under
 which they are displayed.
 
-* Use the plus sign (+) to the left of a node name to expand a segment of the
-  tree control.
-* Use the minus sign (-) to the left of a node name to close that node.
+* Click the *Reset all preferences* button to restore all preferences to their default values.
 
 The Browser Node
 ****************
@@ -31,7 +36,7 @@ Use the fields on the *Display* panel to specify general display preferences:
   be automatically expanded if a treeview node is expanded and has only a single
   child.
 
-* Use the *Browser tree state saving interval* field to set the treeview state
+* Use the *Object explorer state saving interval* field to set the treeview state
   saving interval. A value of *-1* will disable the treeview state saving
   functionality.
 
@@ -44,21 +49,11 @@ Use the fields on the *Display* panel to specify general display preferences:
   them to continue.
 
 * When the *Hide shared servers?* switch is set to *True*, the client will hide
-  all the shared servers from the browser tree.
+  all the shared servers from the object explorer. **Note:** This option is visible only when
+  pgAdmin is running in server mode.
 
-* Use the *Lock layout* field to lock the UI layout at different levels. This
-  can also be changed from File menu on the :ref:`menu bar <menu_bar>`
-
-+---------------------+-------------------------------------------------------------------+
-| Option              | Action                                                            |
-+=====================+===================================================================+
-| *None*              | No locking. Every panel is resizable and dockable.                |
-+---------------------+-------------------------------------------------------------------+
-| *Prevent docking*   | This will disable the docking/undocking of the panels             |
-+---------------------+-------------------------------------------------------------------+
-| *Full*              | This will disable resizing, docking/undocking of the panels       |
-+---------------------+-------------------------------------------------------------------+
-
+* When the *Show empty object collections?* switch is turned off, then all object
+  collections which are empty will be hidden from browser tree.
 * When the *Show system objects?* switch is set to *True*, the client will
   display system objects such as system schemas (for example, *pg_temp*) or
   system columns (for example,  *xmin* or *ctid*) in the tree control.
@@ -87,6 +82,30 @@ displayed in the *Browser* tree control:
   to each object to *Show* or *Hide* the database object. When querying system
   catalogs, you can reduce the number of object types displayed to increase
   speed.
+
+Use the fields on the *Object Breadcrumbs* panel to change object breadcrumbs
+related settings:
+
+.. image:: images/preferences_browser_breadcrumbs.png
+    :alt: Preferences dialog object breadcrumbs section
+    :align: center
+
+* Use *Enable object breadcrumbs?* to enable or disable object breadcrumbs
+  displayed on on object mouse hover.
+
+* Use *Show comment with object breadcrumbs?* to enable or disable the
+  comment visibility which comes displayed with object breadcrumbs.
+
+
+Use the fields on the *Processes* panel to change processes tab
+related settings:
+
+.. image:: images/preferences_browser_processes.png
+    :alt: Preferences dialog processes section
+    :align: center
+
+* Change *Process details/logs retention days* to the number of days,
+  the process info and logs will be automatically cleared.
 
 Use fields on the *Properties* panel to specify browser properties:
 
@@ -144,11 +163,36 @@ Expand the *Dashboards* node to specify your dashboard display preferences.
 Use the fields on the *Refresh rates* panel to specify your refersh rates
 preferences for the graphs on the *Dashboard* tab:
 
+* Use the *Average load statistics refresh rate* field to specify the number of
+  seconds between average load statistics samples displayed in graphs.
+
 * Use the *Block I/O statistics refresh rate* field to specify the number of
   seconds between block I/O statistic samples displayed in graphs.
 
+* Use the *CPU usage per process statistics refresh rate* field to specify the number of
+  seconds between CPU usage per process statistics samples displayed in graphs.
+
+* Use the *Handle & Process count statistics refresh rate* field to specify the number
+  of seconds between handle & process count statistics samples displayed in graphs.
+
+* Use the *I/O analysis statistics refresh rate* field to specify the number
+  of seconds between I/O analysis statistics samples displayed in graphs.
+
+* Use the *Memory usage per process statistics refresh rate* field to specify the number
+  of seconds between memory usage per process statistics samples displayed in graphs.
+
+* Use the *Memory usage statistics refresh rate* field to specify the number
+  of seconds between memory usage statistics samples displayed in graphs.
+
+* Use the *Percentage of CPU time used by different process modes statistics refresh rate*
+  field to specify the number of seconds between Percentage of CPU time used by different
+  process modes samples displayed in graphs.
+
 * Use the *Session statistics refresh rate* field to specify the number of
   seconds between session statistic samples displayed in graphs.
+
+* Use the *Swap memory usage statistics refresh rate* field to specify the number of
+  seconds between swap memory usage statistics samples displayed in graphs.
 
 * Use the *Transaction throughput refresh rate* field to specify the number of
   seconds between transaction throughput samples displayed in graphs.
@@ -192,6 +236,9 @@ Use the fields on the *Options* panel to manage ERD preferences.
     :align: center
 
 
+* Use *Cardinality Notation* to change the cardinality notation format
+  used to present relationship links.
+
 * When the *SQL With DROP Table* switch is set to *True*, the SQL
   generated by the ERD Tool will add DROP table DDL before each CREATE
   table DDL.
@@ -226,21 +273,24 @@ The Miscellaneous Node
 
 Expand the *Miscellaneous* node to specify miscellaneous display preferences.
 
-.. image:: images/preferences_misc_user_language.png
-    :alt: Preferences dialog user language section
+.. image:: images/preferences_misc_user_interface.png
+    :alt: Preferences dialog user interface section
     :align: center
 
-* Use the *User language* drop-down listbox to select the display language for
+* Use the *Language* drop-down listbox to select the display language for
   the client.
 
-.. image:: images/preferences_misc_themes.png
-    :alt: Preferences dialog themes section
-    :align: center
+* Use the *Layout* drop-down listbox to select the layout for the client.
+  pgAdmin offers two options: the Classic layout, a longstanding and familiar
+  design, and the Workspace layout, which provides distraction free dedicated
+  areas for the Query Tool, PSQL, and Schema Diff tools. 'Workspace' layout is
+  the default layout, but user can change it to 'Classic'.
 
 * Use the *Themes* drop-down listbox to select the theme for pgAdmin. You'll also get a preview just below the
-  drop down. Note that, to apply the theme you need to refresh the pgAdmin page. You can also submit your
-  own themes, check `here <https://github.com/pgadmin-org/pgadmin4/blob/master/README.md>`_ how.
-  Currently we support Standard, Dark and High Contrast theme.
+  drop down. You can also submit your own themes,
+  check `here <https://github.com/pgadmin-org/pgadmin4/blob/master/README.md>`_ how.
+  Currently we support Light, Dark, High Contrast and System theme. Selecting System option will follow
+  your computer's settings.
 
 The Paths Node
 **************
@@ -276,9 +326,6 @@ programs (pg_dump, pg_dumpall, pg_restore and psql) and there respective version
     :align: center
 
 Use the fields on the *Help* panel to specify the location of help files.
-
-* Use the *EDB Advanced Server Help Path* to specify the path to EDB Postgres
-  Advanced Server documentation.
 
 * Use the *PostgreSQL Help Path* to specify the path to PostgreSQL
   documentation.
@@ -332,11 +379,8 @@ Tool display.
 * Use the *Connection status refresh rate* field to specify the number of
   seconds between connection/transaction status updates.
 
-* Use the *Query info notifier timeout* field to control the behaviour of the
-  notifier that is displayed when query execution completes. A value of *-1*
-  will disable the notifier, and a value of 0 will display it until clicked. If
-  a positive value above zero is specified, the notifier will be displayed for
-  the specified number of seconds. The default is *5*.
+* When the *Show query success notification?* switch is set to *True*, the Query Tool
+  will show notifications on successful query execution.
 
 .. image:: images/preferences_sql_editor.png
     :alt: Preferences dialog sqleditor editor settings
@@ -363,6 +407,9 @@ Use the fields on the *Editor* panel to change settings of the query editor.
   changed to text/plain. Keyword highlighting and code folding will be disabled.
   This will improve editor performance with large files.
 
+* When the *Highlight selection matches?* switch is set to *True*, the editor will
+  highlight matched selected text.
+
 .. image:: images/preferences_sql_explain.png
     :alt: Preferences dialog sqleditor explain options
     :align: center
@@ -370,15 +417,24 @@ Use the fields on the *Editor* panel to change settings of the query editor.
 Use the fields on the *Explain* panel to specify the level of detail included in
 a graphical EXPLAIN.
 
-* When the *Show Buffers?* switch is set to *True*, graphical explain details
+* When the *Show buffers?* switch is set to *True*, graphical explain details
   will include information about buffer usage.
 
-* When the *Show Costs?* switch is set to *True*, graphical explain details will
+* When the *Show costs?* switch is set to *True*, graphical explain details will
   include information about the estimated startup and total cost of each plan,
   as well as the estimated number of rows and the estimated width of each row.
 
-* When the *Show Timing?* switch is set to *True*, graphical explain details
+* When the *Show settings?* switch is set to *True*, graphical explain details
+  will include the information on the configuration parameters.
+
+* When the *Show summary?* switch is set to *True*, graphical explain details
+  will include the summary information about the query plan.
+
+* When the *Show timing?* switch is set to *True*, graphical explain details
   will include the startup time and time spent in each node in the output.
+
+* When the *Show wal?* switch is set to *True*, graphical explain details
+  will include the information on WAL record generation.
 
 * When the *Verbose output?* switch is set to *True*, graphical explain details
   will include extended information about the query execution plan.
@@ -426,6 +482,16 @@ Use the fields on the *Options* panel to manage editor preferences.
   by the Primary Key columns by default. When using the First/Last 100 Rows options,
   data is always sorted.
 
+* When the *Show View/Edit Data Promotion Warning?* switch is set to *True*
+  View/Edit Data tool will show promote to Query tool confirm dialog on query edit.
+
+* When the *Underline query at cursor?* switch is set to *True*, query tool will
+  parse and underline the query at the cursor position.
+
+* When the *Underlined query execute warning?* switch is set to *True*, query tool
+  will warn upon clicking the *Execute Query* button in the query tool.  The warning
+  will appear only if *Underline query at cursor?* is set to *False*.
+
 .. image:: images/preferences_sql_results_grid.png
     :alt: Preferences dialog sql results grid section
     :align: center
@@ -440,19 +506,23 @@ preferences for copied data.
 * Specify the maximum width of the column in pixels when 'Columns sized by' is
   set to *Column data*. If 'Columns sized by' is set to *Column name* then this
   setting won't have any effect.
+* Specify the number of records to fetch in one batch. Changing this value will
+  override DATA_RESULT_ROWS_PER_PAGE setting from config file.
 * Use the *Result copy field separator* drop-down listbox to select the field
   separator for copied data.
 * Use the *Result copy quote character* drop-down listbox to select the quote
   character for copied data.
 * Use the *Result copy quoting* drop-down listbox to select which type of fields
   require quoting; select *All*, *None*, or *Strings*.
+* When the *Striped rows?* switch is set to true, the result grid will display
+  rows with alternating background colors.
 
 .. image:: images/preferences_sql_keyboard_shortcuts.png
     :alt: Preferences dialog sql keyboard shortcuts section
     :align: center
 
 Use the fields on the *Keyboard shortcuts* panel to configure shortcuts for the
-Query Tool window navigation:
+Query Tool window navigation.
 
 .. image:: images/preferences_sql_formatting.png
     :alt: Preferences dialog SQL Formatting section
@@ -461,26 +531,27 @@ Query Tool window navigation:
 Use the fields on the *SQL formatting* panel to specify your preferences for
 reformatting of SQL.
 
-* Use the *Comma-first notation* option to specify whether to place commas
-  before or after column names.
+* Use the *Data type case* option to specify whether to change data types
+  into upper, lower, or preserve case.
+* Use the *Expression width* option to specify maximum number of characters
+  in parenthesized expressions to be kept on single line.
+* Use the *Function case* option to specify whether to change function
+  names into upper, lower, or preserve case.
 * Use the *Identifier case* option to specify whether to change identifiers
   (object names) into upper, lower, or capitalized case.
 * Use the *Keyword case* option to specify whether to change keywords into
-  upper, lower, or capitalized case.
-* Use the *Re-indent aligned?* option to specify that indentations of statements
-  should be changed, aligned by keywords.
-* Use the *Re-indent?* option to specify that indentations of statements should
-  be changed.
+  upper, lower, or preserve case.
+* Use *Lines between queries* to specify how many empty lines to leave
+  between SQL statements. If set to zero it puts no new line.
+* Use *Logical operator new line* to specify newline placement before or
+  after logical operators (AND, OR, XOR).
+* Use *New line before semicolon?* to specify whether to place query
+  separator (;) on a separate line.
 * Use the *Spaces around operators?* option to specify whether or not to include
   spaces on either side of operators.
-* Use the *Strip comments?* option to specify whether or not comments should be
-  removed.
 * Use the *Tab size* option to specify the number of spaces per tab or indent.
 * Use the *Use spaces?* option to select whether to use spaces or tabs when
   indenting.
-* Use the *Wrap after N characters* option to specify the column limit for
-  wrapping column separated lists (e.g. of column names in a table). If set to
-  0 (zero), each item will be on it's own line.
 
 The Schema Diff Node
 ********************
@@ -491,9 +562,13 @@ Expand the *Schema Diff* node to specify your display preferences.
     :alt: Preferences schema diff
     :align: center
 
-Use the *Ignore owner* switch to ignores the owner while comparing the objects.
+Use the *Ignore Grant/Revoke* switch to ignores the grant and revoke command while comparing the objects.
 
-Use the *Ignore whitespace* switch to ignores the whitespace while comparing
+Use the *Ignore Owner* switch to ignores the owner while comparing the objects.
+
+Use the *Ignore Tablespace* switch to ignores the tablespace while comparing the objects.
+
+Use the *Ignore Whitespace* switch to ignores the whitespace while comparing
 the string objects. Whitespace includes space, tabs, and CRLF.
 
 
@@ -520,3 +595,73 @@ Use the fields on the *Options* panel to specify storage preferences.
 
 * When the *Show hidden files and folders?* switch is set to *True*, the file
   manager will display hidden files and folders.
+
+
+Using 'setup.py' command line script
+####################################
+
+.. note:: To manage preferences using ``setup.py`` script, you must use
+        the Python interpreter that is normally used to run pgAdmin to ensure
+        that the required Python packages are available. In most packages, this
+        can be found in the Python Virtual Environment that can be found in the
+        installation directory. When using platform-native packages, the system
+        installation of Python may be the one used by pgAdmin.
+
+
+Manage Preferences
+******************
+
+Get Preferences
+***************
+To get all the preferences listed, invoke ``setup.py`` with ``get-prefs`` command line option.
+You can also get this mapping by hovering the individual preference in the Preference UI dialog.
+
+.. code-block:: bash
+
+    /path/to/python /path/to/setup.py get-prefs
+
+Save Preferences
+****************
+To save the preferences, invoke ``setup.py`` with ``set-prefs`` command line option, followed by username,
+preference_key=value and auth_source. Multiple preference can be given too by a space separated.
+If auth_source is not given, Internal authentication will be consider by default.
+
+.. code-block:: bash
+
+    /path/to/python /path/to/setup.py set-prefs user1@gmail.com sqleditor:editor:comma_first=true
+
+    # To specify multiple preferences options
+    /path/to/python /path/to/setup.py set-prefs user1@gmail.com sqleditor:editor:comma_first=true sqleditor:keyboard_shortcuts:toggle_case=true
+
+    # to specify an auth_source
+    /path/to/python /path/to/setup.py set-prefs user1@gmail.com sqleditor:editor:comma_first=true --auth-source=ldap
+
+Updating Preferences preferences.json
+*************************************
+To update preferences defined in json file, simply run ``setup.py `` with ``set-prefs`` command followed by username
+and JSON file containing the preferences.
+
+.. code-block:: bash
+
+    /path/to/python /path/to/setup.py set-prefs user1@gmail.com --input-file /Users/yogeshmahajan/Desktop/pref.json
+
+JSON format
+***********
+
+The JSON file simply contains preference_key=value. Preference key value mapping can be obtained by hovering the
+individual preference in the Preference UI dialog.
+
+The following is an typical example for preferences.json :
+
+.. code-block:: python
+
+    {
+        "preferences":
+            {
+                "browser:display:show_system_objects":  true,
+                "browser:display:show_user_defined_templates": true,
+                "browser:display:confirm_on_refresh_close": false,
+                "misc:themes:theme": "dark",
+
+            }
+    }

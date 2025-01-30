@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -70,7 +70,9 @@ class CollationModule(SchemaChildModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=CollationView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -148,6 +150,7 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     node_label = "Collation"
+    BASE_TEMPLATE_PATH = 'collations/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -202,10 +205,8 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
                     kwargs['did']]['datistemplate']
 
             # Set the template path for the SQL scripts
-            self.template_path = compile_template_path(
-                'collations/sql/',
-                self.manager.version
-            )
+            self.template_path = \
+                self.BASE_TEMPLATE_PATH.format(self.manager.version)
 
             return f(*args, **kwargs)
 
@@ -268,7 +269,8 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-collation"
+                    icon="icon-collation",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -370,7 +372,7 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
         as AJAX response.
         """
 
-        res = [{'label': '', 'value': ''}]
+        res = []
         try:
             SQL = render_template("/".join([self.template_path,
                                             'get_collations.sql']))
@@ -604,12 +606,17 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
 
         scid = res['rows'][0]['scid']
 
+        other_node_info = {}
+        if 'description' in data:
+            other_node_info['description'] = data['description']
+
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 coid,
                 scid,
                 name,
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                **other_node_info
             )
         )
 
@@ -638,7 +645,7 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
                 data[k] = v
 
         try:
-            SQL, name = self.get_sql(gid, sid, data, scid, coid)
+            SQL, _ = self.get_sql(gid, sid, data, scid, coid)
             # Most probably this is due to error
             if not isinstance(SQL, str):
                 return SQL
@@ -827,8 +834,8 @@ class CollationView(PGChildNodeView, SchemaDiffObjectCompare):
         if data:
             if target_schema:
                 data['schema'] = target_schema
-            sql, name = self.get_sql(gid=gid, sid=sid, data=data, scid=scid,
-                                     coid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, data=data, scid=scid,
+                                  coid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

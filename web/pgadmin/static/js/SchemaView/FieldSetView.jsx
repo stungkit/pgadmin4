@@ -2,118 +2,78 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import React, { useContext, useEffect } from 'react';
-import _ from 'lodash';
+import React, { useContext, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 
-import { MappedFormControl } from './MappedControl';
-import { SCHEMA_STATE_ACTIONS, StateUtilsContext } from '.';
-import { evalFunc } from 'sources/utils';
-import CustomPropTypes from '../custom_prop_types';
-import { DepListenerContext } from './DepListener';
-import { getFieldMetaData } from './FormView';
-import FieldSet from '../components/FieldSet';
+import FieldSet from 'sources/components/FieldSet';
+import CustomPropTypes from 'sources/custom_prop_types';
+
+import { FieldControl } from './FieldControl';
+import { SchemaStateContext } from './SchemaState';
+import {
+  useFieldSchema, useFieldValue, useSchemaStateSubscriber,
+} from './hooks';
+import { registerView } from './registry';
+import { createFieldControls, listenDepChanges  } from './utils';
+
 
 export default function FieldSetView({
-  value, schema={}, viewHelperProps, accessPath, dataDispatch, controlClassName, isDataGridForm=false, label, visible}) {
-  const depListener = useContext(DepListenerContext);
-  const stateUtils = useContext(StateUtilsContext);
+  field, accessPath, dataDispatch, viewHelperProps, controlClassName,
+}) {
+  const [, setKey] = useState(0);
+  const subscriberManager = useSchemaStateSubscriber(setKey);
+  const schema = field.schema;
+  const schemaState = useContext(SchemaStateContext);
+  const value = useFieldValue(accessPath, schemaState);
+  const options = useFieldSchema(
+    field, accessPath, value, viewHelperProps, schemaState, subscriberManager
+  );
 
-  useEffect(()=>{
-    /* Calculate the fields which depends on the current field */
-    if(!isDataGridForm && depListener) {
-      schema.fields.forEach((field)=>{
-        /* Self change is also dep change */
-        if(field.depChange || field.deferredDepChange) {
-          depListener.addDepListener(accessPath.concat(field.id), accessPath.concat(field.id), field.depChange, field.deferredDepChange);
-        }
-        (evalFunc(null, field.deps) || []).forEach((dep)=>{
-          let source = accessPath.concat(dep);
-          if(_.isArray(dep)) {
-            source = dep;
-          }
-          if(field.depChange) {
-            depListener.addDepListener(source, accessPath.concat(field.id), field.depChange);
-          }
-        });
-      });
-    }
-  }, []);
+  const label = field.label;
 
-  let viewFields = [];
-  /* Prepare the array of components based on the types */
-  for(const field of schema.fields) {
-    let {visible, disabled, readonly, modeSupported} =
-      getFieldMetaData(field, schema, value, viewHelperProps);
+  listenDepChanges(
+    accessPath, field, schemaState, () => subscriberManager.current?.signal()
+  );
 
-    if(modeSupported) {
-      /* Its a form control */
-      const hasError = field.id == stateUtils?.formErr.name;
-      /* When there is a change, the dependent values can change
-        * lets pass the new changes to dependent and get the new values
-        * from there as well.
-        */
-      viewFields.push(
-        <MappedFormControl
-          state={value}
-          key={field.id}
-          viewHelperProps={viewHelperProps}
-          name={field.id}
-          value={value[field.id]}
-          {...field}
-          readonly={readonly}
-          disabled={disabled}
-          visible={visible}
-          onChange={(changeValue)=>{
-            /* Get the changes on dependent fields as well */
-            dataDispatch({
-              type: SCHEMA_STATE_ACTIONS.SET_VALUE,
-              path: accessPath.concat(field.id),
-              value: changeValue,
-            });
-          }}
-          hasError={hasError}
-          className={controlClassName}
-          memoDeps={[
-            value[field.id],
-            readonly,
-            disabled,
-            visible,
-            hasError,
-            controlClassName,
-            ...(evalFunc(null, field.deps) || []).map((dep)=>value[dep]),
-          ]}
-        />
-      );
-    }
-  }
+  const fieldGroups = useMemo(
+    () => createFieldControls({
+      schema, schemaState, accessPath, viewHelperProps, dataDispatch
+    }),
+    [schema, schemaState, accessPath, viewHelperProps, dataDispatch]
+  );
 
-  if(!visible) {
+  // We won't show empty feldset too.
+  if(!options.visible || !fieldGroups.length) {
     return <></>;
   }
 
   return (
     <FieldSet title={label} className={controlClassName}>
-      {viewFields}
+      {fieldGroups.map(
+        (fieldGroup, gidx) => (
+          <React.Fragment key={gidx}>
+            {fieldGroup.controls.map(
+              (item, idx) => <FieldControl
+                item={item} key={idx} schemaId={schema._id} />
+            )}
+          </React.Fragment>
+        )
+      )}
     </FieldSet>
   );
 }
 
 FieldSetView.propTypes = {
-  value: PropTypes.any,
-  schema: CustomPropTypes.schemaUI.isRequired,
   viewHelperProps: PropTypes.object,
-  isDataGridForm: PropTypes.bool,
   accessPath: PropTypes.array.isRequired,
   dataDispatch: PropTypes.func,
   controlClassName: CustomPropTypes.className,
-  label: PropTypes.string,
-  visible: PropTypes.oneOfType([
-    PropTypes.bool, PropTypes.func,
-  ]),
+  field: PropTypes.object,
 };
+
+registerView(FieldSetView, 'FieldSetView');

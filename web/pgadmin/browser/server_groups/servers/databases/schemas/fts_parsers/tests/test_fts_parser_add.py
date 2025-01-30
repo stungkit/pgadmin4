@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -26,7 +26,7 @@ class FtsParserAddTestCase(BaseTestGenerator):
 
     scenarios = [
         # Fetching default URL for FTS parser node.
-        ('Fetch FTS parser Node URL', dict(url='/browser/fts_parser/obj/'))
+        ('Add FTS Parser Node', dict(url='/browser/fts_parser/obj/'))
     ]
 
     def runTest(self):

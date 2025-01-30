@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -11,8 +11,8 @@
 
 import copy
 import string
-from pgadmin.tools.schema_diff.model import SchemaDiffModel
 from flask import current_app
+from flask_babel import gettext
 from pgadmin.utils.constants import PGADMIN_STRING_SEPARATOR
 
 count = 1
@@ -20,6 +20,9 @@ count = 1
 list_keys_array = ['name', 'colname', 'argid', 'token', 'option', 'conname',
                    'member_name', 'label', 'attname', 'fdwoption',
                    'fsrvoption', 'umoption']
+
+SPECIAL_NODES = ['table', 'view', 'mview']
+VIEW_NODES = ['view', 'mview']
 
 
 def _get_user_mapping_name(user_mapping_name):
@@ -58,18 +61,29 @@ def _get_source_list(**kwargs):
         if 'oid' in source_dict[item]:
             source_object_id = source_dict[item]['oid']
 
-        if node == 'table':
+        if node in SPECIAL_NODES:
             temp_src_params = copy.deepcopy(source_params)
             temp_src_params['tid'] = source_object_id
             temp_src_params['json_resp'] = False
             temp_src_params['add_not_exists_clause'] = True
-            source_ddl = \
-                view_object.get_sql_from_table_diff(**temp_src_params)
-            temp_src_params.update({'target_schema': target_schema})
-            diff_ddl = view_object.get_sql_from_table_diff(**temp_src_params)
-            source_dependencies = \
-                view_object.get_table_submodules_dependencies(
-                    **temp_src_params)
+            if node in VIEW_NODES:
+                source_ddl = \
+                    view_object.get_sql_from_view_diff(**temp_src_params)
+                temp_src_params.update({'target_schema': target_schema})
+                diff_ddl = (
+                    view_object.get_sql_from_view_diff(**temp_src_params))
+                source_dependencies = \
+                    view_object.get_view_submodules_dependencies(
+                        **temp_src_params)
+            else:
+                source_ddl = \
+                    view_object.get_sql_from_table_diff(**temp_src_params)
+                temp_src_params.update({'target_schema': target_schema})
+                diff_ddl = (
+                    view_object.get_sql_from_table_diff(**temp_src_params))
+                source_dependencies = \
+                    view_object.get_table_submodules_dependencies(
+                        **temp_src_params)
         else:
             temp_src_params = copy.deepcopy(source_params)
             temp_src_params['oid'] = source_object_id
@@ -97,7 +111,7 @@ def _get_source_list(**kwargs):
             'label': node_label,
             'title': title,
             'oid': source_object_id,
-            'status': SchemaDiffModel.COMPARISON_STATUS['source_only'],
+            'status': gettext('Source Only'),
             'source_ddl': source_ddl,
             'target_ddl': '',
             'diff_ddl': diff_ddl,
@@ -145,14 +159,23 @@ def _get_target_list(removed, target_dict, node, target_params, view_object,
         if 'oid' in target_dict[item]:
             target_object_id = target_dict[item]['oid']
 
-        if node == 'table':
+        if node in SPECIAL_NODES:
             temp_tgt_params = copy.deepcopy(target_params)
             temp_tgt_params['tid'] = target_object_id
             temp_tgt_params['json_resp'] = False
             temp_tgt_params['add_not_exists_clause'] = True
-            target_ddl = view_object.get_sql_from_table_diff(**temp_tgt_params)
-            _delete_keys(temp_tgt_params)
-            diff_ddl = view_object.get_drop_sql(**temp_tgt_params)
+            if node in VIEW_NODES:
+                target_ddl = (
+                    view_object.get_sql_from_view_diff(**temp_tgt_params))
+                temp_tgt_params.update(
+                    {'drop_sql': True})
+                diff_ddl = (
+                    view_object.get_sql_from_view_diff(**temp_tgt_params))
+            else:
+                target_ddl = (
+                    view_object.get_sql_from_table_diff(**temp_tgt_params))
+                _delete_keys(temp_tgt_params)
+                diff_ddl = view_object.get_drop_sql(**temp_tgt_params)
         else:
             temp_tgt_params = copy.deepcopy(target_params)
             temp_tgt_params['oid'] = target_object_id
@@ -178,7 +201,7 @@ def _get_target_list(removed, target_dict, node, target_params, view_object,
             'label': node_label,
             'title': title,
             'oid': target_object_id,
-            'status': SchemaDiffModel.COMPARISON_STATUS['target_only'],
+            'status': gettext('Target Only'),
             'source_ddl': '',
             'target_ddl': target_ddl,
             'diff_ddl': diff_ddl,
@@ -253,6 +276,8 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
     group_name = kwargs['group_name']
     target_schema = kwargs.get('target_schema')
     ignore_whitespaces = kwargs.get('ignore_whitespaces')
+    ignore_grants = kwargs.get('ignore_grants', False)
+
     for key in intersect_keys:
         source_object_id, target_object_id = \
             get_source_target_oid(source_dict, target_dict, key)
@@ -277,7 +302,7 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
                 'oid': source_object_id,
                 'source_oid': source_object_id,
                 'target_oid': target_object_id,
-                'status': SchemaDiffModel.COMPARISON_STATUS['identical'],
+                'status': gettext('Identical'),
                 'group_name': group_name,
                 'dependencies': [],
                 'source_scid': source_params['scid']
@@ -286,7 +311,7 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
                 if 'scid' in target_params else 0,
             })
         else:
-            if node == 'table':
+            if node in SPECIAL_NODES:
                 temp_src_params = copy.deepcopy(source_params)
                 temp_tgt_params = copy.deepcopy(target_params)
                 # Add submodules into the ignore keys so that directory
@@ -299,20 +324,34 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
                     ignore_keys=temp_ignore_keys,
                     difference={}
                 )
-                parse_acl(dict1[key], dict2[key], diff_dict)
+
+                # No need to parse acl if ignore_grants is set to True.
+                if not ignore_grants:
+                    parse_acl(dict1[key], dict2[key], diff_dict)
 
                 temp_src_params['tid'] = source_object_id
                 temp_tgt_params['tid'] = target_object_id
-                temp_src_params['json_resp'] = \
-                    temp_tgt_params['json_resp'] = False
 
-                source_ddl = \
-                    view_object.get_sql_from_table_diff(**temp_src_params)
-                diff_dependencies = \
-                    view_object.get_table_submodules_dependencies(
-                        **temp_src_params)
-                target_ddl = \
-                    view_object.get_sql_from_table_diff(**temp_tgt_params)
+                if node in VIEW_NODES:
+                    source_ddl = \
+                        view_object.get_sql_from_view_diff(**temp_src_params)
+                    diff_dependencies = \
+                        view_object.get_view_submodules_dependencies(
+                            **temp_src_params)
+                    target_ddl = \
+                        view_object.get_sql_from_view_diff(**temp_tgt_params)
+                else:
+                    temp_src_params['json_resp'] = \
+                        temp_tgt_params['json_resp'] = False
+
+                    source_ddl = \
+                        view_object.get_sql_from_table_diff(**temp_src_params)
+                    diff_dependencies = \
+                        view_object.get_table_submodules_dependencies(
+                            **temp_src_params)
+                    target_ddl = \
+                        view_object.get_sql_from_table_diff(**temp_tgt_params)
+
                 diff_ddl = view_object.get_sql_from_submodule_diff(
                     source_params=temp_src_params,
                     target_params=temp_tgt_params,
@@ -324,9 +363,12 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
                 temp_tgt_params = copy.deepcopy(target_params)
                 diff_dict = directory_diff(
                     dict1[key], dict2[key],
-                    ignore_keys=view_object.keys_to_ignore, difference={}
+                    ignore_keys=ignore_keys, difference={}
                 )
-                parse_acl(dict1[key], dict2[key], diff_dict)
+
+                # No need to parse acl if ignore_grants is set to True.
+                if not ignore_grants:
+                    parse_acl(dict1[key], dict2[key], diff_dict)
 
                 temp_src_params['oid'] = source_object_id
                 temp_tgt_params['oid'] = target_object_id
@@ -355,7 +397,7 @@ def _get_identical_and_different_list(intersect_keys, source_dict, target_dict,
                 'oid': source_object_id,
                 'source_oid': source_object_id,
                 'target_oid': target_object_id,
-                'status': SchemaDiffModel.COMPARISON_STATUS['different'],
+                'status': gettext('Different'),
                 'source_ddl': source_ddl,
                 'target_ddl': target_ddl,
                 'diff_ddl': diff_ddl,
@@ -387,6 +429,8 @@ def compare_dictionaries(**kwargs):
     source_schema_name = kwargs.get('source_schema_name')
     ignore_owner = kwargs.get('ignore_owner')
     ignore_whitespaces = kwargs.get('ignore_whitespaces')
+    ignore_tablespace = kwargs.get('ignore_tablespace')
+    ignore_grants = kwargs.get('ignore_grants')
 
     dict1 = copy.deepcopy(source_dict)
     dict2 = copy.deepcopy(target_dict)
@@ -421,9 +465,21 @@ def compare_dictionaries(**kwargs):
     # ignore keys.
     if ignore_owner:
         owner_keys = ['owner', 'eventowner', 'funcowner', 'fdwowner',
-                      'fsrvowner', 'lanowner', 'relowner', 'relacl', 'acl',
-                      'seqowner', 'typeowner']
+                      'fsrvowner', 'lanowner', 'relowner', 'seqowner',
+                      'typeowner']
         ignore_keys = ignore_keys + owner_keys
+
+    # if ignore_tablespace is True then add all the possible tablespace keys
+    # to the ignore keys.
+    if ignore_tablespace:
+        tablespace_keys = ['spcname', 'spcoid']
+        ignore_keys = ignore_keys + tablespace_keys
+
+    # if ignore_grants is True then add all the possible grants keys
+    # to the ignore keys.
+    if ignore_grants:
+        grant_keys = ['relacl', 'acl', 'datacl', 'fdwacl', 'lanacl', 'fsrvacl']
+        ignore_keys = ignore_keys + grant_keys
 
     # Compare the values of duplicates keys.
     other_param = {
@@ -434,7 +490,8 @@ def compare_dictionaries(**kwargs):
         "target_params": target_params,
         "group_name": group_name,
         "target_schema": target_schema,
-        "ignore_whitespaces": ignore_whitespaces
+        "ignore_whitespaces": ignore_whitespaces,
+        "ignore_grants": ignore_grants
     }
 
     identical, different = _get_identical_and_different_list(
@@ -486,11 +543,12 @@ def are_dictionaries_identical(source_dict, target_dict, ignore_keys,
     """
     src_keys = set(source_dict.keys())
     tar_keys = set(target_dict.keys())
+    igr_keys = set(ignore_keys)
 
     # Keys that are available in source and missing in target.
-    src_only = src_keys - tar_keys
+    src_only = (src_keys - igr_keys) - tar_keys
     # Keys that are available in target and missing in source.
-    tar_only = tar_keys - src_keys
+    tar_only = (tar_keys - igr_keys) - src_keys
 
     # If number of keys are different in source and target then
     # return False
@@ -590,11 +648,12 @@ def directory_diff(source_dict, target_dict, ignore_keys=[], difference=None):
     difference = {} if difference is None else difference
     src_keys = set(source_dict.keys())
     tar_keys = set(target_dict.keys())
+    igr_keys = set(ignore_keys)
 
     # Keys that are available in source and missing in target.
-    src_only = src_keys - tar_keys
+    src_only = (src_keys - igr_keys) - tar_keys
     # Keys that are available in target and missing in source.
-    tar_only = tar_keys - src_keys
+    tar_only = (tar_keys - igr_keys) - src_keys
 
     for key in source_dict.keys():
         added = []
@@ -627,7 +686,7 @@ def directory_diff(source_dict, target_dict, ignore_keys=[], difference=None):
                 for index in range(len(source_dict[key])):
                     source = copy.deepcopy(source_dict[key][index])
                     if isinstance(source, list):
-                        # TODO
+                        # This block is empty will figure out some scenario
                         pass
                     elif isinstance(source, dict):
                         # Check the above keys are exist in the dictionary

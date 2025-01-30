@@ -2,7 +2,7 @@
 # #
 # # pgAdmin 4 - PostgreSQL Tools
 # #
-# # Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# # Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # # This software is released under the PostgreSQL Licence
 # #
 # ##########################################################################
@@ -16,7 +16,7 @@ import pickle
 from boto3.session import Session
 from flask_babel import gettext
 from flask import session, current_app, request
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from werkzeug.datastructures import Headers
 from pgadmin.utils import PgAdminModule
 from pgadmin.misc.cloud.utils import _create_server, CloudProcessDesc
@@ -34,13 +34,6 @@ MODULE_NAME = 'rds'
 
 class RDSModule(PgAdminModule):
     """Cloud module to deploy on AWS RDS"""
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def get_exposed_url_endpoints(self):
         return ['rds.db_versions',
@@ -55,7 +48,7 @@ blueprint = RDSModule(MODULE_NAME, __name__,
 
 @blueprint.route('/verify_credentials/',
                  methods=['POST'], endpoint='verify_credentials')
-@login_required
+@pga_login_required
 def verify_credentials():
     """Verify Credentials."""
     msg = ''
@@ -78,16 +71,16 @@ def verify_credentials():
         if status:
             session['aws']['secret'] = data['secret']
             session['aws']['aws_rds_obj'] = pickle.dumps(_rds, -1)
-
-    if status:
-        msg = 'verified'
+            msg = 'verified'
+        else:
+            msg = identity
 
     return make_json_response(success=status, info=msg)
 
 
 @blueprint.route('/db_instances/',
                  methods=['GET'], endpoint='db_instances')
-@login_required
+@pga_login_required
 def get_db_instances():
     """
     Fetch AWS DB Instances based on engine version.
@@ -102,7 +95,7 @@ def get_db_instances():
         )
 
     if not eng_version or eng_version == '' or eng_version == 'undefined':
-        eng_version = '10.17'
+        eng_version = '11.16'
 
     rds_obj = pickle.loads(session['aws']['aws_rds_obj'])
     res = rds_obj.get_available_db_instance_class(
@@ -123,7 +116,7 @@ def get_db_instances():
 
 @blueprint.route('/db_versions/',
                  methods=['GET'], endpoint='db_versions')
-@login_required
+@pga_login_required
 def get_db_versions():
     """GET AWS Database Versions for AWS."""
     if 'aws' not in session:
@@ -149,7 +142,7 @@ def get_db_versions():
 
 @blueprint.route('/regions/',
                  methods=['GET'], endpoint='regions')
-@login_required
+@pga_login_required
 def get_regions():
     """GET Regions for AWS."""
     try:

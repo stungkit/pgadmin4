@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -113,7 +113,7 @@ class JobScheduleView(PGChildNodeView):
     Methods:
     -------
     * __init__(**kwargs)
-      - Method is used to initialize the JobScheduleView and it's base view.
+      - Method is used to initialize the JobScheduleView, and it's base view.
 
     * check_precondition()
       - This function will behave as a decorator which will checks
@@ -125,7 +125,7 @@ class JobScheduleView(PGChildNodeView):
       collection.
 
     * nodes()
-      - This function will used to create all the child node within that
+      - This function will use to create all the child node within that
       collection. Here it will create all the schedule node.
 
     * properties(gid, sid, jid, jscid)
@@ -215,7 +215,7 @@ class JobScheduleView(PGChildNodeView):
         """
         sql = render_template(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
-            jid=jid
+            jid=jid, conn=self.conn
         )
         status, res = self.conn.execute_dict(sql)
 
@@ -242,7 +242,8 @@ class JobScheduleView(PGChildNodeView):
         sql = render_template(
             "/".join([self.template_path, self._NODES_SQL]),
             jscid=jscid,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
 
         status, result = self.conn.execute_2darray(sql)
@@ -264,7 +265,8 @@ class JobScheduleView(PGChildNodeView):
                     row['jscname'],
                     icon="icon-pga_schedule" if row['jscenabled'] else
                     "icon-pga_schedule-disabled",
-                    enabled=row['jscenabled']
+                    enabled=row['jscenabled'],
+                    description=row['jscdesc']
                 )
             )
 
@@ -276,7 +278,8 @@ class JobScheduleView(PGChildNodeView):
                     row['jscname'],
                     icon="icon-pga_schedule" if row['jscenabled'] else
                     "icon-pga_schedule-disabled",
-                    enabled=row['jscenabled']
+                    enabled=row['jscenabled'],
+                    description=row['jscdesc']
                 )
             )
 
@@ -298,7 +301,7 @@ class JobScheduleView(PGChildNodeView):
         """
         sql = render_template(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
-            jscid=jscid, jid=jid
+            jscid=jscid, jid=jid, conn=self.conn
         )
         status, res = self.conn.execute_dict(sql)
 
@@ -349,7 +352,8 @@ class JobScheduleView(PGChildNodeView):
             "/".join([self.template_path, self._CREATE_SQL]),
             jid=jid,
             data=data,
-            fetch_id=True
+            fetch_id=True,
+            conn=self.conn
         )
 
         status, res = self.conn.execute_void('BEGIN')
@@ -366,7 +370,8 @@ class JobScheduleView(PGChildNodeView):
         sql = render_template(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
             jscid=res,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
         status, res = self.conn.execute_2darray(sql)
 
@@ -419,7 +424,8 @@ class JobScheduleView(PGChildNodeView):
             "/".join([self.template_path, self._UPDATE_SQL]),
             jid=jid,
             jscid=jscid,
-            data=data
+            data=data,
+            conn=self.conn
         )
 
         status, res = self.conn.execute_void(sql)
@@ -430,7 +436,8 @@ class JobScheduleView(PGChildNodeView):
         sql = render_template(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
             jscid=jscid,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
         status, res = self.conn.execute_2darray(sql)
 
@@ -450,7 +457,8 @@ class JobScheduleView(PGChildNodeView):
                 row['jscname'],
                 icon="icon-pga_schedule" if row['jscenabled'] else
                 "icon-pga_schedule-disabled",
-                enabled=row['jscenabled']
+                enabled=row['jscenabled'],
+                description=row['jscdesc']
             )
         )
 
@@ -504,14 +512,16 @@ class JobScheduleView(PGChildNodeView):
                 "/".join([self.template_path, self._CREATE_SQL]),
                 jid=jid,
                 data=data,
-                fetch_id=False
+                fetch_id=False,
+                conn=self.conn
             )
         else:
             sql = render_template(
                 "/".join([self.template_path, self._UPDATE_SQL]),
                 jid=jid,
                 jscid=jscid,
-                data=data
+                data=data,
+                conn=self.conn
             )
 
         return make_json_response(

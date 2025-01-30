@@ -2,16 +2,14 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import _ from 'lodash';
-import React from 'react';
 
-export const DepListenerContext = React.createContext();
 
-export default class DepListener {
+export class DepListener {
   constructor() {
     this._depListeners = [];
   }
@@ -39,7 +37,10 @@ export default class DepListener {
     if(dataPath.length > 0) {
       data = _.get(state, dataPath);
     }
-    _.assign(data, listener.callback && listener.callback(data, listener.source, state, actionObj) || {});
+    _.assign(
+      data,
+      listener.callback?.(data, listener.source, state, actionObj) || {}
+    );
     return state;
   }
 
@@ -50,7 +51,7 @@ export default class DepListener {
     if(dataPath.length > 0) {
       data = _.get(state, dataPath);
     }
-    return (listener.defCallback && listener.defCallback(data, listener.source, state, actionObj));
+    return (listener.defCallback?.(data, listener.source, state, actionObj));
   }
 
   /* Called when any field changed and trigger callbacks */
@@ -59,7 +60,8 @@ export default class DepListener {
     if(actionObj.listener?.callback) {
       state = this._getListenerData(state, actionObj.listener, actionObj);
     } else {
-      let allListeners = _.filter(this._depListeners, (entry)=>_.join(currPath, '|').startsWith(_.join(entry.source, '|')));
+      // adding a extra item in path to avoid incorrect matching like shared and shared_username
+      let allListeners = _.filter(this._depListeners, (entry)=>_.join(currPath.concat(['']), '|').startsWith(_.join(entry.source.concat(['']), '|')));
       if(allListeners) {
         for(const listener of allListeners) {
           state = this._getListenerData(state, listener, actionObj);
@@ -71,7 +73,10 @@ export default class DepListener {
 
   getDeferredDepChange(currPath, state, actionObj) {
     let deferredList = [];
-    let allListeners = _.filter(this._depListeners, (entry)=>_.join(currPath, '|').startsWith(_.join(entry.source, '|')));
+    let allListeners = _.filter(this._depListeners, (entry) => _.join(
+      currPath, '|'
+    ).startsWith(_.join(entry.source, '|')));
+
     if(allListeners) {
       for(const listener of allListeners) {
         if(listener.defCallback) {

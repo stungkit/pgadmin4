@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -24,16 +24,16 @@ export default class RoleSchema extends BaseUISchema {
       rolcreaterole: false,
       rolcreatedb: false,
       rolinherit: true,
-      rolcatupdate: false,
       rolreplication: false,
       rolmembership: [],
       rolmembers: [],
       rolvaliduntil: null,
       seclabels: [],
       variables: [],
+      rolbypassrls: false,
     });
-    this.getVariableSchema = getVariableSchema;
-    this.getMembershipSchema = getMembershipSchema;
+    this.variableSchema = getVariableSchema();
+    this.membershipSchema = getMembershipSchema();
     this.fieldOptions = {
       role: [],
       ...fieldOptions,
@@ -58,8 +58,8 @@ export default class RoleSchema extends BaseUISchema {
   memberDataFormatter(rawData) {
     let members = '';
     if(_.isObject(rawData)) {
-      let withAdmin = '';
       rawData.forEach(member => {
+        let withAdmin = '';
         if(member.admin) { withAdmin = ' [WITH ADMIN]';}
 
         if (members.length > 0) { members += ', '; }
@@ -93,6 +93,7 @@ export default class RoleSchema extends BaseUISchema {
         group: gettext('Definition'), mode: ['edit', 'create'],
         control: 'input', deps: ['rolcanlogin'], retype: true,
         cell: 'text', disabled: obj.readOnly,
+        controlProps: { autoComplete: 'new-password' },
       },
       {
         id: 'rolvaliduntil', type: 'datetimepicker',
@@ -116,8 +117,6 @@ export default class RoleSchema extends BaseUISchema {
       {
         id: 'rolcanlogin', label: gettext('Can login?'),
         type: 'switch',
-        controlLabelClassName: 'control-label pg-el-sm-4 pg-el-12',
-        controlsClassName: 'pgadmin-controls pg-el-sm-8 pg-el-12',
         group: gettext('Privileges'),
         disabled: obj.readOnly,
       },
@@ -126,7 +125,7 @@ export default class RoleSchema extends BaseUISchema {
         type: 'switch',
         group: gettext('Privileges'),
         depChange: (state) => {
-          state.rolcatupdate = state.rolcreaterole = state.rolcreatedb =  state.rolsuper;
+          state.rolcreaterole = state.rolcreatedb = state.rolbypassrls = state.rolsuper;
         },
         disabled: obj.readOnly,
       },
@@ -134,8 +133,6 @@ export default class RoleSchema extends BaseUISchema {
         id: 'rolcreaterole', label: gettext('Create roles?'),
         group: gettext('Privileges'),
         type: 'switch',
-        controlLabelClassName: 'control-label pg-el-sm-4 pg-el-12',
-        controlsClassName: 'pgadmin-controls pg-el-sm-8 pg-el-12',
         disabled: obj.readOnly,
       },
       {
@@ -145,32 +142,22 @@ export default class RoleSchema extends BaseUISchema {
         disabled: obj.readOnly,
       },
       {
-        id: 'rolcatupdate', label: gettext('Update catalog?'),
-        max_version: 90400,
-        group: gettext('Privileges'),
-        type: 'switch',
-        disabled: (state) => {
-          return !state.rolsuper;
-        },
-        readonly: () => {
-          return !(obj.user.is_superuser || obj.user.can_create_role);
-        }
-      },
-      {
         id: 'rolinherit', group: gettext('Privileges'),
         label: gettext('Inherit rights from the parent roles?'),
         type: 'switch',
-        controlLabelClassName: 'control-label pg-el-sm-4 pg-el-12',
-        controlsClassName: 'pgadmin-controls pg-el-sm-8 pg-el-12',
         disabled: obj.readOnly,
       },
       {
         id: 'rolreplication', group: gettext('Privileges'),
         label: gettext('Can initiate streaming replication and backups?'),
         type: 'switch',
-        controlLabelClassName: 'control-label pg-el-sm-4 pg-el-12',
-        controlsClassName: 'pgadmin-controls pg-el-sm-8 pg-el-12',
         min_version: 90100,
+        disabled: obj.readOnly,
+      },
+      {
+        id: 'rolbypassrls', group: gettext('Privileges'),
+        label: gettext('Bypass RLS?'),
+        type: 'switch',
         disabled: obj.readOnly,
       },
       {
@@ -178,7 +165,9 @@ export default class RoleSchema extends BaseUISchema {
         disabled: obj.readOnly,
         mode: ['edit', 'create'], cell: 'text',
         type: 'collection',
-        schema: new obj.getMembershipSchema(),
+        canDelete: (state) => !obj.readOnly(state),
+        canDeleteRow: true,
+        schema: obj.membershipSchema,
         helpMessage: obj.isReadOnly ? gettext('Select the checkbox for roles to include WITH ADMIN OPTION.') : gettext('Roles shown with a check mark have the WITH ADMIN OPTION set.'),
       },
       {
@@ -196,9 +185,11 @@ export default class RoleSchema extends BaseUISchema {
         id: 'rolmembers', label: gettext('Members'), group: gettext('Membership'),
         mode: ['edit', 'create'], cell: 'text',
         type: 'collection',
-        schema: new obj.getMembershipSchema(),
+        schema: obj.membershipSchema,
         disabled: obj.readOnly,
-        helpMessage: obj.isReadOnly ? gettext('Select the checkbox for roles to include WITH ADMIN OPTION.') : gettext('Roles shown with a check mark have the WITH ADMIN OPTION set.') ,
+        canDelete: (state) => !obj.readOnly(state),
+        canDeleteRow: true,
+        helpMessage: obj.isReadOnly ? gettext('Select the checkbox for roles to include WITH ADMIN OPTION.') : gettext('Roles shown with a check mark have the WITH ADMIN OPTION set.'),
       },
       {
         id: 'rolmembers', label: gettext('Members'), group: gettext('Membership'),
@@ -214,7 +205,7 @@ export default class RoleSchema extends BaseUISchema {
       {
         id: 'variables', label: '', type: 'collection',
         group: gettext('Parameters'),
-        schema: this.getVariableSchema(),
+        schema: this.variableSchema,
         mode: [ 'edit', 'create'], canAdd: true, canDelete: true,
         disabled: obj.readOnly,
       },

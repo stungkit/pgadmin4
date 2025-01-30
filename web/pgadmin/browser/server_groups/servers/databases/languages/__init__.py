@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -74,7 +74,10 @@ class LanguageModule(CollectionNodeModule):
             sid: Server ID
             did: Database Id
         """
-        yield self.generate_browser_collection_node(did)
+        if self.has_nodes(
+            sid, did,
+                base_template_path=LanguageView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(did)
 
     @property
     def node_inode(self):
@@ -175,6 +178,7 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
     _NOT_FOUND_LANG_INFORMATION = \
         gettext("Could not find the language information.")
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = "languages/sql/#{0}#"
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -241,7 +245,7 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
 
             # Set the template path for the SQL scripts
             self.template_path = (
-                "languages/sql/#{0}#".format(self.manager.version)
+                self.BASE_TEMPLATE_PATH.format(self.manager.version)
             )
 
             return f(*args, **kwargs)
@@ -296,7 +300,8 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     did,
                     row['name'],
-                    icon="icon-language"
+                    icon="icon-language",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -375,9 +380,10 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
         if len(res['rows']) == 0:
             return False, gone(self._NOT_FOUND_LANG_INFORMATION)
 
-        res['rows'][0]['is_sys_obj'] = (
-            res['rows'][0]['oid'] <= self._DATABASE_LAST_SYSTEM_OID or
-            self.datistemplate)
+        if isinstance(res['rows'], list):
+            res['rows'][0]['is_sys_obj'] = (
+                res['rows'][0]['oid'] <= self._DATABASE_LAST_SYSTEM_OID or
+                self.datistemplate)
 
         sql = render_template(
             "/".join([self.template_path, self._ACL_SQL]),
@@ -434,12 +440,17 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     lid,
                     did,
                     name,
-                    icon="icon-%s" % self.node_type
+                    icon="icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -584,7 +595,7 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
             except ValueError:
                 data[k] = v
         try:
-            sql, name = self.get_sql(data, lid)
+            sql, _ = self.get_sql(data, lid)
             # Most probably this is due to error
             if not isinstance(sql, str):
                 return sql
@@ -857,7 +868,7 @@ class LanguageView(PGChildNodeView, SchemaDiffObjectCompare):
         drop_sql = kwargs.get('drop_sql', False)
 
         if data:
-            sql, name = self.get_sql(data=data, lid=oid)
+            sql, _ = self.get_sql(data=data, lid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

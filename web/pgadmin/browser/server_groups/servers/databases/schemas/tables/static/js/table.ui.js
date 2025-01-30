@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -22,12 +22,22 @@ import { getNodeVacuumSettingsSchema } from '../../../../../static/js/vacuum.ui'
 import { getNodeForeignKeySchema } from '../../constraints/foreign_key/static/js/foreign_key.ui';
 import { getNodeExclusionConstraintSchema } from '../../constraints/exclusion_constraint/static/js/exclusion_constraint.ui';
 import { getNodePrivilegeRoleSchema } from '../../../../../static/js/privilege.ui';
-import Notify from '../../../../../../../../static/js/helpers/Notifier';
+import pgAdmin from 'sources/pgadmin';
+
+export function getPrivilegesForTableAndLikeObjects(server_version) {
+  if (server_version && server_version >= 170000) {
+    return ['a', 'r', 'w', 'd', 'D', 'x', 't', 'm'];
+  }
+
+  return ['a', 'r', 'w', 'd', 'D', 'x', 't'];
+}
 
 export function getNodeTableSchema(treeNodeInfo, itemNodeData, pgBrowser) {
-  const spcname = ()=>getNodeListByName('tablespace', treeNodeInfo, itemNodeData, {}, (m)=>{
-    return (m.label != 'pg_global');
-  });
+  const spcname = () => getNodeListByName(
+    'tablespace', treeNodeInfo, itemNodeData, {}, (m) => {
+      return (m.label != 'pg_global');
+    }
+  );
 
   let tableNode = pgBrowser.Nodes['table'];
 
@@ -35,22 +45,22 @@ export function getNodeTableSchema(treeNodeInfo, itemNodeData, pgBrowser) {
     {
       relowner: ()=>getNodeListByName('role', treeNodeInfo, itemNodeData),
       schema: ()=>getNodeListByName('schema', treeNodeInfo, itemNodeData, {
-        cacheLevel: 'database',
-        cacheNode: 'database',
+        cacheLevel: 'database'
       }, (d)=>{
         // If schema name start with pg_* then we need to exclude them
-        return !(d && d.label.match(/^pg_/));
+        return !(d?.label.match(/^pg_/));
       }),
       spcname: spcname,
       coll_inherits: ()=>getNodeAjaxOptions('get_inherits', tableNode, treeNodeInfo, itemNodeData),
       typname: ()=>getNodeAjaxOptions('get_oftype', tableNode, treeNodeInfo, itemNodeData),
       like_relation: ()=>getNodeAjaxOptions('get_relations', tableNode, treeNodeInfo, itemNodeData),
+      table_amname_list: ()=>getNodeAjaxOptions('get_table_access_methods', tableNode, treeNodeInfo, itemNodeData),
     },
     treeNodeInfo,
     {
-      columns: ()=>getNodeColumnSchema(treeNodeInfo, itemNodeData, pgBrowser),
-      vacuum_settings: ()=>getNodeVacuumSettingsSchema(tableNode, treeNodeInfo, itemNodeData),
-      constraints: ()=>new ConstraintsSchema(
+      columns: () => getNodeColumnSchema(treeNodeInfo, itemNodeData, pgBrowser),
+      vacuum_settings: () => getNodeVacuumSettingsSchema(tableNode, treeNodeInfo, itemNodeData),
+      constraints: () => new ConstraintsSchema(
         treeNodeInfo,
         ()=>getNodeForeignKeySchema(treeNodeInfo, itemNodeData, pgBrowser, true, {autoindex: false}),
         ()=>getNodeExclusionConstraintSchema(treeNodeInfo, itemNodeData, pgBrowser, true),
@@ -112,7 +122,7 @@ export class ConstraintsSchema extends BaseUISchema {
       schema: this.primaryKeyObj,
       editable: false, type: 'collection',
       group: gettext('Primary Key'), mode: ['edit', 'create'],
-      canEdit: true, canDelete: true, deps:['is_partitioned', 'typname'],
+      canEdit: true, canDelete: true, deps:['is_partitioned', 'typname', 'columns'],
       columns : ['name', 'columns'],
       disabled: this.inCatalog,
       canAdd: function(state) {
@@ -121,6 +131,7 @@ export class ConstraintsSchema extends BaseUISchema {
       canAddRow: function(state) {
         return ((state.primary_key||[]).length < 1 && obj.anyColumnAdded(state));
       },
+      expandEditOnAdd: true,
       depChange: (state, source, topState, actionObj)=>{
         if (state.is_partitioned && obj.top.getServerVersion() < 110000 || state.columns?.length <= 0) {
           return {primary_key: []};
@@ -133,6 +144,20 @@ export class ConstraintsSchema extends BaseUISchema {
             ...c, is_primary_key: columns.indexOf(c.name) > -1,
           }));
           return {columns: state.columns};
+        }
+        /* If column or primary key is deleted */
+        if(actionObj.type === SCHEMA_STATE_ACTIONS.DELETE_ROW) {
+          let deletedColumn = _.differenceBy(actionObj.oldState.columns,state.columns,'cid');
+          if(deletedColumn.length && deletedColumn[0].is_primary_key && !obj.top.isNew(state)) {
+            state.columns = state.columns.map(c=>({
+              ...c, is_primary_key: false
+            }));
+            return {primary_key: []};
+          } else if(source[0] === 'primary_key') {
+            state.columns = state.columns.map(c=>({
+              ...c, is_primary_key: false
+            }));
+          }
         }
       }
     },{
@@ -147,6 +172,7 @@ export class ConstraintsSchema extends BaseUISchema {
       columns : ['name', 'columns','references_table_name'],
       disabled: this.inCatalog,
       canAddRow: obj.anyColumnAdded,
+      expandEditOnAdd: true,
       depChange: (state)=>{
         if (state.is_partitioned && obj.top.getServerVersion() < 110000 || state.columns?.length <= 0) {
           return {foreign_key: []};
@@ -177,6 +203,7 @@ export class ConstraintsSchema extends BaseUISchema {
         return obj.canAdd(state);
       },
       canAddRow: obj.anyColumnAdded,
+      expandEditOnAdd: true,
       depChange: (state)=>{
         if (state.is_partitioned && obj.top.getServerVersion() < 110000 || state.columns?.length <= 0) {
           return {unique_constraint: []};
@@ -196,6 +223,7 @@ export class ConstraintsSchema extends BaseUISchema {
         return obj.canAdd(state);
       },
       canAddRow: obj.anyColumnAdded,
+      expandEditOnAdd: true,
       depChange: (state)=>{
         if (state.is_partitioned && obj.top.getServerVersion() < 110000 || state.columns?.length <= 0) {
           return {exclude_constraint: []};
@@ -227,6 +255,10 @@ export class LikeSchema extends BaseUISchema {
         like_indexes: false,
         like_storage: false,
         like_comments: false,
+        like_compression: false,
+        like_generated: false,
+        like_identity: false,
+        like_statistics: false
       };
     }
   }
@@ -252,22 +284,47 @@ export class LikeSchema extends BaseUISchema {
         id: 'like_default_value', label: gettext('With default values?'),
         type: 'switch', mode: ['create'], deps: ['like_relation'],
         disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
       },{
         id: 'like_constraints', label: gettext('With constraints?'),
         type: 'switch', mode: ['create'], deps: ['like_relation'],
         disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
       },{
         id: 'like_indexes', label: gettext('With indexes?'),
         type: 'switch', mode: ['create'], deps: ['like_relation'],
         disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
       },{
         id: 'like_storage', label: gettext('With storage?'),
         type: 'switch', mode: ['create'], deps: ['like_relation'],
         disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
       },{
         id: 'like_comments', label: gettext('With comments?'),
         type: 'switch', mode: ['create'], deps: ['like_relation'],
         disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
+      },{
+        id: 'like_compression', label: gettext('With compression?'),
+        type: 'switch', mode: ['create'], deps: ['like_relation'],
+        disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        min_version: 140000, inlineGroup: 'like_relation',
+      },{
+        id: 'like_generated', label: gettext('With generated?'),
+        type: 'switch', mode: ['create'], deps: ['like_relation'],
+        disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        min_version: 120000, inlineGroup: 'like_relation',
+      },{
+        id: 'like_identity', label: gettext('With identity?'),
+        type: 'switch', mode: ['create'], deps: ['like_relation'],
+        disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
+      },{
+        id: 'like_statistics', label: gettext('With statistics?'),
+        type: 'switch', mode: ['create'], deps: ['like_relation'],
+        disabled: this.isRelationDisable, depChange: (...args)=>obj.resetVals(...args),
+        inlineGroup: 'like_relation',
       }
     ];
   }
@@ -311,6 +368,7 @@ export default class TableSchema extends BaseUISchema {
       partition_type: 'range',
       is_partitioned: false,
       columns: [],
+      amname: undefined,
       ...initValues,
     });
 
@@ -320,10 +378,10 @@ export default class TableSchema extends BaseUISchema {
     this.nodeInfo = nodeInfo;
     this.getColumns = getColumns;
 
-    this.partitionsObj = new PartitionsSchema(this.nodeInfo, getCollations, getOperatorClass, getAttachTables);
-    this.constraintsObj = this.schemas.constraints && this.schemas.constraints() || {};
-    this.columnsSchema = this.schemas.columns && this.schemas.columns() || {};
-    this.vacuumSettingsSchema = this.schemas.vacuum_settings && this.schemas.vacuum_settings() || {};
+    this.partitionsObj = new PartitionsSchema(this.nodeInfo, getCollations, getOperatorClass, fieldOptions.table_amname_list, getAttachTables);
+    this.constraintsObj = this.schemas.constraints?.() || {};
+    this.columnsSchema = this.schemas.columns?.() || {};
+    this.vacuumSettingsSchema = this.schemas.vacuum_settings?.() || {};
     this.partitionKeysObj = new PartitionKeysSchema([], getCollations, getOperatorClass);
     this.inErd = inErd;
   }
@@ -401,7 +459,9 @@ export default class TableSchema extends BaseUISchema {
   }
 
   changeColumnOptions(columns) {
-    let colOptions = (columns||[]).map((c)=>({label: c.name, value: c.name, image:'icon-column'}));
+    let colOptions = (columns||[]).map(
+      (c) => ({label: c.name, value: c.name, image:'icon-column'})
+    );
     this.constraintsObj.changeColumnOptions(colOptions);
     this.partitionKeysObj.changeColumnOptions(colOptions);
     this.partitionsObj.changeColumnOptions(colOptions);
@@ -417,7 +477,7 @@ export default class TableSchema extends BaseUISchema {
       id: 'oid', label: gettext('OID'), type: 'text', mode: ['properties'],
     },{
       id: 'relowner', label: gettext('Owner'), type: 'select',
-      options: this.fieldOptions.relowner, noEmpty: this.inErd ? false : true,
+      options: this.fieldOptions.relowner, noEmpty: !this.inErd,
       mode: ['properties', 'create', 'edit'], controlProps: {allowClear: false},
       readonly: this.inCatalog, visible: !this.inErd,
     },{
@@ -433,10 +493,16 @@ export default class TableSchema extends BaseUISchema {
         return {
           type: 'select', options: this.fieldOptions.spcname,
           controlProps: {
-            allowClear: obj.isNew(state) ? true : false,
+            allowClear: obj.isNew(state),
           }
         };
       }
+    },{
+      id: 'columns', type: 'group', label: gettext('Columns'),
+    },{
+      id: 'advanced', label: gettext('Advanced'), type: 'group',
+    },{
+      id: 'constraints', label: gettext('Constraints'), type: 'group',
     },{
       id: 'partition', type: 'group', label: gettext('Partitions'),
       mode: ['edit', 'create'], min_version: 100000,
@@ -447,6 +513,12 @@ export default class TableSchema extends BaseUISchema {
         // Always show in case of create mode
         return (obj.isNew(state) || state.is_partitioned);
       },
+    },{
+      type: 'group', id: 'parameters', label: gettext('Parameters'),
+      visible: !this.inErd,
+    },{
+      id: 'security_group', type: 'group', label: gettext('Security'),
+      visible: !this.inErd,
     },{
       id: 'is_partitioned', label:gettext('Partitioned table?'), cell: 'switch',
       type: 'switch', mode: ['properties', 'create', 'edit'],
@@ -463,9 +535,12 @@ export default class TableSchema extends BaseUISchema {
       mode: ['properties', 'create', 'edit'], disabled: this.inCatalog,
     },{
       id: 'coll_inherits', label: gettext('Inherited from table(s)'),
-      type: 'select', group: gettext('Columns'),
+      type: 'select', group: 'columns',
       deps: ['typname', 'is_partitioned'], mode: ['create', 'edit'],
-      controlProps: { multiple: true, allowClear: false, placeholder: gettext('Select to inherit from...')},
+      controlProps: {
+        multiple: true, allowClear: false,
+        placeholder: gettext('Select to inherit from...')
+      },
       options: this.fieldOptions.coll_inherits, visible: !this.inErd,
       optionsLoaded: (res)=>obj.inheritedTableList=res,
       disabled: (state)=>{
@@ -564,9 +639,6 @@ export default class TableSchema extends BaseUISchema {
           }
         });
       },
-    },{
-      id: 'advanced', label: gettext('Advanced'), type: 'group',
-      visible: true,
     },
     {
       id: 'rlspolicy', label: gettext('RLS Policy?'), cell: 'switch',
@@ -574,9 +646,9 @@ export default class TableSchema extends BaseUISchema {
       group: 'advanced', min_version: 90600,
       depChange: (state)=>{
         if (state.rlspolicy && this.origData.rlspolicy != state.rlspolicy) {
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             gettext('Check Policy?'),
-            gettext('Please check if any policy exist. If no policy exists for the table, a default-deny policy is used, meaning that no rows are visible or can be modified by other users')
+            gettext('Please check if any policy exists. If no policy exists for the table, a default-deny policy is used, meaning that no rows are visible or can be modified by other users')
           );
         }
       }
@@ -607,12 +679,9 @@ export default class TableSchema extends BaseUISchema {
     },{
       // Tab control for columns
       id: 'columns', label: gettext('Columns'), type: 'collection',
-      group: gettext('Columns'),
-      schema: this.columnsSchema,
-      mode: ['create', 'edit'],
-      disabled: this.inCatalog,
-      deps: ['typname', 'is_partitioned'],
-      depChange: (state, source, topState, actionObj)=>{
+      group: 'columns', schema: this.columnsSchema, mode: ['create', 'edit'],
+      disabled: this.inCatalog, deps: ['typname', 'is_partitioned'],
+      depChange: (state, source, topState, actionObj) => {
         if(source[0] === 'columns') {
           /* In ERD, attnum is an imp let for setting the links
           Here, attnum is set to max avail value.
@@ -652,7 +721,8 @@ export default class TableSchema extends BaseUISchema {
               /* Create PK if none */
               return {primary_key: [
                 obj.constraintsObj.primaryKeyObj.getNewData({
-                  columns: [{column: columnData.name}],
+                  columns: [{column: columnData.name,
+                  }],
                 })
               ]};
             }
@@ -670,7 +740,7 @@ export default class TableSchema extends BaseUISchema {
       allowMultipleEmptyRow: false,
     },{
       // Here we will create tab control for constraints
-      type: 'nested-tab', group: gettext('Constraints'),
+      type: 'nested-tab', group: 'constraints',
       mode: ['edit', 'create'],
       schema: obj.constraintsObj,
     },{
@@ -689,7 +759,7 @@ export default class TableSchema extends BaseUISchema {
             let typeTable = _.find(obj.ofTypeTables||[], (t)=>t.label==state.typname);
             finalCols = typeTable.oftype_columns;
           }
-          resolve(()=>{
+          resolve(() => {
             obj.changeColumnOptions(finalCols);
             return {
               columns: finalCols,
@@ -704,7 +774,7 @@ export default class TableSchema extends BaseUISchema {
         };
         if(!isEmptyString(state.typname) && isEmptyString(actionObj.oldState.typname)) {
           return new Promise((resolve)=>{
-            Notify.confirm(
+            pgAdmin.Browser.notifier.confirm(
               gettext('Remove column definitions?'),
               gettext('Changing \'Of type\' will remove column definitions.'),
               function () {
@@ -725,6 +795,29 @@ export default class TableSchema extends BaseUISchema {
           });
         } else {
           return Promise.resolve(()=>{/*This is intentional (SonarQube)*/});
+        }
+      },
+    },
+    {
+      id: 'amname', label: gettext('Access Method'), group: 'advanced',
+      deps:['is_partitioned'], type: (state)=>{
+        return {
+          type: 'select', options: this.fieldOptions.table_amname_list,
+          controlProps: {
+            allowClear: obj.isNew(state),
+          }
+        };
+      }, mode: ['create', 'properties', 'edit'], min_version: 120000,
+      disabled: (state) => {
+        if (obj.getServerVersion() < 150000 && !obj.isNew(state)) {
+          return true;
+        }
+        return obj.isPartitioned(state);
+      }, depChange: state => {
+        if (state.is_partitioned) {
+          return {
+            amname: undefined
+          };
         }
       },
     },
@@ -925,16 +1018,11 @@ export default class TableSchema extends BaseUISchema {
       ].join(''),
       min_version: 100000,
     },{
-      type: 'group', id: 'parameters', label: gettext('Parameters'),
-      visible: !this.inErd,
-    },{
       // Here - we will create tab control for storage parameters
       // (auto vacuum).
       type: 'nested-tab', group: 'parameters',
       mode: ['edit', 'create'], deps: ['is_partitioned'],
       schema: this.vacuumSettingsSchema, visible: !this.inErd,
-    },{
-      id: 'security_group', type: 'group', label: gettext('Security'), visible: !this.inErd,
     },
     {
       id: 'relacl_str', label: gettext('Privileges'), disabled: this.inCatalog,
@@ -942,7 +1030,7 @@ export default class TableSchema extends BaseUISchema {
     },
     {
       id: 'relacl', label: gettext('Privileges'), type: 'collection',
-      group: 'security_group', schema: this.getPrivilegeRoleSchema(['a','r','w','d','D','x','t']),
+      group: 'security_group', schema: this.getPrivilegeRoleSchema(getPrivilegesForTableAndLikeObjects(this.getServerVersion())),
       mode: ['edit', 'create'], canAdd: true, canDelete: true,
       uniqueCol : ['grantee'],
     },{

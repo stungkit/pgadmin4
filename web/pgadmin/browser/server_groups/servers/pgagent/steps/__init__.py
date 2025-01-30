@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -201,7 +201,7 @@ class JobStepView(PGChildNodeView):
             self.template_path = 'pga_jobstep/sql/pre3.4'
 
             if 'pgAgent' not in self.manager.db_info:
-                status, res = self.conn.execute_dict("""
+                _, res = self.conn.execute_dict("""
 SELECT EXISTS(
         SELECT 1 FROM information_schema.columns
         WHERE
@@ -229,7 +229,8 @@ SELECT EXISTS(
         sql = render_template(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
             jid=jid,
-            has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+            has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+            conn=self.conn
         )
         status, res = self.conn.execute_dict(sql)
 
@@ -257,7 +258,8 @@ SELECT EXISTS(
         sql = render_template(
             "/".join([self.template_path, self._NODES_SQL]),
             jstid=jstid,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
 
         status, result = self.conn.execute_2darray(sql)
@@ -278,7 +280,8 @@ SELECT EXISTS(
                     icon="icon-pga_jobstep" if row['jstenabled'] else
                     "icon-pga_jobstep-disabled",
                     enabled=row['jstenabled'],
-                    kind=row['jstkind']
+                    kind=row['jstkind'],
+                    description=row['jstdesc']
                 )
             )
 
@@ -291,7 +294,8 @@ SELECT EXISTS(
                     icon="icon-pga_jobstep" if row['jstenabled'] else
                     "icon-pga_jobstep-disabled",
                     enabled=row['jstenabled'],
-                    kind=row['jstkind']
+                    kind=row['jstkind'],
+                    description=row['jstdesc']
                 )
             )
 
@@ -315,7 +319,8 @@ SELECT EXISTS(
             "/".join([self.template_path, self._PROPERTIES_SQL]),
             jstid=jstid,
             jid=jid,
-            has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+            has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+            conn=self.conn
         )
         status, res = self.conn.execute_dict(sql)
 
@@ -356,7 +361,8 @@ SELECT EXISTS(
             "/".join([self.template_path, self._CREATE_SQL]),
             jid=jid,
             data=data,
-            has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+            has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+            conn=self.conn
         )
 
         status, res = self.conn.execute_scalar(sql)
@@ -367,7 +373,8 @@ SELECT EXISTS(
         sql = render_template(
             "/".join([self.template_path, self._NODES_SQL]),
             jstid=res,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
         status, res = self.conn.execute_2darray(sql)
 
@@ -415,7 +422,8 @@ SELECT EXISTS(
                 "/".join([self.template_path, self._PROPERTIES_SQL]),
                 jstid=jstid,
                 jid=jid,
-                has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+                has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+                conn=self.conn
             )
             status, res = self.conn.execute_dict(sql)
 
@@ -439,7 +447,8 @@ SELECT EXISTS(
             jid=jid,
             jstid=jstid,
             data=data,
-            has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+            has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+            conn=self.conn
         )
 
         status, res = self.conn.execute_void(sql)
@@ -450,7 +459,8 @@ SELECT EXISTS(
         sql = render_template(
             "/".join([self.template_path, self._NODES_SQL]),
             jstid=jstid,
-            jid=jid
+            jid=jid,
+            conn=self.conn
         )
         status, res = self.conn.execute_2darray(sql)
 
@@ -470,7 +480,8 @@ SELECT EXISTS(
                 jid,
                 row['jstname'],
                 icon="icon-pga_jobstep" if row['jstenabled']
-                else "icon-pga_jobstep-disabled"
+                else "icon-pga_jobstep-disabled",
+                description=row['jstdesc']
             )
         )
 
@@ -513,7 +524,7 @@ SELECT EXISTS(
         sql = ''
         for k, v in request.args.items():
             try:
-                data[k] = json.loads(v, 'utf-8')
+                data[k] = json.loads(v)
             except ValueError:
                 data[k] = v
 
@@ -522,7 +533,8 @@ SELECT EXISTS(
                 "/".join([self.template_path, self._CREATE_SQL]),
                 jid=jid,
                 data=data,
-                has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+                has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+                conn=self.conn
             )
 
             return make_json_response(
@@ -539,7 +551,8 @@ SELECT EXISTS(
                 "/".join([self.template_path, self._PROPERTIES_SQL]),
                 jstid=jstid,
                 jid=jid,
-                has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+                has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+                conn=self.conn
             )
             status, res = self.conn.execute_dict(sql)
 
@@ -563,7 +576,8 @@ SELECT EXISTS(
             jid=jid,
             jstid=jstid,
             data=data,
-            has_connstr=self.manager.db_info['pgAgent']['has_connstr']
+            has_connstr=self.manager.db_info['pgAgent']['has_connstr'],
+            conn=self.conn
         )
 
         return make_json_response(

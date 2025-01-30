@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -12,7 +12,7 @@ import json
 
 from flask import url_for, request, Response
 from flask import render_template, current_app as app
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from flask_babel import gettext
 from werkzeug.user_agent import UserAgent
 from pgadmin.utils import PgAdminModule, \
@@ -50,9 +50,6 @@ class ERDModule(PgAdminModule):
     def get_own_menuitems(self):
         return {}
 
-    def get_panels(self):
-        return []
-
     def get_exposed_url_endpoints(self):
         """
         Returns:
@@ -76,6 +73,7 @@ class ERDModule(PgAdminModule):
                 'alt': False,
                 'shift': False,
                 'control': True,
+                'ctrl_is_meta': True,
                 'key': {
                     'key_code': 79,
                     'char': 'o'
@@ -94,6 +92,7 @@ class ERDModule(PgAdminModule):
                 'alt': False,
                 'shift': False,
                 'control': True,
+                'ctrl_is_meta': True,
                 'key': {
                     'key_code': 83,
                     'char': 's'
@@ -434,7 +433,7 @@ blueprint = ERDModule(MODULE_NAME, __name__, static_url_path='/static')
     methods=["POST"],
     endpoint='panel'
 )
-@login_required
+@pga_login_required
 def panel(trans_id):
     """
     This method calls index.html to render the erd tool.
@@ -478,7 +477,7 @@ def panel(trans_id):
     if "linux" in _platform:
         is_linux_platform = True
 
-    s = Server.query.filter_by(id=params['sid']).first()
+    s = Server.query.filter_by(id=int(params['sid'])).first()
 
     params.update({
         'bgcolor': s.bgcolor,
@@ -491,8 +490,6 @@ def panel(trans_id):
     return render_template(
         "erd/index.html",
         title=underscore_unescape(params['title']),
-        requirejs=True,
-        basejs=True,
         params=json.dumps(params),
     )
 
@@ -501,7 +498,7 @@ def panel(trans_id):
     '/initialize/<int:trans_id>/<int:sgid>/<int:sid>/<int:did>',
     methods=["POST"], endpoint='initialize'
 )
-@login_required
+@pga_login_required
 def initialize_erd(trans_id, sgid, sid, did):
     """
     This method is responsible for instantiating and initializing
@@ -556,7 +553,7 @@ def _get_connection(sid, did, trans_id):
 @blueprint.route('/prequisite/<int:trans_id>/<int:sgid>/<int:sid>/<int:did>',
                  methods=["GET"],
                  endpoint='prequisite')
-@login_required
+@pga_login_required
 def prequisite(trans_id, sgid, sid, did):
     conn = _get_connection(sid, did, trans_id)
     helper = ERDHelper(trans_id, sid, did)
@@ -613,7 +610,7 @@ def translate_foreign_keys(tab_fks, tab_data, all_nodes):
 @blueprint.route('/sql/<int:trans_id>/<int:sgid>/<int:sid>/<int:did>',
                  methods=["POST"],
                  endpoint='sql')
-@login_required
+@pga_login_required
 def sql(trans_id, sgid, sid, did):
     data = json.loads(request.data)
     with_drop = False
@@ -626,14 +623,26 @@ def sql(trans_id, sgid, sid, did):
     sql = ''
     tab_foreign_keys = []
     all_nodes = data.get('nodes', {})
+
+    table_sql = ''
     for tab_key, tab_data in all_nodes.items():
         tab_fks = tab_data.pop('foreign_key', [])
         tab_foreign_keys.extend(translate_foreign_keys(tab_fks, tab_data,
                                                        all_nodes))
-        sql += '\n\n' + helper.get_table_sql(tab_data, with_drop=with_drop)
+        table_sql += '\n\n' + helper.get_table_sql(tab_data,
+                                                   with_drop=with_drop)
 
+    if with_drop:
+        for tab_fk in tab_foreign_keys:
+            fk_sql = fkey_utils.get_delete_sql(conn, tab_fk)
+            sql += '\n\n' + fk_sql
+
+    if sql != '':
+        sql += '\n\n'
+
+    sql += table_sql
     for tab_fk in tab_foreign_keys:
-        fk_sql, name = fkey_utils.get_sql(conn, tab_fk, None)
+        fk_sql, _ = fkey_utils.get_sql(conn, tab_fk, None)
         sql += '\n\n' + fk_sql
 
     return make_json_response(
@@ -665,7 +674,7 @@ def tables(params):
                                                params.get('tid', None))
 
         if not status:
-            tables = tables.json if type(tables) == Response else tables
+            tables = tables.json if isinstance(tables, Response) else tables
             socketio.emit('tables_failed', tables,
                           namespace=SOCKETIO_NAMESPACE,
                           to=request.sid)
@@ -680,7 +689,7 @@ def tables(params):
 @blueprint.route('/close/<int:trans_id>/<int:sgid>/<int:sid>/<int:did>',
                  methods=["DELETE"],
                  endpoint='close')
-@login_required
+@pga_login_required
 def close(trans_id, sgid, sid, did):
     manager = get_driver(
         PG_DEFAULT_DRIVER).connection_manager(sid)

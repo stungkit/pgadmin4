@@ -2,62 +2,61 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-import { Box, makeStyles } from '@material-ui/core';
+import { Box } from '@mui/material';
+import { styled } from '@mui/material/styles';
 import React, {useState, useEffect, useRef, useLayoutEffect} from 'react';
-import FolderIcon from '@material-ui/icons/Folder';
-import DescriptionIcon from '@material-ui/icons/Description';
-import LockRoundedIcon from '@material-ui/icons/LockRounded';
-import StorageRoundedIcon from '@material-ui/icons/StorageRounded';
+import FolderIcon from '@mui/icons-material/Folder';
+import DescriptionIcon from '@mui/icons-material/Description';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import PropTypes from 'prop-types';
 import gettext from 'sources/gettext';
 
-
-const useStyles = makeStyles((theme)=>({
-  grid: {
+const StyledBox = styled(Box)(({theme}) => ({
+  '& .GridView-grid': {
     display: 'flex',
     fontSize: '13px',
     flexWrap: 'wrap',
     overflow: 'hidden',
-  },
-  gridItem: {
-    width: '100px',
-    margin: '4px',
-    textAlign: 'center',
-    position: 'relative',
-  },
-  gridItemContent: {
-    padding: '4px',
-    border: '1px solid transparent',
-    cursor: 'pointer',
-    '&[aria-selected=true]': {
-      backgroundColor: theme.palette.primary.light,
-      color: theme.otherVars.qtDatagridSelectFg,
-      borderColor: theme.palette.primary.main,
+    '& .GridView-gridItem': {
+      width: '100px',
+      margin: '4px',
+      textAlign: 'center',
+      position: 'relative',
+      border: '1px solid transparent',
+      cursor: 'pointer',
+      '&[aria-selected=true]': {
+        backgroundColor: theme.palette.primary.light,
+        color: theme.otherVars.qtDatagridSelectFg,
+        borderColor: theme.palette.primary.main,
+      },
+      '& .GridView-gridItemContent': {
+        padding: '4px',
+        '& .GridView-gridFilename': {
+          overflowWrap: 'break-word',
+        },
+        '& .GridView-gridItemEdit': {
+          border: `1px solid ${theme.otherVars.inputBorderColor}`,
+          backgroundColor: theme.palette.background.default,
+        },
+        '& .GridView-protected': {
+          height: '1.25rem',
+          width: '1.25rem',
+          position: 'absolute',
+          left: '52px',
+          color: theme.palette.error.main,
+          backgroundColor: 'inherit',
+        }
+      },
     },
   },
-  gridFilename: {
-    overflowWrap: 'break-word',
-  },
-  gridItemEdit: {
-    border: `1px solid ${theme.otherVars.inputBorderColor}`,
-    backgroundColor: theme.palette.background.default,
-  },
-  protected: {
-    height: '1.25rem',
-    width: '1.25rem',
-    position: 'absolute',
-    left: '52px',
-    color: theme.palette.error.main,
-    backgroundColor: 'inherit',
-  }
 }));
 
 export function ItemView({idx, row, selected, onItemSelect, onItemEnter, onEditComplete}) {
-  const classes = useStyles();
   const editMode = Boolean(onEditComplete);
   const fileNameRef = useRef();
 
@@ -67,11 +66,18 @@ export function ItemView({idx, row, selected, onItemSelect, onItemEnter, onEditC
     }
   }, [editMode]);
 
-  const handleKeyDown = (e)=>{
+  const handleItemKeyDown = (e)=>{
+    if(e.code == 'Enter') {
+      onItemEnter(row);
+    }
+  };
+
+  const handleEditKeyDown = (e)=>{
     if(e.code == 'Tab') {
       e.stopPropagation();
     }
     if(e.code == 'Enter') {
+      e.stopPropagation();
       onEditComplete({...row, Filename: fileNameRef.current.textContent?.trim()});
     }
     if(e.code == 'Escape') {
@@ -81,7 +87,7 @@ export function ItemView({idx, row, selected, onItemSelect, onItemEnter, onEditC
       onEditComplete(row);
     }
   };
-  
+
   let icon = <DescriptionIcon style={{fontSize: '2.5rem'}} />;
   if(row.file_type == 'dir') {
     icon = <FolderIcon style={{fontSize: '2.5rem'}} />;
@@ -90,17 +96,17 @@ export function ItemView({idx, row, selected, onItemSelect, onItemEnter, onEditC
   }
 
   return (
-    <li className={classes.gridItem} aria-rowindex={idx} aria-selected={selected}>
-      <div className={classes.gridItemContent} aria-selected={selected} onClick={()=>onItemSelect(idx)} onDoubleClick={()=>onItemEnter(row)}>
+    <div tabIndex="-1" className='GridView-gridItem' aria-selected={selected} onClick={()=>onItemSelect(idx)} onDoubleClick={()=>onItemEnter(row)} onKeyDown={handleItemKeyDown} role="gridcell">
+      <div className='GridView-gridItemContent'>
         <div>
           {icon}
-          {Boolean(row.Protected) && <LockRoundedIcon className={classes.protected}/>}
+          {Boolean(row.Protected) && <LockRoundedIcon className='GridView-protected'/>}
         </div>
-        <div ref={fileNameRef} onKeyDown={handleKeyDown} onBlur={()=>onEditComplete(row)}
-          className={editMode ? classes.gridItemEdit : classes.gridFilename} suppressContentEditableWarning={true}
-          contentEditable={editMode} data-test="filename-div">{row['Filename']}</div>
+        <div tabIndex="-1" ref={fileNameRef} onKeyDown={handleEditKeyDown} onBlur={()=>onEditComplete?.(row)}
+          className={editMode ? 'GridView-gridItemEdit' : 'GridView-gridFilename'} suppressContentEditableWarning={true}
+          contentEditable={editMode} data-test="filename-div" role={editMode ? 'textbox' : 'none'}>{row['Filename']}</div>
       </div>
-    </li>
+    </div>
   );
 }
 ItemView.propTypes = {
@@ -113,7 +119,7 @@ ItemView.propTypes = {
 };
 
 export default function GridView({items, operation, onItemSelect, onItemEnter}) {
-  const classes = useStyles();
+
   const [selectedIdx, setSelectedIdx] = useState(null);
   const gridRef = useRef();
 
@@ -130,15 +136,15 @@ export default function GridView({items, operation, onItemSelect, onItemEnter}) 
   }
 
   return (
-    <Box flexGrow={1} overflow="hidden auto">
-      <ul ref={gridRef} className={classes.grid}>
+    <StyledBox flexGrow={1} overflow="hidden auto" id="grid">
+      <div ref={gridRef} className='GridView-grid'>
         {items.map((item, i)=>(
-          <ItemView key={i} idx={i} row={item} selected={selectedIdx==i} onItemSelect={setSelectedIdx}
+          <ItemView key={item.Filename} idx={i} row={item} selected={selectedIdx==i} onItemSelect={setSelectedIdx}
             onItemEnter={onItemEnter} onEditComplete={operation.idx==i ? onEditComplete : null} />)
         )}
-      </ul>
+      </div>
       {items.length == 0 && <Box textAlign="center" p={1}>{gettext('No files/folders found')}</Box>}
-    </Box>
+    </StyledBox>
   );
 }
 

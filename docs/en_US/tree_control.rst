@@ -4,11 +4,11 @@
 `Tree Control`:index:
 *********************
 
-The left pane of the main window displays a tree control (the *pgAdmin* tree
-control) that provides access to the objects that reside on a server.
+The left pane of the main window displays a tree control (Object explorer)
+that provides access to the objects that reside on a server.
 
 .. image:: /images/main_left_pane.png
-    :alt: Browser tree panel
+    :alt: object explorer panel
     :align: center
 
 You can expand nodes in the tree control to view the database objects that
@@ -49,13 +49,15 @@ following selections (options appear in alphabetical order):
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+
 | *Debugging*               | Click through to open the :ref:`Debug <debugger>` tool or to select *Set breakpoint* to stop or pause a script execution. |
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+
-| *Delete/Drop*             | Click to delete the currently selected object from the server.                                                            |
+| *Delete*                  | Click to delete the currently selected object from the server.                                                            |
++---------------------------+---------------------------------------------------------------------------------------------------------------------------+
+| *Delete (Cascade)*        | Click to delete the currently selected object and all dependent objects from the server.                                  |
++---------------------------+---------------------------------------------------------------------------------------------------------------------------+
+| *Delete (Force)*          | Click to delete the currently selected database with force option.                                                        |
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+
 | *Disconnect Database...*  | Click to terminate a database connection.                                                                                 |
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+
 | *Disconnect from server*  | Click to disconnect from the currently selected server.                                                                   |
-+---------------------------+---------------------------------------------------------------------------------------------------------------------------+
-| *Drop Cascade*            | Click to delete the currently selected object and all dependent objects from the server.                                  |
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+
 | *Debugging*               | Click to access the :ref:`Debugger <debugger>` tool.                                                                      |
 +---------------------------+---------------------------------------------------------------------------------------------------------------------------+

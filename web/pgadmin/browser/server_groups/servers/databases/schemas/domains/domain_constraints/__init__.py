@@ -3,7 +3,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -333,7 +333,8 @@ class DomainConstraintView(PGChildNodeView):
                     row['oid'],
                     doid,
                     row['name'],
-                    icon=icon
+                    icon=icon,
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -432,7 +433,7 @@ class DomainConstraintView(PGChildNodeView):
         """
         data = self.request
         try:
-            status, SQL, name = self.get_sql(gid, sid, data, scid, doid)
+            status, SQL, _ = self.get_sql(gid, sid, data, scid, doid)
             if not status:
                 return SQL
 
@@ -559,12 +560,17 @@ class DomainConstraintView(PGChildNodeView):
                 else:
                     icon = ''
 
+                other_node_info = {}
+                if 'description' in data:
+                    other_node_info['description'] = data['description']
+
                 return jsonify(
                     node=self.blueprint.generate_browser_node(
                         coid,
                         doid,
                         name,
-                        icon=icon
+                        icon=icon,
+                        **other_node_info
                     )
                 )
             else:
@@ -646,7 +652,7 @@ class DomainConstraintView(PGChildNodeView):
         """
         data = self.request
 
-        status, SQL, name = self.get_sql(gid, sid, data, scid, doid, coid)
+        status, SQL, _ = self.get_sql(gid, sid, data, scid, doid, coid)
         if status and SQL:
             return make_json_response(
                 data=SQL,

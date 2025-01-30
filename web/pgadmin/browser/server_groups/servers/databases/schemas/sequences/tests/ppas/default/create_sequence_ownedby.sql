@@ -7,8 +7,10 @@ CREATE SEQUENCE IF NOT EXISTS public."Seq1_$%{}[]()&*^!@""'`\/#"
     START 5
     MINVALUE 5
     MAXVALUE 999
-    CACHE 1
-    OWNED BY tableforownedby.col1;
+    CACHE 1;
+
+ALTER SEQUENCE public."Seq1_$%{}[]()&*^!@""'`\/#"
+    OWNED BY public.tableforownedby.col1;
 
 ALTER SEQUENCE public."Seq1_$%{}[]()&*^!@""'`\/#"
     OWNER TO enterprisedb;

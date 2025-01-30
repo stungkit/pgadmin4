@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -23,6 +23,7 @@ from pgadmin.utils.constants import WEBSERVER
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.csrf import pgCSRFProtect
 from flask_security.utils import logout_user
+from pgadmin.utils.master_password import set_crypt_key
 
 
 class WebserverModule(PgAdminModule):
@@ -91,6 +92,7 @@ class WebserverAuthentication(BaseAuthentication):
 
         session['pass_enc_key'] = ''.join(
             (secrets.choice(string.ascii_lowercase) for _ in range(10)))
+
         useremail = request.environ.get('mail')
         if not useremail:
             useremail = ''

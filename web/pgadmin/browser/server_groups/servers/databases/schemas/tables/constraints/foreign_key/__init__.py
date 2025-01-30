@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -355,7 +355,7 @@ class ForeignKeyConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path,
                                         self._PROPERTIES_SQL]),
                               tid=tid)
-        status, res = self.conn.execute_dict(SQL)
+        _, res = self.conn.execute_dict(SQL)
 
         for row in res['rows']:
             row['_type'] = self.node_type
@@ -382,7 +382,7 @@ class ForeignKeyConstraintView(PGChildNodeView):
         SQL = render_template(
             "/".join([self.template_path, self._NODES_SQL]), tid=tid
         )
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         if len(rset['rows']) == 0:
             return gone(gettext(FOREIGN_KEY_NOT_FOUND))
@@ -427,7 +427,7 @@ class ForeignKeyConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path,
                                         self._NODES_SQL]),
                               tid=tid)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
         res = []
         for row in rset['rows']:
             if row["convalidated"]:
@@ -442,7 +442,8 @@ class ForeignKeyConstraintView(PGChildNodeView):
                     tid,
                     row['name'],
                     icon=icon,
-                    valid=valid
+                    valid=valid,
+                    description=row['comment']
                 ))
         return make_json_response(
             data=res,
@@ -466,7 +467,7 @@ class ForeignKeyConstraintView(PGChildNodeView):
         SQL = render_template("/".join([self.template_path,
                                         self._NODES_SQL]),
                               tid=tid)
-        status, rset = self.conn.execute_2darray(SQL)
+        _, rset = self.conn.execute_2darray(SQL)
 
         for row in rset['rows']:
             if row["convalidated"]:
@@ -481,7 +482,8 @@ class ForeignKeyConstraintView(PGChildNodeView):
                     tid,
                     row['name'],
                     icon=icon,
-                    valid=valid
+                    valid=valid,
+                    description=row['comment']
                 ))
         return res
 
@@ -604,13 +606,18 @@ class ForeignKeyConstraintView(PGChildNodeView):
             if is_error:
                 return errmsg
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     res['rows'][0]['oid'],
                     tid,
                     data['name'],
                     valid=valid,
-                    icon=icon
+                    icon=icon,
+                    **other_node_info
                 )
             )
 
@@ -702,13 +709,18 @@ class ForeignKeyConstraintView(PGChildNodeView):
                 icon = "icon-foreign_key"
                 valid = True
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     fkid,
                     tid,
                     name,
                     icon=icon,
-                    valid=valid
+                    valid=valid,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -810,7 +822,7 @@ class ForeignKeyConstraintView(PGChildNodeView):
         data['schema'] = self.schema
         data['table'] = self.table
         try:
-            sql, name = fkey_utils.get_sql(self.conn, data, tid, fkid)
+            sql, _ = fkey_utils.get_sql(self.conn, data, tid, fkid)
             if not isinstance(sql, str):
                 return sql
             sql = sql.strip('\n').strip(' ')

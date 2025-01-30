@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -310,7 +310,7 @@ export default class TriggerSchema extends BaseUISchema {
               state.tginitdeferred = false;
             }
             // If constraint trigger is set then do not disable
-            return state.is_constraint_trigger ? false : true;
+            return !state.is_constraint_trigger;
           }
         } else {
           // readonly it

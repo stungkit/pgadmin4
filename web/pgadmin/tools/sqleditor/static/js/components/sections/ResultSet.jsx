@@ -2,11 +2,12 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import _ from 'lodash';
+import { styled } from '@mui/material/styles';
 import React, { useContext, useEffect, useRef, useState }  from 'react';
 import QueryToolDataGrid, { GRID_ROW_SELECT_KEY } from '../QueryToolDataGrid';
 import {CONNECTION_STATUS, PANELS, QUERY_TOOL_EVENTS} from '../QueryToolConstants';
@@ -15,23 +16,31 @@ import getApiInstance, { parseApiError } from '../../../../../../static/js/api_i
 import { QueryToolContext, QueryToolEventsContext } from '../QueryToolComponent';
 import gettext from 'sources/gettext';
 import Loader from 'sources/components/Loader';
-import { Box } from '@material-ui/core';
+import { Box } from '@mui/material';
 import { ResultSetToolbar } from './ResultSetToolbar';
-import { LayoutHelper } from '../../../../../../static/js/helpers/Layout';
+import { LayoutDockerContext } from '../../../../../../static/js/helpers/Layout';
 import { GeometryViewer } from './GeometryViewer';
 import Explain from '../../../../../../static/js/Explain';
-import Notifier from '../../../../../../static/js/helpers/Notifier';
 import { QuerySources } from './QueryHistory';
 import { getBrowser } from '../../../../../../static/js/utils';
 import CopyData from '../QueryToolDataGrid/CopyData';
 import moment from 'moment';
 import ConfirmSaveContent from '../../../../../../static/js/Dialogs/ConfirmSaveContent';
-import { makeStyles } from '@material-ui/styles';
 import EmptyPanelMessage from '../../../../../../static/js/components/EmptyPanelMessage';
 import { GraphVisualiser } from './GraphVisualiser';
+import { usePgAdmin } from '../../../../../../static/js/PgAdminProvider';
+import pgAdmin from 'sources/pgadmin';
+import ConnectServerContent from '../../../../../../static/js/Dialogs/ConnectServerContent';
+
+const StyledBox = styled(Box)(({theme}) => ({
+  display: 'flex',
+  height: '100%',
+  flexDirection: 'column',
+  backgroundColor: theme.otherVars.qtDatagridBg,
+}));
 
 export class ResultSetUtils {
-  constructor(api, transId, isQueryTool=true) {
+  constructor(api, queryToolCtx, transId, isQueryTool=true) {
     this.api = api;
     this.transId = transId;
     this.startTime = new Date();
@@ -39,6 +48,8 @@ export class ResultSetUtils {
     this.isQueryTool = isQueryTool;
     this.clientPKLastIndex = 0;
     this.historyQuerySource = null;
+    this.hasQueryCommitted = false;
+    this.queryToolCtx = queryToolCtx;
   }
 
   static generateURLReconnectionFlag(baseUrl, transId, shouldReconnect) {
@@ -81,8 +92,7 @@ export class ResultSetUtils {
 
   static extractErrorMessage(httpMessage) {
     let msg = httpMessage.errormsg;
-    if (httpMessage.responseJSON !== undefined &&
-      httpMessage.responseJSON.errormsg !== undefined)
+    if (httpMessage.responseJSON?.errormsg !== undefined)
       msg = httpMessage.responseJSON.errormsg;
 
     return msg;
@@ -179,17 +189,63 @@ export class ResultSetUtils {
       );
     }
   }
+  connectServerModal (modalData, connectCallback, cancelCallback) {
+    this.queryToolCtx.modal.showModal(gettext('Connect to server'), (closeModal)=>{
+      return (
+        <ConnectServerContent
+          closeModal={()=>{
+            cancelCallback?.();
+            closeModal();
+          }}
+          data={modalData}
+          onOK={(formData)=>{
+            connectCallback(Object.fromEntries(formData));
+            closeModal();
+          }}
+        />
+      );
+    }, {
+      onClose: cancelCallback,
+    });
+  };
+  async connectServer (sid, user, formData, connectCallback) {
+    try {
+      let {data: respData} = await this.api({
+        method: 'POST',
+        url: url_for('sqleditor.connect_server', {
+          'sid': sid,
+          ...(user ? {
+            'usr': user,
+          }:{}),
+        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: formData
+      });
+      connectCallback?.(respData.data);
+    } catch (error) {
+      this.connectServerModal(error.response?.data?.result, async (data)=>{
+        this.connectServer(sid, user, data, connectCallback);
+      }, ()=>{
+        /*This is intentional (SonarQube)*/
+      });
+    }
+  };
 
-  async startExecution(query, explainObject, onIncorrectSQL, flags={
-    isQueryTool: true, external: false, reconnect: false,
+  async startExecution(query, explainObject, macroSQL, onIncorrectSQL, flags={
+    isQueryTool: true, external: false, reconnect: false, executeCursor: false, refreshData: false,
   }) {
     let startTime = new Date();
     this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, '');
-    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.TASK_START, gettext('Waiting for the query to complete...'), startTime);
+    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.TASK_START,
+      flags.refreshData ? gettext('Refetching latest results...') : gettext('Waiting for the query to complete...'),
+      startTime
+    );
     this.setStartTime(startTime);
     this.query = query;
     this.historyQuerySource = flags.isQueryTool ? QuerySources.EXECUTE : QuerySources.VIEW_DATA;
-    if(explainObject) {
+    if(flags.refreshData) {
+      this.historyQuerySource = null;
+    } else if(explainObject) {
       if(explainObject.analyze) {
         this.historyQuerySource = QuerySources.EXPLAIN_ANALYZE;
       } else {
@@ -202,7 +258,6 @@ export class ResultSetUtils {
     }
     try {
       let {data: httpMessageData} = await this.postExecutionApi(query, explainObject, flags.isQueryTool, flags.reconnect);
-      this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, httpMessageData.data.transaction_status);
 
       if (ResultSetUtils.isSqlCorrect(httpMessageData)) {
         this.setStartData(httpMessageData.data);
@@ -211,6 +266,9 @@ export class ResultSetUtils {
           this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_FILTER_INFO, httpMessageData.data.can_filter, httpMessageData.data.filter_applied);
           this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_LIMIT_VALUE, httpMessageData.data.limit);
           this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EDITOR_SET_SQL, httpMessageData.data.sql, false);
+        }
+        if(httpMessageData.data.notifies) {
+          this.eventBus.fireEvent(QUERY_TOOL_EVENTS.PUSH_NOTICE, httpMessageData.data.notifies);
         }
         return true;
       } else {
@@ -230,23 +288,40 @@ export class ResultSetUtils {
           is_pgadmin_query: false,
         });
         if(!flags.external) {
-          this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HIGHLIGHT_ERROR, httpMessageData.data.result);
+          this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HIGHLIGHT_ERROR, httpMessageData.data.result, flags.executeCursor);
         }
-      }
-      if(httpMessageData.data.notifies) {
-        this.eventBus.fireEvent(QUERY_TOOL_EVENTS.PUSH_NOTICE, httpMessageData.data.notifies);
       }
     } catch(e) {
-      this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
-      this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR,
-        e,
-        {
-          connectionLostCallback: ()=>{
-            this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_START, query, explainObject, flags.external, true);
-          },
-          checkTransaction: true,
-        }
-      );
+      if(e?.response?.status == 428){
+        this.connectServerModal(e.response?.data?.result, async (passwordData)=>{
+          await this.connectServer(this.queryToolCtx.params.sid, this.queryToolCtx.params.user, passwordData, async ()=>{
+            await this.eventBus.fireEvent(QUERY_TOOL_EVENTS.REINIT_QT_CONNECTION, '', explainObject, macroSQL, flags.executeCursor, true);
+          });
+        }, ()=>{
+          /*This is intentional (SonarQube)*/
+        });
+      }else if (e?.response?.data.info == 'CRYPTKEY_MISSING'){
+        let pgBrowser = window.pgAdmin.Browser;
+        pgBrowser.set_master_password('', async (passwordData)=>{
+          await this.connectServer(this.queryToolCtx.params.sid, this.queryToolCtx.params.user, passwordData, async ()=>{
+            await this.eventBus.fireEvent(QUERY_TOOL_EVENTS.REINIT_QT_CONNECTION, '', explainObject, macroSQL, flags.executeCursor, true);
+          });
+        }, ()=> {
+          /*This is intentional (SonarQube)*/
+        });
+        return;
+      }else {
+        this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
+        this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR,
+          e,
+          {
+            connectionLostCallback: ()=>{
+              this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_START, query, {explainObject, external: flags.external, reconnect: true, executeCursor: flags.executeCursor});
+            },
+            checkTransaction: true,
+          }
+        );
+      }
     }
     return false;
   }
@@ -278,10 +353,13 @@ export class ResultSetUtils {
     });
   }
 
-  handlePollError(error) {
+  handlePollError(error, explainObject, flags) {
     this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
     this.eventBus.fireEvent(QUERY_TOOL_EVENTS.FOCUS_PANEL, PANELS.MESSAGES);
-    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, CONNECTION_STATUS.TRANSACTION_STATUS_INERROR);
+    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, error.response.data.data?.transaction_status);
+    if (!flags.external) {
+      this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HIGHLIGHT_ERROR, parseApiError(error, true), flags.executeCursor);
+    }
     this.eventBus.fireEvent(QUERY_TOOL_EVENTS.PUSH_HISTORY, {
       status: false,
       start_time: this.startTime,
@@ -292,16 +370,22 @@ export class ResultSetUtils {
       query_source: this.historyQuerySource,
       is_pgadmin_query: false,
     });
-    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR, error);
+    this.eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR, error, {
+      connectionLostCallback: ()=>{
+        this.eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_START, this.query, {explainObject, external: flags.external, reconnect: true, executeCursor: flags.executeCursor});
+      },
+      checkTransaction: true,
+    });
   }
 
-  async pollForResult(onResultsAvailable, onExplain, onPollError) {
+  async pollForResult(onResultsAvailable, onExplain, onPollError, explainObject, flags) {
     try {
       let httpMessage = await this.poll();
       let msg = '';
       if(httpMessage.data.data.notifies) {
         this.eventBus.fireEvent(QUERY_TOOL_EVENTS.PUSH_NOTICE, httpMessage.data.data.notifies);
       }
+
       if (ResultSetUtils.isQueryFinished(httpMessage)) {
         this.setEndTime(new Date());
         msg = this.queryFinished(httpMessage, onResultsAvailable, onExplain);
@@ -310,7 +394,7 @@ export class ResultSetUtils {
         if(httpMessage.data.data.result) {
           this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, httpMessage.data.data.result, true);
         }
-        return Promise.resolve(this.pollForResult(onResultsAvailable, onExplain, onPollError));
+        return Promise.resolve(this.pollForResult(onResultsAvailable, onExplain, onPollError, explainObject, flags));
       } else if (ResultSetUtils.isConnectionToServerLostWhilePolling(httpMessage)) {
         this.setEndTime(new Date());
         msg = httpMessage.data.data.result;
@@ -325,9 +409,9 @@ export class ResultSetUtils {
         this.eventBus.fireEvent(QUERY_TOOL_EVENTS.TASK_END, gettext('Execution Cancelled'), this.endTime);
       }
       if(this.qtPref?.query_success_notification) {
-        Notifier.success(msg);
+        pgAdmin.Browser.notifier.success(msg);
       }
-      if(!ResultSetUtils.isQueryStillRunning(httpMessage)) {
+      if(!ResultSetUtils.isQueryStillRunning(httpMessage) && this.historyQuerySource) {
         this.eventBus.fireEvent(QUERY_TOOL_EVENTS.PUSH_HISTORY, {
           status: true,
           start_time: this.startTime,
@@ -341,20 +425,16 @@ export class ResultSetUtils {
       }
     } catch (error) {
       onPollError();
-      this.handlePollError(error);
+      this.handlePollError(error, explainObject, flags);
     }
   }
 
-  getMoreRows(all=false) {
-    let url = url_for('sqleditor.fetch', {
+  getWindowRows(fromRownum, toRownum) {
+    let url = url_for('sqleditor.fetch_window', {
       'trans_id': this.transId,
+      'from_rownum': fromRownum,
+      'to_rownum': toRownum,
     });
-    if(all) {
-      url = url_for('sqleditor.fetch_all', {
-        'trans_id': this.transId,
-        'fetch_all': 1,
-      });
-    }
     return this.api.get(url);
   }
 
@@ -370,7 +450,17 @@ export class ResultSetUtils {
         'trans_id': this.transId
       }),
       JSON.stringify(reqData)
-    );
+    ).then(response => {
+      if (response.data?.data?.status) {
+        // Set the commit flag to true if the save was successful
+        this.hasQueryCommitted = true;
+      }
+      return response;
+    }).catch((error) => {
+      // Set the commit flag to false if there was an error
+      this.hasQueryCommitted = false;
+      throw error;
+    });
   }
 
   async saveResultsToFile(fileName) {
@@ -379,7 +469,7 @@ export class ResultSetUtils {
         url_for('sqleditor.query_tool_download', {
           'trans_id': this.transId,
         }),
-        {filename: fileName}
+        {filename: fileName, query_commited: this.hasQueryCommitted}
       );
 
       if(!_.isUndefined(respData.data)) {
@@ -387,6 +477,7 @@ export class ResultSetUtils {
           this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, respData.data.result);
         }
       } else {
+        this.hasQueryCommitted = false;
         let respBlob = new Blob([respData], {type : 'text/csv'}),
           urlCreator = window.URL || window.webkitURL,
           download_url = urlCreator.createObjectURL(respBlob),
@@ -492,9 +583,9 @@ export class ResultSetUtils {
     case '"char"[]':
     case 'character varying':
     case 'character varying[]':
-      if (c.internal_size && c.internal_size >= 0 && c.internal_size != 65535) {
+      if (c.display_size && c.display_size >= 0 && c.display_size != 65535) {
         // Update column type to display length on column header
-        columnType += ' (' + c.internal_size + ')';
+        columnType += ' (' + c.display_size + ')';
       }
       cellType = 'string';
       break;
@@ -530,6 +621,8 @@ export class ResultSetUtils {
       'not_null': c.not_null,
       'has_default_val': c.has_default_val,
       'is_array': arrayBracketIdx > -1 && arrayBracketIdx + 2 == columnTypeInternal.length,
+      'seqtypid': c.seqtypid,
+      'isPK': isPK
     };
   }
 
@@ -559,14 +652,19 @@ export class ResultSetUtils {
     return columns;
   }
 
-  processClipboardVal(columnVal, col, rawCopiedVal) {
-    if(columnVal === '') {
+  processClipboardVal(columnVal, col, rawCopiedVal, pasteSerials) {
+    if(columnVal === '' ) {
       if(col.has_default_val) {
+        // if column has default value
         columnVal = undefined;
       } else if(rawCopiedVal === null) {
         columnVal = null;
       }
+    } else if (col.has_default_val && col.seqtypid && !pasteSerials) {
+      // if column has default value and is serial type
+      columnVal = undefined;
     }
+
     if(col.cell === 'boolean') {
       if(columnVal == 'true') {
         columnVal = true;
@@ -581,24 +679,27 @@ export class ResultSetUtils {
     return columnVal;
   }
 
-  processRows(result, columns, fromClipboard=false) {
+  processRows(result, columns, fromClipboard=false, pasteSerials=false) {
     let retVal = [];
     if(!_.isArray(result) || !_.size(result)) {
       return retVal;
     }
     let copiedRowsObjects = [];
-    try {
-      /* If the raw row objects are available, use to them identify null values */
-      copiedRowsObjects = JSON.parse(localStorage.getItem('copied-rows'));
-    } catch {/* Suppress the error */}
-    for(const [recIdx, rec] of result?.entries()) {
+    if(fromClipboard) {
+      try {
+        /* If the raw row objects are available, use to them identify null values */
+        copiedRowsObjects = JSON.parse(localStorage.getItem('copied-rows'));
+      } catch {/* Suppress the error */}
+    }
+    for(const [recIdx, rec] of result?.entries()??[]) {
       // Convert 2darray to dict.
       let rowObj = {};
       for(const col of columns) {
-        let columnVal = rec[col.pos];
+        // if column data is undefined and there is not default value then set it to null.
+        let columnVal = rec[col.pos] ?? (col.has_default_val ? undefined : null);
         /* If the source is clipboard, then it needs some extra handling */
         if(fromClipboard) {
-          columnVal = this.processClipboardVal(columnVal, col, copiedRowsObjects[recIdx]?.[col.key]);
+          columnVal = this.processClipboardVal(columnVal, col, copiedRowsObjects[recIdx]?.[col.key], pasteSerials);
         }
         rowObj[col.key] = columnVal;
       }
@@ -616,7 +717,7 @@ export class ResultSetUtils {
       && data.types[0] && data.types[0].typname === 'json') {
       /* json is sent as text, parse it */
       let planJson = JSON.parse(data.result[0][0]);
-      if (planJson && planJson[0] && planJson[0].hasOwnProperty('Plan') &&
+      if (planJson?.[0]?.hasOwnProperty('Plan') &&
             _.isObject(planJson[0]['Plan'])
       ) {
         return planJson;
@@ -665,6 +766,8 @@ export class ResultSetUtils {
       }
       this.eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, tabMsg, true);
       this.eventBus.fireEvent(QUERY_TOOL_EVENTS.FOCUS_PANEL, PANELS.MESSAGES);
+      /* Clear the query data if the query has no result to display.*/
+      onResultsAvailable(null, [], []);
     }
     return retMsg;
   }
@@ -689,7 +792,7 @@ function dataChangeReducer(state, action) {
     action.remove = action.remove || [];
     dataChange.added = _.pickBy(dataChange.added, (_v, k)=>(action.remove.indexOf(k) == -1));
     dataChange.added_index = _.pickBy(dataChange.added_index, (v)=>(action.remove.indexOf(v) == -1));
-    count = _.max(Object.keys(dataChange.added_index))||0;
+    count = _.max(Object.keys(dataChange.added_index).map(k=>+k))||0;
     Object.keys(action.add).forEach((k)=>{
       dataChange.added_index[++count] = k;
     });
@@ -704,6 +807,11 @@ function dataChangeReducer(state, action) {
       ...dataChange.deleted,
       ...action.add,
     };
+    if(action.all) {
+      dataChange.delete_all = true;
+    } else {
+      dataChange.delete_all = false;
+    }
     break;
   case 'reset':
     dataChange = {
@@ -711,6 +819,7 @@ function dataChangeReducer(state, action) {
       added: {},
       added_index: {},
       deleted: {},
+      delete_all: false,
     };
     break;
   default:
@@ -720,30 +829,29 @@ function dataChangeReducer(state, action) {
   return dataChange;
 }
 
-const useStyles = makeStyles((theme)=>({
-  root: {
-    display: 'flex',
-    height: '100%',
-    flexDirection: 'column',
-    backgroundColor: theme.otherVars.qtDatagridBg,
-  }
-}));
-
 export function ResultSet() {
-  const classes = useStyles();
+
   const containerRef = React.useRef(null);
   const eventBus = useContext(QueryToolEventsContext);
   const queryToolCtx = useContext(QueryToolContext);
+  const layoutDocker = useContext(LayoutDockerContext);
   const [loaderText, setLoaderText] = useState('');
+  const [dataOutputQuery,setDataOutputQuery] = useState('');
   const [queryData, setQueryData] = useState(null);
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const api = getApiInstance();
-  const rsu = React.useRef(new ResultSetUtils(api, queryToolCtx.params.trans_id, queryToolCtx.params.is_query_tool));
+  const rsu = React.useRef(new ResultSetUtils(api, queryToolCtx, queryToolCtx.params.trans_id, queryToolCtx.params.is_query_tool));
   const [dataChangeStore, dispatchDataChange] = React.useReducer(dataChangeReducer, {});
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [selectedColumns, setSelectedColumns] = useState(new Set());
+  // NONE - no select, PAGE - show select all, ALL - select all.
+  const [allRowsSelect, setAllRowsSelect] = useState('NONE');
+
+  // We'll use this track if any changes were saved.
+  // It will help to decide whether results refresh is required or not on page change.
+  const pageDataDirty = useRef(false);
+
   const selectedCell = useRef([]);
   const selectedRange = useRef(null);
   const setSelectedCell = (val)=>{
@@ -762,6 +870,7 @@ export function ResultSet() {
   const [rowsResetKey, setRowsResetKey] = useState(0);
   const lastScrollRef = useRef(null);
   const isResettingScroll = useRef(true);
+  const pgAdmin = usePgAdmin();
 
   rsu.current.setEventBus(eventBus);
   rsu.current.setQtPref(queryToolCtx.preferences?.sqleditor);
@@ -774,21 +883,29 @@ export function ResultSet() {
     eventBus.fireEvent(QUERY_TOOL_EVENTS.SELECTED_ROWS_COLS_CELL_CHANGED, selectedRows.size, selectedColumns.size, selectedRange.current, selectedCell.current?.length);
   };
 
-  const executionStartCallback = async (query, explainObject, external=false, reconnect=false)=>{
+  const resetSelectionAndChanges = ()=>{
+    dispatchDataChange({type: 'reset'});
+    setSelectedRows(new Set());
+    setSelectedColumns(new Set());
+  };
+
+  const executionStartCallback = async (query, {
+    explainObject, macroSQL, external=false, reconnect=false, executeCursor=false, refreshData=false
+  })=>{
     const yesCallback = async ()=>{
       /* Reset */
       eventBus.fireEvent(QUERY_TOOL_EVENTS.HIGHLIGHT_ERROR, null);
-      dispatchDataChange({type: 'reset'});
-      setSelectedRows(new Set());
-      setSelectedColumns(new Set());
+      resetSelectionAndChanges();
+      rsu.current.resetClientPKIndex();
       setLoaderText(gettext('Waiting for the query to complete...'));
+      setDataOutputQuery(query);
       return await rsu.current.startExecution(
-        query, explainObject,
+        query, explainObject, macroSQL,
         ()=>{
           setColumns([]);
           setRows([]);
         },
-        {isQueryTool: queryToolCtx.params.is_query_tool, external: external, reconnect: reconnect}
+        {isQueryTool: queryToolCtx.params.is_query_tool, external: external, reconnect: reconnect, executeCursor: executeCursor, refreshData: refreshData}
       );
     };
 
@@ -802,10 +919,10 @@ export function ResultSet() {
         },
         (planJson)=>{
           /* No need to open if plan is empty */
-          if(!LayoutHelper.isTabOpen(queryToolCtx.docker, PANELS.EXPLAIN) && !planJson) {
+          if(!layoutDocker.isTabOpen(PANELS.EXPLAIN) && !planJson) {
             return;
           }
-          LayoutHelper.openTab(queryToolCtx.docker, {
+          layoutDocker.openTab({
             id: PANELS.EXPLAIN,
             title: gettext('Explain'),
             content: <Explain plans={planJson} />,
@@ -815,22 +932,35 @@ export function ResultSet() {
         ()=>{
           setColumns([]);
           setRows([]);
-        }
+        },
+        explainObject,
+        {isQueryTool: queryToolCtx.params.is_query_tool, external: external, reconnect: reconnect, executeCursor: executeCursor}
       );
     };
 
-    if(isDataChanged()) {
+    const executeAndPoll = async ()=>{
+      await yesCallback().then((res)=>{
+        if(res){
+          pollCallback();
+        } else {
+          eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
+        }
+      }).catch((err)=>{
+        console.error(err);
+      });
+    };
+
+    if(isDataChanged() && !refreshData) {
       queryToolCtx.modal.confirm(
         gettext('Unsaved changes'),
         gettext('The data has been modified, but not saved. Are you sure you wish to discard the changes?'),
-        yesCallback,
+        executeAndPoll,
         function() {
           eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
         }
       );
     } else {
-      let goForPoll = await yesCallback();
-      if (goForPoll) pollCallback();
+      await executeAndPoll();
     }
   };
 
@@ -862,11 +992,11 @@ export function ResultSet() {
     eventBus.registerListener(QUERY_TOOL_EVENTS.TRIGGER_STOP_EXECUTION, async ()=>{
       try {
         await rsu.current.stopExecution();
+        eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, CONNECTION_STATUS.TRANSACTION_STATUS_IDLE);
+        eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
       } catch(e) {
-        eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR, e);
+        pgAdmin.Browser.notifier.error(parseApiError(e));
       }
-      eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, CONNECTION_STATUS.TRANSACTION_STATUS_IDLE);
-      eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_END);
     });
 
     eventBus.registerListener(QUERY_TOOL_EVENTS.EXECUTION_END, ()=>{
@@ -914,18 +1044,41 @@ export function ResultSet() {
     eventBus.registerListener(QUERY_TOOL_EVENTS.TRIGGER_INCLUDE_EXCLUDE_FILTER, triggerFilter);
 
     eventBus.registerListener(QUERY_TOOL_EVENTS.GOTO_LAST_SCROLL, triggerResetScroll);
+
+    eventBus.registerListener(QUERY_TOOL_EVENTS.ALL_PAGE_ROWS_SELECTED, (selectAll)=>{
+      if(selectAll) {
+        setAllRowsSelect('PAGE');
+      } else {
+        setAllRowsSelect('NONE');
+      }
+      setSelectedColumns(new Set());
+    });
+
+    eventBus.registerListener(QUERY_TOOL_EVENTS.ALL_ROWS_SELECTED, ()=>{
+      setAllRowsSelect('ALL');
+    });
+
+    eventBus.registerListener(QUERY_TOOL_EVENTS.CLEAR_ROWS_SELECTED, ()=>{
+      setSelectedRows(new Set());
+      setAllRowsSelect('NONE');
+    });
   }, []);
 
   useEffect(()=>{
-    eventBus.registerListener(QUERY_TOOL_EVENTS.EXECUTION_START, executionStartCallback);
+    const deregExec = eventBus.registerListener(QUERY_TOOL_EVENTS.EXECUTION_START, executionStartCallback);
     return ()=>{
-      eventBus.deregisterListener(QUERY_TOOL_EVENTS.EXECUTION_START, executionStartCallback);
+      deregExec();
     };
-  }, [queryToolCtx.docker, dataChangeStore]);
+  }, [dataChangeStore, dataOutputQuery]);
 
   useEffect(()=>{
     fireRowsColsCellChanged();
+    setAllRowsSelect('NONE');
   }, [selectedRows.size, selectedColumns.size]);
+
+  useEffect(()=>{
+    eventBus.fireEvent(QUERY_TOOL_EVENTS.ALL_ROWS_SELECTED_STATUS, allRowsSelect);
+  }, [allRowsSelect]);
 
   useEffect(()=>{
     rsu.current.transId = queryToolCtx.params.trans_id;
@@ -935,31 +1088,59 @@ export function ResultSet() {
     eventBus.fireEvent(QUERY_TOOL_EVENTS.RESET_GRAPH_VISUALISER, columns);
   }, [columns]);
 
-  const fetchMoreRows = async (all=false, callback=undefined)=>{
-    if(queryData.has_more_rows) {
-      setIsLoadingMore(true);
-      const res = await rsu.current.getMoreRows(all);
+  const fetchWindow = async (fromRownum, toRownum, callback)=>{
+    let res = [];
+    setLoaderText(gettext('Fetching rows...'));
+    try {
+      res = await rsu.current.getWindowRows(fromRownum, toRownum);
       const newRows = rsu.current.processRows(res.data.data.result, columns);
-      setRows((prevRows)=>[...prevRows, ...newRows]);
+      setRows([...newRows]);
       setQueryData((prev)=>({
         ...prev,
-        has_more_rows: res.data.data.has_more_rows,
+        pagination: res.data.data.pagination,
         rows_fetched_to: res.data.data.rows_fetched_to!=0 ? res.data.data.rows_fetched_to : prev.rows_fetched_to,
       }));
-      setIsLoadingMore(false);
+    } catch (e) {
+      eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR,
+        e,
+        {
+          connectionLostCallback: ()=>{
+            eventBus.fireEvent(QUERY_TOOL_EVENTS.EXECUTION_START, rsu.current.query, {external: false, reconnect: true});
+          },
+          checkTransaction: true,
+        }
+      );
+    } finally {
+      setLoaderText('');
     }
     callback?.();
   };
-  useEffect(()=>{
-    eventBus.registerListener(QUERY_TOOL_EVENTS.FETCH_MORE_ROWS, fetchMoreRows);
-    return ()=>{
-      eventBus.deregisterListener(QUERY_TOOL_EVENTS.FETCH_MORE_ROWS, fetchMoreRows);
-    };
-  }, [queryData?.has_more_rows, columns]);
 
   useEffect(()=>{
-    eventBus.fireEvent(QUERY_TOOL_EVENTS.ROWS_FETCHED, queryData?.rows_fetched_to, queryData?.rows_affected);
-  }, [queryData?.rows_fetched_to, queryData?.rows_affected]);
+    let deregExecEnd;
+    const deregFetch = eventBus.registerListener(QUERY_TOOL_EVENTS.FETCH_WINDOW, (...args)=>{
+      if(pageDataDirty.current) {
+        deregExecEnd = eventBus.registerListener(QUERY_TOOL_EVENTS.EXECUTION_END, (success)=>{
+          if(!success) return;
+          pageDataDirty.current = false;
+          fetchWindow(...args);
+        }, true);
+        executionStartCallback(rsu.current.query, {refreshData: true});
+      } else {
+        pageDataDirty.current = false;
+        fetchWindow(...args);
+      }
+      resetSelectionAndChanges();
+    });
+    return ()=>{
+      deregFetch();
+      deregExecEnd?.();
+    };
+  }, [columns]);
+
+  useEffect(()=>{
+    eventBus.fireEvent(QUERY_TOOL_EVENTS.TOTAL_ROWS_COUNT, queryData?.rows_affected);
+  }, [queryData?.rows_affected]);
 
   const warnSaveDataClose = ()=>{
     // No changes.
@@ -1006,6 +1187,7 @@ export function ResultSet() {
       let {data: respData} = await rsu.current.saveData({
         updated: dataChangeStore.updated,
         deleted: dataChangeStore.deleted,
+        delete_all: dataChangeStore.delete_all,
         added_index: dataChangeStore.added_index,
         added: added,
         columns: columns,
@@ -1025,23 +1207,23 @@ export function ResultSet() {
             'info': gettext('This query was generated by pgAdmin as part of a "Save Data" operation'),
           });
         });
-      } catch (_e) {/* History errors should not bother others */}
+      } catch {/* History errors should not bother others */}
 
       if(!respData.data.status) {
-        eventBus.fireEvent(QUERY_TOOL_EVENTS.SAVE_DATA_DONE, false);
+        pageDataDirty.current = false;
         eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, respData.data.result);
-        Notifier.error(respData.data.result, 20000);
+        pgAdmin.Browser.notifier.error(respData.data.result, 20000);
         // If the transaction is not idle, notify the user that previous queries are not rolled back,
         // only the failed save queries.
         if (respData.data.transaction_status != CONNECTION_STATUS.TRANSACTION_STATUS_IDLE) {
-          Notifier.info(gettext('Saving data changes was rolled back but the current transaction is ' +
+          pgAdmin.Browser.notifier.info(gettext('Saving data changes was rolled back but the current transaction is ' +
                                 'still active; previous queries are unaffected.'));
         }
         setLoaderText(null);
         return;
       }
 
-      eventBus.fireEvent(QUERY_TOOL_EVENTS.SAVE_DATA_DONE, true);
+      pageDataDirty.current = true;
       if(_.size(dataChangeStore.added)) {
         // Update the rows in a grid after addition
         respData.data.query_results.forEach((qr)=>{
@@ -1073,17 +1255,15 @@ export function ResultSet() {
         });
         setColumns((prev)=>prev);
       }
-      dispatchDataChange({type: 'reset'});
-      setSelectedRows(new Set());
-      setSelectedColumns(new Set());
+      resetSelectionAndChanges();
       eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_CONNECTION_STATUS, respData.data.transaction_status);
       eventBus.fireEvent(QUERY_TOOL_EVENTS.SET_MESSAGE, '');
-      Notifier.success(gettext('Data saved successfully.'));
+      pgAdmin.Browser.notifier.success(gettext('Data saved successfully.'));
       if(respData.data.transaction_status > CONNECTION_STATUS.TRANSACTION_STATUS_IDLE) {
-        Notifier.info(gettext('Auto-commit is off. You still need to commit changes to the database.'));
+        pgAdmin.Browser.notifier.info(gettext('Auto-commit is off. You still need to commit changes to the database.'));
       }
     } catch (error) {
-      eventBus.fireEvent(QUERY_TOOL_EVENTS.SAVE_DATA_DONE, false);
+      pageDataDirty.current = false;
       eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR, error, {
         checkTransaction: true,
       });
@@ -1148,17 +1328,15 @@ export function ResultSet() {
       let clientPK = row[rsu.current.clientPK];
       if(clientPK in dataChangeStore.deleted) {
         remove.push(clientPK);
-      } else {
+      } else if(clientPK in dataChangeStore.added) {
         /* If deleted from newly added */
-        if(clientPK in dataChangeStore.added) {
-          removeNewlyAdded.push(clientPK);
-        } else {
-          let primaryKeys = {};
-          Object.keys(queryData.primary_keys).forEach((k)=>{
-            primaryKeys[k] = row[k];
-          });
-          add[clientPK] = primaryKeys;
-        }
+        removeNewlyAdded.push(clientPK);
+      } else {
+        let primaryKeys = {};
+        Object.keys(queryData.primary_keys).forEach((k)=>{
+          primaryKeys[k] = row[k];
+        });
+        add[clientPK] = primaryKeys;
       }
     }
     if(removeNewlyAdded.length > 0) {
@@ -1184,6 +1362,7 @@ export function ResultSet() {
       type: 'deleted',
       add: add,
       remove: remove,
+      all: remove.length > 0 ? false : allRowsSelect == 'ALL',
     });
   };
 
@@ -1199,12 +1378,32 @@ export function ResultSet() {
     return ()=>{
       eventBus.deregisterListener(QUERY_TOOL_EVENTS.TRIGGER_DELETE_ROWS, triggerDeleteRows);
     };
-  }, [selectedRows, queryData, dataChangeStore, rows]);
+  }, [selectedRows, queryData, dataChangeStore, rows, allRowsSelect]);
 
   useEffect(()=>{
-    const triggerAddRows = (_rows, fromClipboard)=>{
-      let newRows = rsu.current.processRows(_rows, columns, fromClipboard);
-      setRows((prev)=>[...newRows, ...prev]);
+    const triggerAddRows = (_rows, fromClipboard, pasteSerials)=>{
+      let insPosn = 0;
+      if(selectedRows.size > 0) {
+        let selectedRowsSorted = Array.from(selectedRows);
+        selectedRowsSorted.sort();
+        insPosn = _.findIndex(rows, (r)=>rowKeyGetter(r)==selectedRowsSorted[selectedRowsSorted.length-1])+1;
+      }
+      let byteaCellSelection = columns.filter(o=>o.type=='bytea');
+      if (byteaCellSelection.length>0) {
+        _rows = _rows.map(x=>{
+          byteaCellSelection.forEach(r=>{
+            x[r.pos]=null;
+            return x;
+          });
+          return x;
+        });
+      }
+      let newRows = rsu.current.processRows(_rows, columns, fromClipboard, pasteSerials);
+      setRows((prev)=>[
+        ...prev.slice(0, insPosn),
+        ...newRows,
+        ...prev.slice(insPosn)
+      ]);
       let add = {};
       newRows.forEach((row)=>{
         add[rowKeyGetter(row)] = {
@@ -1218,7 +1417,7 @@ export function ResultSet() {
     };
     eventBus.registerListener(QUERY_TOOL_EVENTS.TRIGGER_ADD_ROWS, triggerAddRows);
     return ()=>eventBus.deregisterListener(QUERY_TOOL_EVENTS.TRIGGER_ADD_ROWS, triggerAddRows);
-  }, [columns]);
+  }, [columns, selectedRows.size]);
 
   useEffect(()=>{
     const renderGeometries = (column)=>{
@@ -1231,10 +1430,10 @@ export function ResultSet() {
       } else if(selectedRange.current) {
         let [,, startRowIdx, endRowIdx] = getRangeIndexes();
         selRowsData = rows.slice(startRowIdx, endRowIdx+1);
-      } else if(selectedCell.current[0]) {
+      } else if(selectedCell.current?.[0]) {
         selRowsData = [selectedCell.current[0]];
       }
-      LayoutHelper.openTab(queryToolCtx.docker, {
+      layoutDocker.openTab({
         id: PANELS.GEOMETRY,
         title:gettext('Geometry Viewer'),
         content: <GeometryViewer rows={selRowsData} columns={columns} column={column} />,
@@ -1244,20 +1443,6 @@ export function ResultSet() {
     eventBus.registerListener(QUERY_TOOL_EVENTS.TRIGGER_RENDER_GEOMETRIES, renderGeometries);
     return ()=>eventBus.deregisterListener(QUERY_TOOL_EVENTS.TRIGGER_RENDER_GEOMETRIES, renderGeometries);
   }, [rows, columns, selectedRows.size, selectedColumns.size]);
-
-  const handleScroll = (e) => {
-    // Set scroll current position of RestSet.
-    if (!_.isNull(e.currentTarget) && isResettingScroll.current) {
-      lastScrollRef.current = {
-        ref: { ...e },
-        top: e.currentTarget.scrollTop,
-        left: e.currentTarget.scrollLeft
-      };
-    }
-
-    if (isLoadingMore || !rsu.current.isAtBottom(e)) return;
-    eventBus.fireEvent(QUERY_TOOL_EVENTS.FETCH_MORE_ROWS);
-  };
 
   const triggerResetScroll = () => {
     // Reset the scroll position to previously saved location.
@@ -1279,7 +1464,7 @@ export function ResultSet() {
     let clientPK = rowKeyGetter(row);
 
     // Check if column is pk and value is null set it to default value.
-    if(otherInfo.column.has_default_val && _.isNull(row[otherInfo.column.key])) {
+    if(otherInfo.column.has_default_val && _.isNull(row[otherInfo.column.key]) && otherInfo.column.key in queryData.primary_keys) {
       row[otherInfo.column.key] = undefined;
     }
 
@@ -1317,7 +1502,7 @@ export function ResultSet() {
 
   useEffect(()=>{
     const showGraphVisualiser = async ()=>{
-      LayoutHelper.openTab(queryToolCtx.docker, {
+      layoutDocker.openTab({
         id: PANELS.GRAPH_VISUALISER,
         title: gettext('Graph Visualiser'),
         content: <GraphVisualiser initColumns={columns}  />,
@@ -1329,23 +1514,26 @@ export function ResultSet() {
     return ()=>{
       eventBus.deregisterListener(QUERY_TOOL_EVENTS.TRIGGER_GRAPH_VISUALISER, showGraphVisualiser);
     };
-  }, [queryToolCtx.docker, columns]);
+  }, [columns]);
 
   const rowKeyGetter = React.useCallback((row)=>row[rsu.current.clientPK]);
   return (
-    <Box className={classes.root} ref={containerRef} tabIndex="0">
+    <StyledBox ref={containerRef} tabIndex="0">
       <Loader message={loaderText} />
-      <Loader data-label="loader-more-rows" message={isLoadingMore ? gettext('Loading more rows...') : null} style={{top: 'unset', right: 'unset', padding: '0.5rem 1rem'}}/>
       {!queryData &&
         <EmptyPanelMessage text={gettext('No data output. Execute a query to get output.')}/>
       }
       {queryData && <>
-        <ResultSetToolbar containerRef={containerRef} canEdit={queryData.can_edit} totalRowCount={queryData?.rows_affected}/>
+        <ResultSetToolbar containerRef={containerRef} query={dataOutputQuery}
+          canEdit={queryData.can_edit} totalRowCount={queryData?.rows_affected}
+          pagination={queryData?.pagination ?? {}} allRowsSelect={allRowsSelect}
+        />
         <Box flexGrow="1" minHeight="0">
           <QueryToolDataGrid
             columns={columns}
             rows={rows}
             totalRowCount={queryData?.rows_affected}
+            startRowNum={queryData?.pagination?.rows_from}
             columnWidthBy={
               queryToolCtx.preferences?.sqleditor?.column_data_auto_resize == 'by_data' ?
                 queryToolCtx.preferences.sqleditor.column_data_max_width :
@@ -1353,7 +1541,6 @@ export function ResultSet() {
             }
             key={rowsResetKey}
             rowKeyGetter={rowKeyGetter}
-            onScroll={handleScroll}
             onRowsChange={onRowsChange}
             dataChangeStore={dataChangeStore}
             selectedRows={selectedRows}
@@ -1362,9 +1549,10 @@ export function ResultSet() {
             onSelectedColumnsChange={setSelectedColumns}
             onSelectedCellChange={setSelectedCell}
             onSelectedRangeChange={setSelectedRange}
+            stripedRows={queryToolCtx.preferences?.sqleditor?.striped_rows}
           />
         </Box>
       </>}
-    </Box>
+    </StyledBox>
   );
 }

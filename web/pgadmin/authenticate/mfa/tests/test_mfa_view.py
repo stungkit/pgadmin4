@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##############################################################################
@@ -24,7 +24,7 @@ def check_validation_view_content(test):
     ]
 
     def mock_log_exception(ex):
-        test.assertTrue(type(ex) == ValidationException)
+        test.assertTrue(isinstance(ex, ValidationException))
 
     with patch(
         __MFA_PACKAGE + ".utils.current_user", return_value=MockCurrentUserId()

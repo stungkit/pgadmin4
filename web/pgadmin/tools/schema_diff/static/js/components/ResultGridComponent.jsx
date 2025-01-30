@@ -2,175 +2,147 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import _ from 'lodash';
+import { styled } from '@mui/material/styles';
 import PropTypes from 'prop-types';
-import clsx from 'clsx';
-
 import { SelectColumn } from 'react-data-grid';
 import React, { useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
-
-import { Box } from '@material-ui/core';
-import { makeStyles } from '@material-ui/styles';
-import KeyboardArrowRightRoundedIcon from '@material-ui/icons/KeyboardArrowRightRounded';
-import KeyboardArrowDownRoundedIcon from '@material-ui/icons/KeyboardArrowDownRounded';
-import InfoIcon from '@material-ui/icons/InfoRounded';
-
+import { Box } from '@mui/material';
+import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import InfoIcon from '@mui/icons-material/InfoRounded';
 import gettext from 'sources/gettext';
 import url_for from 'sources/url_for';
-
-
 import { FILTER_NAME, SCHEMA_DIFF_EVENT } from '../SchemaDiffConstants';
 import { SchemaDiffContext, SchemaDiffEventsContext } from './SchemaDiffComponent';
 import { InputCheckbox } from '../../../../../static/js/components/FormComponents';
 import PgReactDataGrid from '../../../../../static/js/components/PgReactDataGrid';
-import Notifier from '../../../../../static/js/helpers/Notifier';
+import { usePgAdmin } from '../../../../../static/js/PgAdminProvider';
 
 
-const useStyles = makeStyles((theme) => ({
-  root: {
-
-    paddingTop: '0.5rem',
-    display: 'flex',
-    height: '100%',
-    flexDirection: 'column',
-    color: theme.palette.text.primary,
-    backgroundColor: theme.otherVars.qtDatagridBg,
-    border: 'none',
+const StyledBox = styled(Box)(({theme}) => ({
+  paddingTop: '0.5rem',
+  display: 'flex',
+  height: '100%',
+  flexDirection: 'column',
+  color: theme.palette.text.primary,
+  backgroundColor: theme.otherVars.qtDatagridBg,
+  border: 'none',
+  fontSize: '13px',
+  '--rdg-background-color': theme.palette.default.main,
+  '--rdg-selection-color': theme.palette.primary.main,
+  '& .ResultGridComponent-grid.ReactGrid-root': {
     fontSize: '13px',
-    '& .rdg': {
-      flex: 1,
-      borderTop: '1px solid' + theme.otherVars.borderColor,
-    },
-    '--rdg-background-color': theme.palette.default.main,
-    '--rdg-selection-color': theme.palette.primary.main,
-    '& .rdg-cell': {
-      padding: 0,
-      boxShadow: 'none',
-      color: theme.otherVars.schemaDiff.diffColorFg + ' !important',
-      ...theme.mixins.panelBorder.right,
-      ...theme.mixins.panelBorder.bottom,
-      '&[aria-colindex="1"]': {
-        padding: 0,
-      },
-      '&[aria-selected=true]:not([role="columnheader"]):not([aria-colindex="1"])': {
-        outlineWidth: '0',
-        outlineOffset: '-1px',
-        color: theme.otherVars.qtDatagridSelectFg,
-      },
-      '&[aria-selected=true][aria-colindex="1"]': {
-        outlineWidth: 0,
-      }
-    },
-    '& .rdg-header-row .rdg-cell': {
-      padding: 0,
-      paddingLeft: '0.5rem',
-      boxShadow: 'none',
-    },
+    '--rdg-selection-color': 'none',
     '& .rdg-header-row': {
       backgroundColor: theme.palette.background.default,
+      '& .rdg-cell': {
+        padding: 0,
+        paddingLeft: '0.5rem',
+        boxShadow: 'none',
+        '&[aria-colindex="1"]': {
+          padding: 0,
+        },
+        '& .ResultGridComponent-headerSelectCell': {
+          padding: '0rem 0.3rem 0 0.3rem'
+        },
+      },
     },
     '& .rdg-row': {
       backgroundColor: theme.palette.background.default,
-      '&[aria-selected=true]': {
-        backgroundColor: theme.palette.primary.light,
-        color: theme.otherVars.qtDatagridSelectFg,
-        '& .rdg-cell:nth-child(1)': {
-          backgroundColor: 'transparent',
-          outlineColor: 'transparent',
-          color: theme.palette.primary.contrastText,
-        }
+      '&[aria-selected=false]': {
+        '&.ResultGridComponent-selectedRow': {
+          paddingLeft: '0.5rem',
+          backgroundColor: theme.palette.primary.light,
+        },
+        '&.ResultGridComponent-source': {
+          backgroundColor: theme.otherVars.schemaDiff.sourceRowColor,
+          color: theme.otherVars.schemaDiff.diffSelectFG,
+          paddingLeft: '0.5rem',
+        },
+        '&.ResultGridComponent-target': {
+          backgroundColor: theme.otherVars.schemaDiff.targetRowColor,
+          color: theme.otherVars.schemaDiff.diffSelectFG,
+          paddingLeft: '0.5rem',
+        },
+        '&.ResultGridComponent-different': {
+          backgroundColor: theme.otherVars.schemaDiff.diffRowColor,
+          color: theme.otherVars.schemaDiff.diffSelectFG,
+          paddingLeft: '0.5rem',
+        },
+        '&.ResultGridComponent-identical': {
+          paddingLeft: '0.5rem',
+          color: theme.otherVars.schemaDiff.diffColorFg,
+        },
       },
-    }
-  },
-  grid: {
-    fontSize: '13px',
-    '--rdg-selection-color': 'none'
-  },
-  subRow: {
-    paddingLeft: '1rem'
-  },
-  recordRow: {
-    marginLeft: '2.7rem',
-    height: '1.3rem',
-    width: '1.3rem',
-    display: 'inline-block',
-    marginRight: '0.3rem',
-    paddingLeft: '0.5rem',
-  },
-  rowIcon: {
-    display: 'inline-block !important',
-    height: '1.3rem',
-    width: '1.3rem'
-  },
-  cellExpand: {
-    display: 'table',
-    blockSize: '100%',
+      '& .rdg-cell': {
+        padding: 0,
+        boxShadow: 'none',
+        color: theme.otherVars.schemaDiff.diffColorFg + ' !important',
+        ...theme.mixins.panelBorder.right,
+        ...theme.mixins.panelBorder.bottom,
+        '&[aria-colindex="1"]': {
+          padding: 0,
+          textAlign: 'center',
+        },
+        '& .ResultGridComponent-rowIcon': {
+          display: 'inline-block !important',
+          height: '1.3rem',
+          width: '1.3rem'
+        },
+        '& .ResultGridComponent-cellExpand': {
+          width: '100%',
+          '& > span': {
+            verticalAlign: 'middle',
+            cursor: 'pointer',
+            '& > span': {
+              display: 'flex',
+              alignItems: 'center',
+            }
+          },
+          '& .ResultGridComponent-subRow': {
+            paddingLeft: '1rem',
 
-    '& span': {
-      verticalAlign: 'middle',
-      cursor: 'pointer',
-    }
+            '& .ResultGridComponent-count': {
+              display: 'inline-block !important',
+              '& .ResultGridComponent-countLabel': {
+                paddingLeft: '1rem',
+              },
+              '& .ResultGridComponent-countStyle': {
+                fontWeight: 900,
+                fontSize: '0.8rem',
+                paddingLeft: '0.3rem',
+              },
+            }
+          }
+        },
+        '& .ResultGridComponent-recordRow': {
+          marginLeft: '2.7rem',
+          height: '1.3rem',
+          width: '1.3rem',
+          display: 'inline-block',
+          marginRight: '0.3rem',
+          paddingLeft: '0.5rem',
+        },
+        '&.ResultGridComponent-selectCell': {
+          padding: '0 0.3rem'
+        },
+      }
+    },
+    '& .ResultGridComponent-noRowsIcon': {
+      width: '1.1rem',
+      height: '1.1rem',
+      marginRight: '0.5rem',
+    },
+    '&.rdg': {
+      flex: 1,
+      borderTop: '1px solid' + theme.otherVars.borderColor,
+    },
   },
-  gridPanel: {
-    '--rdg-background-color': theme.palette.default.main + ' !important',
-  },
-  source: {
-    backgroundColor: theme.otherVars.schemaDiff.sourceRowColor,
-    color: theme.otherVars.schemaDiff.diffSelectFG,
-    paddingLeft: '0.5rem',
-  },
-  target: {
-    backgroundColor: theme.otherVars.schemaDiff.targetRowColor,
-    color: theme.otherVars.schemaDiff.diffSelectFG,
-    paddingLeft: '0.5rem',
-  },
-  different: {
-    backgroundColor: theme.otherVars.schemaDiff.diffRowColor,
-    color: theme.otherVars.schemaDiff.diffSelectFG,
-    paddingLeft: '0.5rem',
-  },
-  identical: {
-    paddingLeft: '0.5rem',
-    color: theme.otherVars.schemaDiff.diffColorFg,
-  },
-  selectCell: {
-    padding: '0 0.3rem'
-  },
-  headerSelectCell: {
-    padding: '0rem 0.3rem 0 0.3rem'
-  },
-  count: {
-    display: 'inline-block !important',
-  },
-  countStyle: {
-    fontWeight: 900,
-    fontSize: '0.8rem',
-    paddingLeft: '0.3rem',
-  },
-  countLabel: {
-    paddingLeft: '1rem',
-  },
-  selectedRow: {
-    paddingLeft: '0.5rem',
-    backgroundColor: theme.palette.primary.light
-  },
-  selectedRowCheckBox: {
-    paddingLeft: '0.5rem',
-    backgroundColor: theme.otherVars.schemaDiff.diffSelCheckbox,
-  },
-  selChBox: {
-    paddingLeft: 0,
-  },
-  noRowsIcon:{
-    width: '1.1rem',
-    height: '1.1rem',
-    marginRight: '0.5rem',
-  }
-
 }));
 
 function useFocusRef(isSelected) {
@@ -214,8 +186,7 @@ function CellExpanderFormatter({
   isCellSelected,
   expanded,
   filterParams,
-  onCellExpand,
-  classes
+  onCellExpand
 }) {
   const { ref, tabIndex } = useFocusRef(isCellSelected);
   'identicalCount' in row && setRecordCount(row, filterParams);
@@ -228,24 +199,24 @@ function CellExpanderFormatter({
   }
 
   return (
-    <div className={classes.cellExpand}>
+    <div className='ResultGridComponent-cellExpand'>
       <span onClick={onCellExpand} onKeyDown={handleKeyDown}>
-        <span ref={ref} tabIndex={tabIndex} className={'identicalCount' in row ? classes.subRow : null}>
-          {expanded ? <KeyboardArrowDownRoundedIcon /> : <KeyboardArrowRightRoundedIcon />} <span className={clsx(row.icon, classes.rowIcon)}></span>{row.label}
+        <span ref={ref} tabIndex={tabIndex} className={'identicalCount' in row ? 'ResultGridComponent-subRow' : null}>
+          {expanded ? <KeyboardArrowDownRoundedIcon /> : <KeyboardArrowRightRoundedIcon />} <span className={row.icon + ' ResultGridComponent-rowIcon'}></span>{row.label}
           {
             'identicalCount' in row ?
-              <span className={clsx(classes.count)}>
+              <span className={'ResultGridComponent-count'}>
                 {
-                  filterParams.includes(FILTER_NAME.IDENTICAL) && <><span className={classes.countLabel}>{FILTER_NAME.IDENTICAL}:</span> <span className={classes.countStyle}>{row.identicalCount} </span></>
+                  filterParams.includes(FILTER_NAME.IDENTICAL) && <><span className='ResultGridComponent-countLabel'>{FILTER_NAME.IDENTICAL}:</span> <span className='ResultGridComponent-countStyle'>{row.identicalCount} </span></>
                 }
                 {
-                  filterParams.includes(FILTER_NAME.DIFFERENT) && <><span className={classes.countLabel}>{FILTER_NAME.DIFFERENT}:</span> <span className={classes.countStyle}>{row.differentCount}  </span></>
+                  filterParams.includes(FILTER_NAME.DIFFERENT) && <><span className='ResultGridComponent-countLabel'>{FILTER_NAME.DIFFERENT}:</span> <span className='ResultGridComponent-countStyle'>{row.differentCount}  </span></>
                 }
                 {
-                  filterParams.includes(FILTER_NAME.SOURCE_ONLY) && <><span className={classes.countLabel}>{FILTER_NAME.SOURCE_ONLY}:</span> <span className={classes.countStyle}>{row.sourceOnlyCount}  </span></>
+                  filterParams.includes(FILTER_NAME.SOURCE_ONLY) && <><span className='ResultGridComponent-countLabel'>{FILTER_NAME.SOURCE_ONLY}:</span> <span className='ResultGridComponent-countStyle'>{row.sourceOnlyCount}  </span></>
                 }
                 {
-                  filterParams.includes(FILTER_NAME.TARGET_ONLY) && <><span className={classes.countLabel}>{FILTER_NAME.TARGET_ONLY}: </span><span className={classes.countStyle}>{row.targetOnlyCount}</span></>
+                  filterParams.includes(FILTER_NAME.TARGET_ONLY) && <><span className='ResultGridComponent-countLabel'>{FILTER_NAME.TARGET_ONLY}: </span><span className='ResultGridComponent-countStyle'>{row.targetOnlyCount}</span></>
                 }
               </span>
               : null
@@ -262,8 +233,7 @@ CellExpanderFormatter.propTypes = {
   isCellSelected: PropTypes.bool,
   expanded: PropTypes.bool,
   onCellExpand: PropTypes.func,
-  filterParams: PropTypes.array,
-  classes: PropTypes.object
+  filterParams: PropTypes.array
 };
 
 
@@ -306,11 +276,8 @@ function expandRows(children, filterParams, tempChild, newRows, rowIndex) {
       }
 
     }
-    else {
-      if (filterParams.includes(child.status)) {
-        tempChild.push(child);
-      }
-
+    else if (filterParams.includes(child.status)) {
+      tempChild.push(child);
     }
   });
   if (tempChild.length > 0) {
@@ -369,29 +336,46 @@ function checkRowExpanedStatus(rows, record) {
 function prepareRows(rows, gridData, filterParams) {
   let newRows = [];
 
-  let adedIds = [];
-  gridData.map((record) => {
-    let childrens = getChildrenRows(record);
+  let addedIds = [];
+  // Filter data objects with label 'Database Objects'.
+  let newGridData = gridData.filter(function (obj) {
+    return obj.label === gettext('Database Objects');
+  });
+  // Filter data objects except 'Database Objects'
+  let otherObjects = gridData.filter(function (obj) {
+    return obj.label !== gettext('Database Objects');
+  });
+  // Sort other objects
+  otherObjects.sort((a, b) => (a.label > b.label) ? 1 : -1);
+  // Merge 'Database Objects' and other data
+  newGridData = newGridData.concat(otherObjects);
 
-    if (childrens.length > 0) {
-      childrens.map((child) => {
-        let subChildrens = getChildrenRows(child);
+  newGridData.map((record) => {
+    let children = getChildrenRows(record);
+    // Sort the children using label
+    children.sort((a, b) => (a.label > b.label) ? 1 : -1);
+
+    if (children.length > 0) {
+      children.map((child) => {
+        let subChildren = getChildrenRows(child);
+        // Sort the sub children using label
+        subChildren.sort((a, b) => (a.label > b.label) ? 1 : -1);
         let tempChildList = [];
-        subChildrens.map((subChild) => {
+        subChildren.map((subChild) => {
           if (filterParams.includes(subChild.status)) {
             tempChildList.push(subChild);
-            adedIds.push(subChild.id);
+            addedIds.push(subChild.id);
           }
         });
 
-        if (!adedIds.includes(record.id) && tempChildList.length > 0) {
-          adedIds.push(record.id);
+        if (!addedIds.includes(record.id) && tempChildList.length > 0) {
+          addedIds.push(record.id);
           record.isExpanded = true;
           newRows.push(record);
         }
 
-        if (!adedIds.includes(child.id) && tempChildList.length > 0) {
-          adedIds.push(child.id);
+        if (!addedIds.includes(child.id) && tempChildList.length > 0) {
+          addedIds.push(child.id);
           child.isExpanded = checkRowExpanedStatus(rows, child);
           newRows.push(child);
           newRows = checkAndAddChild(child, newRows, tempChildList);
@@ -424,13 +408,127 @@ function reducer(rows, { type, id, filterParams, gridData }) {
   }
 }
 
+function selectHeaderRenderer({selectedRows, setSelectedRows, rootSelection, setRootSelection, allRowIds, selectedRowIds}) {
+  const Cell = ()=>(
+    <InputCheckbox
+      cid={_.uniqueId('rgc')}
+      className='ResultGridComponent-headerSelectCell'
+      value={selectedRows.length == allRowIds.length ? rootSelection : false}
+      size='small'
+      onChange={(e) => {
+        if (e.target.checked) {
+          setRootSelection(true);
+          setSelectedRows([...allRowIds]);
+          selectedRowIds([...allRowIds]);
+        } else {
+          setRootSelection(false);
+          setSelectedRows([]);
+          selectedRowIds([]);
+        }
+      }
+      }
+    ></InputCheckbox>
+  );
+  Cell.displayName = 'Cell';
+  return Cell;
+}
+function selectFormatter({selectedRows, setSelectedRows, setRootSelection, setActiveRow, allRowIds, selectedRowIds, selectedResultRows, deselectResultRows}) {
+  const Cell = ({ row, isCellSelected }) => {
+    isCellSelected && setActiveRow(row.id);
+    return (
+      <InputCheckbox
+        className='ResultGridComponent-selectCell'
+        cid={`${row.id}`}
+        value={selectedRows.includes(`${row.id}`)}
+        size='small'
+        onChange={(e) => {
+          setSelectedRows((prev) => {
+            let tempSelectedRows = [...prev];
+            if (!prev.includes(e.target.id)) {
+              selectedResultRows(row, tempSelectedRows);
+              tempSelectedRows.length === allRowIds.length && setRootSelection(true);
+            } else {
+              deselectResultRows(row, tempSelectedRows);
+            }
+            tempSelectedRows = new Set(tempSelectedRows);
+            selectedRowIds([...tempSelectedRows]);
+            return [...tempSelectedRows];
+          });
+        }
+        }
+      ></InputCheckbox>
+    );
+  };
+
+  Cell.displayName = 'Cell';
+  Cell.propTypes = {
+    row: PropTypes.object,
+    isCellSelected: PropTypes.bool,
+  };
+  return Cell;
+}
+
+function expandFormatter({setActiveRow, filterParams, gridData, selectedRows, dispatch}) {
+  const Cell = ({ row, isCellSelected })=>{
+    const hasChildren = row.children !== undefined;
+    isCellSelected && setActiveRow(row.id);
+    return (
+      <>
+        {hasChildren && (
+
+          <CellExpanderFormatter
+            row={row}
+            isCellSelected={isCellSelected}
+            expanded={row.isExpanded === true}
+            filterParams={filterParams}
+            onCellExpand={() => dispatch({ id: row.id, type: 'toggleSubRow', filterParams: filterParams, gridData: gridData, selectedRows: selectedRows })}
+          />
+        )}
+        {!hasChildren && (
+          <Box>
+            <span className={'ResultGridComponent-recordRow ' + row.icon}></span>
+            {row.label}
+          </Box>
+        )}
+      </>
+    );
+  };
+
+  Cell.displayName = 'Cell';
+  Cell.propTypes = {
+    row: PropTypes.object,
+    isCellSelected: PropTypes.bool,
+  };
+  return Cell;
+}
+
+function resultFormatter({setActiveRow}) {
+  const Cell = ({ row, isCellSelected })=>{
+    isCellSelected && setActiveRow(row.id);
+
+    return (
+      <Box>
+        {row.status}
+      </Box>
+    );
+  };
+
+  Cell.displayName = 'Cell';
+  Cell.propTypes = {
+    row: PropTypes.object,
+    isCellSelected: PropTypes.bool,
+  };
+  return Cell;
+}
+
 export function ResultGridComponent({ gridData, allRowIds, filterParams, selectedRowIds, transId, sourceData, targetData }) {
-  const classes = useStyles();
+
   const [rows, dispatch] = useReducer(reducer, [...gridData]);
   const [selectedRows, setSelectedRows] = useState([]);
   const [rootSelection, setRootSelection] = useState(false);
   const [activeRow, setActiveRow] = useState(null);
   const schemaDiffToolContext = useContext(SchemaDiffContext);
+  const pgAdmin = usePgAdmin();
 
   function checkAllChildInclude(row, tempSelectedRows) {
     let isChildAllInclude = true;
@@ -521,20 +619,18 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
     }
   }
 
-  function getStyleClassName(row, selectedRowIds, isCellSelected, activeRowId, isCheckbox = false) {
+  function getStyleClassName(row, selectedRowIds, activeRowId) {
     let clsName = null;
-    if (selectedRowIds.includes(`${row.id}`) || isCellSelected || row.id == activeRowId) {
-      clsName = isCheckbox ? classes.selectedRowCheckBox : classes.selectedRow;
-    } else {
-      if (row.status == FILTER_NAME.DIFFERENT) {
-        clsName = classes.different;
-      } else if (row.status == FILTER_NAME.SOURCE_ONLY) {
-        clsName = classes.source;
-      } else if (row.status == FILTER_NAME.TARGET_ONLY) {
-        clsName = classes.target;
-      } else if (row.status == FILTER_NAME.IDENTICAL) {
-        clsName = classes.identical;
-      }
+    if (selectedRowIds.includes(`${row.id}`) || row.id == activeRowId) {
+      clsName = 'ResultGridComponent-selectedRow';
+    } else if (row.status == FILTER_NAME.DIFFERENT) {
+      clsName = 'ResultGridComponent-different';
+    } else if (row.status == FILTER_NAME.SOURCE_ONLY) {
+      clsName = 'ResultGridComponent-source';
+    } else if (row.status == FILTER_NAME.TARGET_ONLY) {
+      clsName = 'ResultGridComponent-target';
+    } else if (row.status == FILTER_NAME.IDENTICAL) {
+      clsName = 'ResultGridComponent-identical';
     }
 
     return clsName;
@@ -546,56 +642,15 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
       ...SelectColumn,
       minWidth: 30,
       width: 30,
-      headerRenderer() {
-        return (
-          <InputCheckbox
-            cid={_.uniqueId('rgc')}
-            className={classes.headerSelectCell}
-            value={selectedRows.length == allRowIds.length ? rootSelection : false}
-            size='small'
-            onChange={(e) => {
-              if (e.target.checked) {
-                setRootSelection(true);
-                setSelectedRows([...allRowIds]);
-                selectedRowIds([...allRowIds]);
-              } else {
-                setRootSelection(false);
-                setSelectedRows([]);
-                selectedRowIds([]);
-              }
-            }
-            }
-          ></InputCheckbox>
-        );
-      },
-      formatter({ row, isCellSelected }) {
-        isCellSelected && setActiveRow(row.id);
-        return (
-          <Box className={!row?.children && clsx(getStyleClassName(row, selectedRows, isCellSelected, activeRow, true), classes.selChBox)}>
-            <InputCheckbox
-              className={classes.selectCell}
-              cid={`${row.id}`}
-              value={selectedRows.includes(`${row.id}`)}
-              size='small'
-              onChange={(e) => {
-                setSelectedRows((prev) => {
-                  let tempSelectedRows = [...prev];
-                  if (!prev.includes(e.target.id)) {
-                    selectedResultRows(row, tempSelectedRows);
-                    tempSelectedRows.length === allRowIds.length && setRootSelection(true);
-                  } else {
-                    deselectResultRows(row, tempSelectedRows);
-                  }
-                  tempSelectedRows = new Set(tempSelectedRows);
-                  selectedRowIds([...tempSelectedRows]);
-                  return [...tempSelectedRows];
-                });
-              }
-              }
-            ></InputCheckbox>
-          </Box>
-        );
-      }
+      renderHeaderCell: selectHeaderRenderer({
+        selectedRows, setSelectedRows, rootSelection,
+        setRootSelection, allRowIds, selectedRowIds
+      }),
+      renderCell: selectFormatter({
+        selectedRows, setSelectedRows, setRootSelection,
+        setActiveRow, allRowIds, selectedRowIds,
+        selectedResultRows, deselectResultRows
+      }),
     },
     {
       key: 'label',
@@ -608,47 +663,15 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
 
         return 1;
       },
-      formatter({ row, isCellSelected }) {
-        const hasChildren = row.children !== undefined;
-        isCellSelected && setActiveRow(row.id);
-        return (
-          <>
-            {hasChildren && (
-
-              <CellExpanderFormatter
-                row={row}
-                isCellSelected={isCellSelected}
-                expanded={row.isExpanded === true}
-                filterParams={filterParams}
-                onCellExpand={() => dispatch({ id: row.id, type: 'toggleSubRow', filterParams: filterParams, gridData: gridData, selectedRows: selectedRows })}
-                classes={classes}
-              />
-            )}
-            <div className="rdg-cell-value">
-
-              {!hasChildren && (
-                <Box className={clsx(getStyleClassName(row, selectedRows, isCellSelected, activeRow), classes.status)}>
-                  <span className={clsx(classes.recordRow, row.icon)}></span>
-                  {row.label}
-                </Box>
-              )}
-            </div>
-          </>
-        );
-      }
+      renderCell: expandFormatter({
+        setActiveRow, filterParams, gridData,
+        selectedRows, dispatch
+      }),
     },
     {
       key: 'status',
       name: 'Comparison Result',
-      formatter({ row, isCellSelected }) {
-        isCellSelected && setActiveRow(row.id);
-
-        return (
-          <Box className={getStyleClassName(row, selectedRows, isCellSelected, activeRow)}>
-            {row.status}
-          </Box>
-        );
-      }
+      renderCell: resultFormatter({setActiveRow}),
     },
   ];
 
@@ -697,7 +720,7 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
           };
           eventBus.fireEvent(SCHEMA_DIFF_EVENT.TRIGGER_CHANGE_RESULT_SQL, row.ddlData);
         }).catch((err) => {
-          Notifier.alert(err.message);
+          pgAdmin.Browser.notifier.alert(err.message);
         });
       } else {
         eventBus.fireEvent(SCHEMA_DIFF_EVENT.TRIGGER_CHANGE_RESULT_SQL, {});
@@ -710,17 +733,17 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
   }
 
   return (
-    <Box className={classes.root} flexGrow="1" minHeight="0" id="schema-diff-grid">
+    <StyledBox flexGrow="1" minHeight="0" id="schema-diff-grid">
       {
         gridData ?
           <PgReactDataGrid
             id="schema-diff-result-grid"
             columns={columns} rows={rows}
-            className={clsx('big-grid', classes.gridPanel, classes.grid)}
+            className='ResultGridComponent-grid'
             treeDepth={2}
             enableRowSelect={true}
             defaultColumnOptions={{
-              resizable: true
+              enableResizing: true
             }}
             headerRowHeight={28}
             rowHeight={28}
@@ -729,14 +752,17 @@ export function ResultGridComponent({ gridData, allRowIds, filterParams, selecte
             rowKeyGetter={rowKeyGetter}
             direction={'vertical-lr'}
             noRowsText={gettext('No difference found')}
-            noRowsIcon={<InfoIcon className={classes.noRowsIcon} />}
+            noRowsIcon={<InfoIcon className='ResultGridComponent-noRowsIcon' />}
+            rowClass={(row) =>
+              getStyleClassName(row, selectedRows, activeRow)
+            }
           />
           :
           <>
             {gettext('Loading result grid...')}
           </>
       }
-    </Box>
+    </StyledBox>
   );
 }
 
@@ -748,8 +774,4 @@ ResultGridComponent.propTypes = {
   transId: PropTypes.number,
   sourceData: PropTypes.object,
   targetData: PropTypes.object,
-  'sourceData.sid': PropTypes.number,
-  'sourceData.did': PropTypes.number,
-  'targetData.sid': PropTypes.number,
-  'targetData.did': PropTypes.number,
 };

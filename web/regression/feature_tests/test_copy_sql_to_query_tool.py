@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -42,6 +42,7 @@ class CopySQLFeatureTest(BaseFeatureTest):
         self.assertEqual(query_tool_result, sql_query)
 
     def after(self):
+        self.page.close_query_tool(True)
         self.page.remove_server(self.server)
         test_utils.delete_table(
             self.server, self.test_db, self.test_table_name)
@@ -50,18 +51,14 @@ class CopySQLFeatureTest(BaseFeatureTest):
         self.page.click_tab("SQL")
         # Wait till data is displayed in SQL Tab
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
-            "//*[contains(@class,'CodeMirror-lines') and "
+            "//*[contains(@class,'cm-line') and "
             "contains(.,'CREATE TABLE IF NOT EXISTS public.%s')]"
             % self.test_table_name, 10), "No data displayed in SQL tab")
 
         # Fetch the inner html & check for escaped characters
-        source_code = self.driver.find_elements(
-            By.XPATH, QueryToolLocators.code_mirror_data_xpath)
-
-        sql_query = ''
-        for data in source_code:
-            sql_query += data.text
-            sql_query += '\n'
+        sql_query = self.driver.find_element(
+            By.CSS_SELECTOR, QueryToolLocators.code_mirror_content
+            .format('#id-sql')).text
 
         return sql_query
 
@@ -75,12 +72,9 @@ class CopySQLFeatureTest(BaseFeatureTest):
         self.driver.switch_to.frame(
             self.driver.find_element(By.TAG_NAME, "iframe"))
 
-        code_mirror = self.driver.find_elements(
-            By.XPATH, QueryToolLocators.code_mirror_data_xpath)
-        query_tool_result = ''
-        for data in code_mirror:
-            query_tool_result += data.text
-            query_tool_result += '\n'
+        query_tool_result = self.driver.find_element(
+            By.CSS_SELECTOR, QueryToolLocators.code_mirror_content
+            .format('#id-query')).text
 
         return query_tool_result
 
@@ -121,7 +115,7 @@ class CopySQLFeatureTest(BaseFeatureTest):
         wait.until(EC.presence_of_element_located(
             (By.XPATH, NavMenuLocators.show_system_objects_pref_label_xpath))
         )
-        maximize_button = self.page.find_by_xpath(
+        maximize_button = self.page.find_by_css_selector(
             NavMenuLocators.maximize_pref_dialogue_css)
         maximize_button.click()
 
@@ -149,10 +143,6 @@ class CopySQLFeatureTest(BaseFeatureTest):
                                     copy_sql_to_query_tool_switch_btn)
 
         switch_box_element.click()
-
-        maximize_button = self.page.find_by_xpath(
-            NavMenuLocators.maximize_pref_dialogue_css)
-        maximize_button.click()
 
         # save and close the preference dialog.
         self.page.click_modal('Save')

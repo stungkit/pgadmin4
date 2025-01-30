@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -14,13 +14,13 @@ side and for getting/setting preferences.
 
 import config
 import json
-from flask import render_template, url_for, Response, request, session
+from flask import render_template, Response, request, session, current_app
 from flask_babel import gettext
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import success_return, \
     make_response as ajax_response, internal_server_error
-from pgadmin.utils.menu import MenuItem
+from pgadmin.utils.ajax import make_json_response
 from pgadmin.utils.preferences import Preferences
 from pgadmin.utils.constants import MIMETYPE_APP_JS
 from pgadmin.browser.server_groups import ServerGroupModule as sgm
@@ -36,9 +36,6 @@ class PreferencesModule(PgAdminModule):
     And, allows the user to modify (not add/remove) as per their requirement.
     """
 
-    def get_own_stylesheets(self):
-        return []
-
     def get_own_menuitems(self):
         return {}
 
@@ -50,7 +47,9 @@ class PreferencesModule(PgAdminModule):
         return [
             'preferences.index',
             'preferences.get_by_name',
-            'preferences.get_all'
+            'preferences.get_all',
+            'preferences.get_all_cli',
+            'preferences.update_pref'
         ]
 
 
@@ -58,7 +57,7 @@ blueprint = PreferencesModule(MODULE_NAME, __name__)
 
 
 @blueprint.route("/preferences.js")
-@login_required
+@pga_login_required
 def script():
     """render the required javascript"""
     return Response(
@@ -70,7 +69,7 @@ def script():
 
 @blueprint.route("/", methods=["GET"], endpoint='index')
 @blueprint.route("/<module>/<preference>", endpoint='get_by_name')
-@login_required
+@pga_login_required
 def preferences(module=None, preference=None):
     """Fetch all/or requested preferences of pgAdmin IV."""
 
@@ -135,6 +134,7 @@ def _iterate_categories(pref_d, label, res):
         "open": True,
         "children": [],
         "value": gettext(pref_d['label']),
+        "name": pref_d['name']
     }
 
     for c in pref_d['categories']:
@@ -146,6 +146,7 @@ def _iterate_categories(pref_d, label, res):
         oc = {
             "id": c['id'],
             "mid": pref_d['id'],
+            "name": c['name'],
             "label": gettext(c['label']),
             "value": '{0}{1}'.format(c['id'], gettext(c['label'])),
             "inode": False,
@@ -161,7 +162,7 @@ def _iterate_categories(pref_d, label, res):
 
 
 @blueprint.route("/get_all", methods=["GET"], endpoint='get_all')
-@login_required
+@pga_login_required
 def preferences_s():
     """Fetch all preferences for caching."""
     # Load Preferences
@@ -174,6 +175,28 @@ def preferences_s():
                 for p in c['preferences']:
                     p['module'] = m['name']
                     res.append(p)
+
+    return ajax_response(
+        response=res,
+        status=200
+    )
+
+
+@blueprint.route("/get_all_cli", methods=["GET"], endpoint='get_all_cli')
+def get_all_cli():
+    """Fetch all preferences for caching."""
+    # Load Preferences
+    pref = Preferences.preferences()
+    res = {}
+
+    for m in pref:
+        if len(m['categories']):
+            for c in m['categories']:
+                for p in c['preferences']:
+                    p['module'] = m['name']
+                    res["{0}:{1}:{2}".format(m['label'], p['label'], c['label']
+                                             )] = "{0}:{1}:{2}".format(
+                        p['module'],c['name'],p['name'])
 
     return ajax_response(
         response=res,
@@ -197,7 +220,7 @@ def get_data():
 
 
 @blueprint.route("/", methods=["PUT"], endpoint="update")
-@login_required
+@pga_login_required
 def save():
     """
     Save a specific preference.
@@ -240,10 +263,74 @@ def save():
 
         setattr(session, 'PGADMIN_LANGUAGE', language)
         response.set_cookie("PGADMIN_LANGUAGE", value=language,
-                            path=config.COOKIE_DEFAULT_PATH,
+                            path=config.SESSION_COOKIE_PATH,
                             secure=config.SESSION_COOKIE_SECURE,
                             httponly=config.SESSION_COOKIE_HTTPONLY,
                             samesite=config.SESSION_COOKIE_SAMESITE,
                             **domain)
 
     return response
+
+
+def save_pref(data):
+    """
+    Save a specific preference.
+    """
+
+    if data['name'] in ['vw_edt_tab_title_placeholder',
+                        'qt_tab_title_placeholder',
+                        'debugger_tab_title_placeholder'] \
+            and data['value'].isspace():
+        data['value'] = ''
+
+    if data['value'] in ['true','false']:
+        data['value'] = True if data['value'] == 'true' else False
+
+    res, _ = Preferences.save_cli(
+        data['mid'], data['category_id'], data['id'], data['user_id'],
+        data['value'])
+
+    if not res:
+        return False
+    return True
+
+
+@blueprint.route("/update", methods=["PUT"], endpoint="update_pref")
+@pga_login_required
+def update():
+    """
+    Update a specific preference.
+    """
+    pref_data = get_data()
+    pref_data = json.loads(pref_data['pref_data'])
+
+    for data in pref_data:
+        if data['name'] in ['vw_edt_tab_title_placeholder',
+                            'qt_tab_title_placeholder',
+                            'debugger_tab_title_placeholder'] \
+                and data['value'].isspace():
+            data['value'] = ''
+
+        pref_module = Preferences.module(data['module'])
+        pref = pref_module.preference(data['name'])
+        # set user preferences
+        pref.set(data['value'])
+
+    return make_json_response(
+        data={'data': 'Success'},
+        status=200
+    )
+
+
+@blueprint.route("/", methods=['DELETE'], endpoint="reset_prefs")
+@pga_login_required
+def reset():
+    """
+    Reset preferences to default
+    """
+    res, msg = Preferences.reset()
+
+    if not res:
+        return internal_server_error(errormsg=msg)
+
+    return success_return()

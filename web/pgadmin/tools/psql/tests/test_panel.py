@@ -14,7 +14,7 @@ class PSQLPanel(BaseTestGenerator):
         self.sid = parent_node_dict["server"][-1]["server_id"]
         self.did = utils.create_database(self.server, self.db_name)
         self.sgid = config_data["server_group"]
-        self.theme = 'standard'
+        self.theme = 'light'
 
     def runTest(self):
         if sys.platform == 'win32':
@@ -37,3 +37,4 @@ class PSQLPanel(BaseTestGenerator):
                                              self.server['host'],
                                              self.server['port'])
         utils.drop_database(connection, self.db_name)
+        connection.close()

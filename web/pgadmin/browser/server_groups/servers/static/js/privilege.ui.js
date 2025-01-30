@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -28,7 +28,7 @@ export default class PrivilegeRoleSchema extends BaseUISchema {
     super({
       grantee: undefined,
       grantor: nodeInfo?.server?.user?.name,
-      privileges: undefined,
+      privileges: [],
     });
     this.granteeOptions = granteeOptions;
     this.grantorOptions = grantorOptions;
@@ -38,7 +38,7 @@ export default class PrivilegeRoleSchema extends BaseUISchema {
 
   updateSupportedPrivs = (updatedPrivs) => {
     this.supportedPrivs = updatedPrivs;
-  }
+  };
   get baseFields() {
     let obj = this;
 
@@ -56,13 +56,16 @@ export default class PrivilegeRoleSchema extends BaseUISchema {
     {
       id: 'privileges', label: gettext('Privileges'),
       type: 'text', group: null,
-      cell: ()=>({cell: 'privilege', controlProps: {
-        supportedPrivs: this.supportedPrivs,
-      }}),
+      cell: () => ({
+        cell: 'privilege',
+        controlProps: {
+          supportedPrivs: this.supportedPrivs,
+        }
+      }),
       disabled : function(state) {
         return !(
           obj.nodeInfo &&
-            obj.nodeInfo.server.user.name == state['grantor']
+            obj.nodeInfo.server?.user?.name == state['grantor']
         );
       },
     },

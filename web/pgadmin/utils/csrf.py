@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 #########################################################################
@@ -25,7 +25,8 @@ class _PGCSRFProtect(CSRFProtect):
 
         exempt_views = [
             'flask.app.<lambda>',
-            'flask.scaffold.send_static_file',
+            'flask.scaffold.send_static_file',  # For Flask 2.*
+            'flask.blueprints.send_static_file',
             'flask_security.views.login',
             'flask_security.views.logout',
             'pgadmin.tools.translations',
@@ -41,6 +42,7 @@ class _PGCSRFProtect(CSRFProtect):
             'pgadmin.authenticate.login',
             'pgadmin.tools.erd.panel',
             'pgadmin.tools.psql.panel',
+            'pgadmin.preferences.get_all_cli',
         ]
 
         for exempt in exempt_views:

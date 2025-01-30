@@ -2,37 +2,28 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import _ from 'lodash';
-import clsx from 'clsx';
-
+import { styled } from '@mui/material/styles';
 import React, { useState } from 'react';
 
-import { makeStyles } from '@material-ui/styles';
-import Paper from '@material-ui/core/Paper';
+import Paper from '@mui/material/Paper';
 
 import { DebuggerEventsContext } from './DebuggerComponent';
 import { DEBUGGER_EVENTS } from '../DebuggerConstants';
-import { commonTableStyles } from '../../../../../static/js/Theme';
+import Table from '../../../../../static/js/components/Table';
 
-
-const useStyles = makeStyles(() => ({
-  table: {
-    minWidth: 650,
-  },
-  summaryContainer: {
-    flexGrow: 1,
-    minHeight: 0,
-    overflow: 'auto',
-  }
+const StyledPaper = styled(Paper)(() => ({
+  flexGrow: 1,
+  minHeight: 0,
+  overflow: 'auto',
 }));
 
 export function Results() {
-  const classes = useStyles();
-  const tableClasses = commonTableStyles();
+
   const eventBus = React.useContext(DebuggerEventsContext);
   const [resultData, setResultData] = useState([]);
   const [columns, setColumns] = useState([]);
@@ -43,8 +34,8 @@ export function Results() {
     });
   }, []);
   return (
-    <Paper variant="outlined" elevation={0} className={classes.summaryContainer}>
-      <table className={clsx(tableClasses.table)}>
+    <StyledPaper variant="outlined" elevation={0}>
+      <Table>
         <thead>
           <tr key={_.uniqueId('c')}>
             {
@@ -65,7 +56,7 @@ export function Results() {
             </tr>
           ))}
         </tbody>
-      </table>
-    </Paper>
+      </Table>
+    </StyledPaper>
   );
 }

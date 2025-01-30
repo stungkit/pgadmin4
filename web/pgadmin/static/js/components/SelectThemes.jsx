@@ -2,44 +2,35 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import gettext from 'sources/gettext';
-import { makeStyles, Grid } from '@material-ui/core';
-import React, { useState } from 'react';
+import { Grid, FormHelperText } from '@mui/material';
+import React, { useMemo } from 'react';
 import {InputSelect } from './FormComponents';
 import PropTypes from 'prop-types';
 import CustomPropTypes from '../custom_prop_types';
+import HTMLReactParse from 'html-react-parser';
 
-const useStyles = makeStyles(() => ({
-  preview: {
-    paddingTop: 10
-  }
-}));
 
-export default function SelectThemes({onChange, ...props}) {
-  const classes = useStyles();
-  const [previewSrc, setPreviewSrc] = useState(null);
+export default function SelectThemes({onChange, helpMessage, ...props}) {
 
-  const themeChange = (e) => {
-    props.options.forEach((opt)=> {
-      if(opt.value == e) {
-        setPreviewSrc(opt.preview_src);
-      }
-    });
-    onChange(e);
-  };
-
+  const previewSrc = useMemo(()=>(props.options?.find((o)=>o.value==props.value)?.preview_src), [props.value]);
+  const cid =  _.uniqueId('c');
+  const helpid = `h${cid}`;
   return (
-    <Grid container direction="column">
+    <Grid container direction="column" spacing={0.5}>
       <Grid item lg={12} md={12} sm={12} xs={12}>
-        <InputSelect ref={props.inputRef} onChange={themeChange} {...props} />
+        <InputSelect ref={props.inputRef} onChange={onChange} {...props} />
       </Grid>
-      <Grid item lg={12} md={12} sm={12} xs={12} className={classes.preview}>
-        <img className='img-fluid mx-auto d-block border' src={previewSrc} alt={gettext('Preview not available...')} />
+      <Grid item lg={12} md={12} sm={12} xs={12} sx={{paddingTop: 10}}>
+        { previewSrc && <>
+          <FormHelperText id={helpid} variant="outlined">{HTMLReactParse(helpMessage || '')}</FormHelperText>
+          <img className='img-fluid mx-auto d-block border' src={previewSrc} alt={gettext('Preview not available...')} />
+        </> }
       </Grid>
     </Grid>
   );
@@ -51,5 +42,6 @@ SelectThemes.propTypes = {
   controlProps: PropTypes.object,
   fields: PropTypes.array,
   options: PropTypes.array,
-  inputRef: CustomPropTypes.ref
+  inputRef: CustomPropTypes.ref,
+  helpMessage: PropTypes.string
 };

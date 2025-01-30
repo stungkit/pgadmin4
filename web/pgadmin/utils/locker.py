@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -33,7 +33,8 @@ class ConnectionLocker:
             self.lock.acquire()
             current_app.logger.info("Acquired a lock.")
 
-            if session['auth_source_manager']['current_source'] == \
+            if 'auth_source_manager' in session and \
+                session['auth_source_manager']['current_source'] == \
                 KERBEROS and 'KRB5CCNAME' in session \
                     and self.is_kerberos_conn:
                 environ['KRB5CCNAME'] = session['KRB5CCNAME']

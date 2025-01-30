@@ -7,7 +7,7 @@
 The Query Tool is a powerful, feature-rich environment that allows you to
 execute arbitrary SQL commands and review the result set.  You can access the
 Query Tool via the *Query Tool* menu option on the *Tools* menu, or through the
-context menu of select nodes of the Browser tree control.  The Query Tool
+context menu of select nodes of the Object explorer control.  The Query Tool
 allows you to:
 
 * Issue ad-hoc SQL queries.
@@ -26,13 +26,12 @@ allows you to:
     :align: center
 
 You can open multiple copies of the Query tool in individual tabs
-simultaneously.  To close a copy of the Query tool, click the *X* in the
-upper-right hand corner of the tab bar.
+simultaneously.  To close a copy of the Query tool, click the *X* of the tab.
 
 The Query Tool features two panels:
 
 * The upper panel displays the *SQL Editor*. You can use the panel to enter,
-  edit, or execute a query. It also shows the *History* tab which can be used
+  edit, or execute a query or a script. It also shows the *History* tab which can be used
   to view the queries that have been executed in the session, and a *Scratch Pad*
   which can be used to hold text snippets during editing. If the Scratch Pad is
   closed, it can be re-opened (or additional ones opened) by right-clicking in
@@ -41,6 +40,47 @@ The Query Tool features two panels:
   the result set returned by a query, information about a query's execution plan,
   server messages related to the query's execution and any asynchronous
   notifications received from the server.
+
+Query Tool in Workspace Layout
+******************************
+
+The workspace layout offers a distraction-free, dedicated area for the Query Tool.
+When the Query Tool workspace is accessed, the Welcome page opens by default.
+
+**Note**: In the Workspace layout, all Query Tool and View/Edit Data tabs open within the Query Tool workspace.
+
+In the classic UI, users must connect to a database server and navigate to the
+database node before using the Query Tool. However, with the introduction of the
+Workspace layout and Welcome page, users can seamlessly connect to any ad-hoc
+server, even if it is not registered in the Object Explorer.
+
+.. image:: images/query_tool_workspace.png
+    :alt: Query tool workspace
+    :align: center
+
+* Select *Existing Server* from the dropdown to connect to a server already
+  listed in the Object Explorer. It is optional.
+* Provide the *Server Name* for ad-hoc servers.
+* Specify the IP address of the server host, or the fully qualified domain
+  name in the *Host name/address* field.
+* Enter the listener port number of the server host in the *Port* field.
+* Use the *Database* field to specify the name of the database to which
+  the client will connect.
+* Use the *User* field to specify the name of a user that will be used when
+  authenticating with the server.
+* Use the *Password* field to provide a password that will be supplied when
+  authenticating with the server.
+* Use the *Role* field to specify the name of a role that has privileges that
+  will be conveyed to the client after authentication with the server.
+* Use the *Service* field to specify the service name. For more information,
+  see
+  `Section 33.16 of the Postgres documentation <https://www.postgresql.org/docs/current/libpq-pgservice.html>`_.
+* Use the fields in the *Connection Parameters* to configure the connection parameters.
+
+After filling in all the required fields, click the Connect & Open Query Tool
+button to launch the Query Tool with the provided server details. If the password
+is not supplied, you will be prompted to enter it.
+
 
 Toolbar
 *******
@@ -73,14 +113,30 @@ key combination to select from a popup menu of autocomplete options.
     :alt: Query tool autocomplete feature
     :align: center
 
-After entering a query, select the *Execute/Refresh* icon from the toolbar. The
+After entering a query, select the *Execute script* icon from the toolbar. The
 complete contents of the SQL editor panel will be sent to the database server
 for execution. To execute only a section of the code that is displayed in the
-SQL editor, highlight the text that you want the server to execute, and click
-the *Execute/Refresh* icon.
+SQL editor, highlight the text that you want the server to execute, and click the
+*Execute script* icon.
 
-.. image:: images/query_execute_section.png
+.. image:: images/query_execute_script.png
+    :alt: Query tool execute script section
+    :align: center
+
+You can also execute a query based on cursor position. Query tool will detect
+a query and underline it when cursor position changes. Now, to execute the
+current underlined query, hit the *Execute query* button on the toolbar. If a section
+is highlighted then it will behave like normal execute.
+
+.. image:: images/query_execute_query.png
     :alt: Query tool execute query section
+    :align: center
+
+The warning will appear only if *Underline query at cursor?* is set to *False* and
+the *Underlined query execute warning?* switch is set to *True* Preferences Query tool's Options.
+
+.. image:: images/query_execute_warning.png
+    :alt: Query tool execute query warning
     :align: center
 
 The message returned by the server when a command executes is displayed on the
@@ -159,11 +215,10 @@ The *Data Output* tab displays the result set of the query in a table format.
 You can:
 
 * Select and copy from the displayed result set.
-* Use the *Execute/Refresh* options to retrieve query execution information and
-  set query execution options.
 * Use the *Save results to file* icon to save the content of the *Data Output*
   tab as a comma-delimited file.
 * Edit the data in the result set of a SELECT query if it is updatable.
+* Move between pages of data result.
 
 .. _updatable-result-set:
 
@@ -483,6 +538,12 @@ To create a macro, select the *Manage Macros* option from the *Macros* menu on t
 
 .. image:: images/query_tool_manage_macros_dialog.png
    :alt: Query Tool Manage Macros dialogue
+   :align: center
+
+To add a query to macros, write and select your query, then go to the *Macros* menu in the Query Tool and click *Add to macros*. Your query will be automatically saved to macros.
+
+.. image:: images/query_tool_add_to_macro.png
+   :alt: Query Tool Add To Macros
    :align: center
 
 To delete a macro, select the macro on the *Manage Macros* dialogue, and then click the *Delete* button.

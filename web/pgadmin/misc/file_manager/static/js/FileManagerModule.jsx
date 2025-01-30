@@ -3,15 +3,15 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import gettext from 'sources/gettext';
-import Notifier from '../../../../static/js/helpers/Notifier';
 import React from 'react';
 import FileManager from './components/FileManager';
 import { getBrowser } from '../../../../static/js/utils';
+import pgAdmin from 'sources/pgadmin';
 
 export default class FileManagerModule {
   static instance;
@@ -56,7 +56,7 @@ export default class FileManagerModule {
   }
 
   showInternal(params, onOK, onCancel, modalObj) {
-    const modal = modalObj || Notifier;
+    const modal = modalObj || pgAdmin.Browser.notifier;
     let title = params.dialog_title;
     if(!title) {
       if(params.dialog_type == 'create_file') {
@@ -74,6 +74,8 @@ export default class FileManagerModule {
           closeModal={closeModal}
           onCancel={onCancel}
           onOK={onOK}
+          sharedStorages={this.pgAdmin.server_mode == 'True' ? this.pgAdmin.shared_storage: []}
+          restrictedSharedStorage={this.pgAdmin.server_mode == 'True' ? this.pgAdmin.restricted_shared_storage: []}
         />
       );
     }, {
@@ -83,32 +85,37 @@ export default class FileManagerModule {
     });
   }
 
-  showNative(params, onOK, onCancel) {
-    // https://docs.nwjs.io/en/latest/References/Changes%20to%20DOM/
-    let fileEle = document.createElement('input');
-    let accept = params.supported_types?.map((v)=>(v=='*' ? '' : `.${v}`))?.join(',');
-    fileEle.setAttribute('type', 'file');
-    fileEle.setAttribute('accept', accept);
-    fileEle.onchange = (e)=>{
-      if(e.target.value) {
-        onOK?.(e.target.value);
-      } else {
-        onCancel?.();
-      }
-    };
+  async showNative(params, onOK, onCancel) {
+    let res;
+    let options = {};
+
+    options['filters'] = params.supported_types?.map((v)=>(
+      v=='*' ? {name: 'All Files', extensions: ['*']} :
+        {name: `${v.toUpperCase()} File .${v}`, extensions:[v]}
+    ));
+
     if(params.dialog_type == 'create_file') {
-      fileEle.setAttribute('nwsaveas', '');
-    } else if(params.dialog_type == 'select_folder') {
-      fileEle.setAttribute('nwdirectory', '');
+      res = await window.electronUI.showSaveDialog(options);
+    } else {
+      options['properties'] = ['openFile'];
+      if(params.dialog_type == 'select_folder') {
+        options['properties'] = ['openDirectory'];
+      }
+      res = await window.electronUI.showOpenDialog(options);
     }
-    fileEle.dispatchEvent(new MouseEvent('click'));
+
+    if(res.canceled) {
+      onCancel?.();
+    } else {
+      onOK?.(res.filePath ? res.filePath : res.filePaths[0]);
+    }
   }
 
-  show(params, onOK, onCancel, modalObj) {
+  async show(params, onOK, onCancel, modalObj) {
     let {name: browser} = getBrowser();
-    if(browser == 'Nwjs') {
+    if(browser == 'Electron') {
       try {
-        this.showNative(params, onOK, onCancel);
+        await this.showNative(params, onOK, onCancel);
       } catch {
         // Fall back to internal
         this.showInternal(params, onOK, onCancel, modalObj);

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -16,16 +16,7 @@ import url_for from 'sources/url_for';
 import getApiInstance from '../../../../static/js/api_instance';
 import { isEmptyString } from 'sources/validators';
 import PropTypes from 'prop-types';
-import { makeStyles } from '@material-ui/core/styles';
 import gettext from 'sources/gettext';
-
-const useStyles = makeStyles(() =>
-  ({
-    formClass: {
-      overflow: 'auto',
-    }
-  }),
-);
 
 // AWS credentials
 export function AwsCredentials(props) {
@@ -66,7 +57,7 @@ AwsCredentials.propTypes = {
 // AWS Instance Details
 export function AwsInstanceDetails(props) {
   const [cloudInstanceDetailsInstance, setCloudInstanceDetailsInstance] = React.useState();
-  const classes = useStyles();
+
 
   React.useMemo(() => {
     const cloudDBInstanceSchema = new CloudInstanceDetailsSchema({
@@ -91,7 +82,7 @@ export function AwsInstanceDetails(props) {
                 resolve(data);
               })
               .catch((err)=>{
-                reject(err);
+                reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
               });
           } else {
             resolve(options);
@@ -124,7 +115,6 @@ export function AwsInstanceDetails(props) {
     onDataChange={(isChanged, changedData) => {
       props.setCloudInstanceDetails(changedData);
     }}
-    formClassName={classes.formClass}
   />;
 }
 AwsInstanceDetails.propTypes = {
@@ -249,10 +239,10 @@ export function getAWSSummary(cloud, cloudInstanceDetails, cloudDBDetails) {
 }
 
 const getStorageType = (cloudInstanceDetails) => {
-  let _storage_type = 'General Purpose SSD (gp2)',
-    _io1 = undefined;
+  let _storage_type = 'General Purpose SSD (gp2)', _io1;
 
-  if(cloudInstanceDetails.storage_type == 'gp2') _storage_type = 'General Purpose SSD (gp2)';
+  if(cloudInstanceDetails.storage_type == 'gp2'){ _storage_type = 'General Purpose SSD (gp2)';}
+  else if (cloudInstanceDetails.storage_type == 'gp3'){ _storage_type = 'General Purpose SSD (gp3)';}
   else if(cloudInstanceDetails.storage_type == 'io1') {
     _storage_type = 'Provisioned IOPS SSD (io1)';
     _io1 = cloudInstanceDetails.storage_IOPS;

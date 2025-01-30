@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -95,12 +95,13 @@ def make_response(response=None, status=200):
     )
 
 
-def internal_server_error(errormsg=''):
+def internal_server_error(errormsg='',data=None):
     """Create a response with HTTP status code 500 - Internal Server Error."""
     return make_json_response(
         status=500,
         success=0,
-        errormsg=errormsg
+        errormsg=errormsg,
+        data=data
     )
 
 
@@ -182,3 +183,8 @@ def service_unavailable(errormsg=_("Service Unavailable"), info='',
         result=result,
         data=data
     )
+
+
+def plain_text_response(message=''):
+    response = Response(message, status=200, mimetype="text/plain")
+    return response

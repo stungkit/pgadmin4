@@ -2,28 +2,27 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
-import gettext from '../../../../static/js/gettext';
-import url_for from '../../../../static/js/url_for';
+import gettext from 'sources/gettext';
+import url_for from 'sources/url_for';
 import {getDatabaseLabel, generateTitle} from './sqleditor_title';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import _ from 'lodash';
-import Notify from '../../../../static/js/helpers/Notifier';
 import { isEmptyString } from 'sources/validators';
-import { getUtilityView } from '../../../../browser/static/js/utility_view';
+import usePreferences from '../../../../preferences/static/js/store';
+import pgAdmin from 'sources/pgadmin';
+import { getNodeListByName } from '../../../../browser/static/js/node_ajax';
 
 export default class DataFilterSchema extends BaseUISchema {
-  constructor(fieldOptions = {}) {
+  constructor(getColumns) {
     super({
       filter_sql: ''
     });
 
-    this.fieldOptions = {
-      ...fieldOptions,
-    };
+    this.getColumns = getColumns;
   }
 
   get baseFields() {
@@ -31,6 +30,31 @@ export default class DataFilterSchema extends BaseUISchema {
       id: 'filter_sql',
       label: gettext('Data Filter'),
       type: 'sql', isFullTab: true, cell: 'text',
+      controlProps: {
+        autocompleteOnKeyPress: true,
+        autocompleteProvider: (context, onAvailable)=>{
+          return new Promise((resolve, reject)=>{
+            const word = context.matchBefore(/\w*/);
+            const fullSql = context.state.doc.toString();
+            this.getColumns().then((columns) => {
+              onAvailable();
+              resolve({
+                from: word.from,
+                options: (columns??[]).map((col)=>({
+                  label: col.label, type: 'property',
+                })),
+                validFor: (text, from)=>{
+                  return text.startsWith(fullSql.slice(from));
+                }
+              });
+            })
+              .catch((err) => {
+                onAvailable();
+                reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
+              });
+          });
+        }
+      }
     }];
   }
 
@@ -57,15 +81,14 @@ export function showViewData(
 ) {
   const node = pgBrowser.tree.findNodeByDomElement(treeIdentifier);
   if (node === undefined || !node.getData()) {
-    Notify.alert(
+    pgAdmin.Browser.notifier.alert(
       gettext('Data Grid Error'),
       gettext('No object selected.')
     );
     return;
   }
 
-  const parentData = pgBrowser.tree.getTreeNodeHierarchy(  treeIdentifier
-  );
+  const parentData = pgBrowser.tree.getTreeNodeHierarchy(treeIdentifier);
 
   if (hasServerOrDatabaseConfiguration(parentData)
     || !hasSchemaOrCatalogOrViewInformation(parentData)) {
@@ -83,7 +106,7 @@ export function showViewData(
   if(filter) {
     const validateUrl = generateFilterValidateUrl(node.getData(), parentData);
     // Show Data Filter Dialog
-    showFilterDialog(pgBrowser, node, queryToolMod, transId, gridUrl,
+    showFilterDialog(pgBrowser, treeIdentifier, queryToolMod, transId, gridUrl,
       queryToolTitle, validateUrl);
   } else {
     queryToolMod.launch(transId, gridUrl, false, queryToolTitle);
@@ -154,26 +177,26 @@ function generateFilterValidateUrl(nodeData, parentData) {
   return url_for('sqleditor.filter_validate', url_params);
 }
 
-function showFilterDialog(pgBrowser, treeNodeInfo, queryToolMod, transId,
+function showFilterDialog(pgBrowser, item, queryToolMod, transId,
   gridUrl, queryToolTitle, validateUrl) {
 
-  let schema = new DataFilterSchema();
-
-  // Register dialog panel
-  pgBrowser.Node.registerUtilityPanel();
-  let panel = pgBrowser.Node.addUtilityPanel(pgBrowser.stdW.md),
-    j = panel.$container.find('.obj_properties').first();
-  panel.title(gettext('Data Filter - %s', queryToolTitle));
-  panel.focus();
-
+  const treeNodeInfo = pgBrowser.tree.getTreeNodeHierarchy(item);
+  const itemNodeData = pgBrowser.tree.findNodeByDomElement(item).getData();
+  let schema = new DataFilterSchema(
+    ()=>getNodeListByName('column', treeNodeInfo, itemNodeData),
+  );
   let helpUrl = url_for('help.static', {'filename': 'viewdata_filter.html'});
 
   let okCallback = function() {
-    queryToolMod.launch(transId, gridUrl, false, queryToolTitle, {sql_filter: schema._sessData.filter_sql});
+    queryToolMod.launch(transId, gridUrl, false, queryToolTitle, {sql_filter: JSON.stringify(schema.sessData.filter_sql)});
   };
 
-  getUtilityView(schema, treeNodeInfo, 'create', 'dialog', j[0], panel,
-    okCallback, [], 'OK', validateUrl, undefined, helpUrl, false);
+  pgBrowser.Events.trigger('pgadmin:utility:show', item,
+    gettext('Data Filter - %s', queryToolTitle),{
+      schema, urlBase: validateUrl, helpUrl, saveBtnName: gettext('OK'), isTabView: false,
+      onSave: okCallback,
+    }, pgBrowser.stdW.md, pgBrowser.stdH.md
+  );
 }
 
 function hasServerOrDatabaseConfiguration(parentData) {
@@ -186,13 +209,13 @@ function hasSchemaOrCatalogOrViewInformation(parentData) {
 }
 
 export function generateViewDataTitle(pgBrowser, treeIdentifier, custom_title=null, backend_entity=null) {
-  let preferences = pgBrowser.get_preferences_for_module('browser');
+  let preferences = usePreferences.getState().getPreferencesForModule('browser');
   const parentData = pgBrowser.tree.getTreeNodeHierarchy(
     treeIdentifier
   );
 
   const namespaceName = retrieveNameSpaceName(parentData);
-  const db_label = !_.isUndefined(backend_entity) && backend_entity != null && backend_entity.hasOwnProperty('db_name') ? backend_entity['db_name'] : getDatabaseLabel(parentData);
+  const db_label = !_.isUndefined(backend_entity) && backend_entity?.hasOwnProperty('db_name') ? backend_entity['db_name'] : getDatabaseLabel(parentData);
   const node = pgBrowser.tree.findNodeByDomElement(treeIdentifier);
 
   let dtg_title_placeholder = '';

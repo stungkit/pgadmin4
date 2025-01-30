@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -19,7 +19,8 @@ def get_extension_data(schema_name):
     data = {
         "name": "cube",
         "relocatable": "true",
-        "schema": schema_name
+        "schema": schema_name,
+        "cascade": "true"
     }
     return data
 

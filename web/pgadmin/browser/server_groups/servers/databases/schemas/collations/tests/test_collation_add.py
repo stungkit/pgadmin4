@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -77,6 +77,9 @@ class CollationAddTestCase(BaseTestGenerator):
         self.test_data['name'] = "collation_add_%s" % str(uuid.uuid4())[1:8]
         self.test_data['owner'] = self.server["username"]
         self.test_data['schema'] = self.schema_name
+        self.test_data['provider'] = "icu"
+        self.test_data['is_deterministic'] = True
+        self.test_data['version'] = "test"
 
         if self.is_positive_test:
             response = self.create_collation()

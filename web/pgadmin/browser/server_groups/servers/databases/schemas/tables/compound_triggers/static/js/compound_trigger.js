@@ -2,14 +2,13 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import { getNodeListByName } from '../../../../../../../../static/js/node_ajax';
 import CompoundTriggerSchema from './compound_trigger.ui';
-import Notify from '../../../../../../../../../static/js/helpers/Notifier';
 import getApiInstance from '../../../../../../../../../static/js/api_instance';
 
 define('pgadmin.node.compound_trigger', [
@@ -83,12 +82,12 @@ define('pgadmin.node.compound_trigger', [
         },{
           name: 'enable_compound_trigger', node: 'compound_trigger', module: this,
           applies: ['object', 'context'], callback: 'enable_compound_trigger',
-          category: 'connect', priority: 3, label: gettext('Enable compound trigger'),
+          priority: 3, label: gettext('Enable compound trigger'),
           enable : 'canCreate_with_compound_trigger_enable',
         },{
           name: 'disable_compound_trigger', node: 'compound_trigger', module: this,
           applies: ['object', 'context'], callback: 'disable_compound_trigger',
-          category: 'drop', priority: 3, label: gettext('Disable compound trigger'),
+          priority: 3, label: gettext('Disable compound trigger'),
           enable : 'canCreate_with_compound_trigger_disable',
         },{
           name: 'create_compound_trigger_onView', node: 'view', module: this,
@@ -118,21 +117,15 @@ define('pgadmin.node.compound_trigger', [
             {'is_enable_trigger' : 'O'}
           ).then(({data: res})=> {
             if(res.success == 1) {
-              Notify.success(res.info);
+              pgAdmin.Browser.notifier.success(res.info);
               t.removeIcon(i);
               data.icon = 'icon-compound_trigger';
               t.addIcon(i, {icon: data.icon});
-              t.unload(i);
-              t.setInode(false);
-              t.deselect(i);
-              // Fetch updated data from server
-              setTimeout(function() {
-                t.select(i);
-              }, 10);
+              t.updateAndReselectNode(i, data);
             }
           }).catch(function(error) {
-            Notify.pgRespErrorNotify(error);
-            t.unload(i);
+            pgAdmin.Browser.notifier.pgRespErrorNotify(error);
+            t.refresh(i);
           });
         },
         /* Disable compound trigger */
@@ -152,21 +145,15 @@ define('pgadmin.node.compound_trigger', [
             {'is_enable_trigger' : 'D'}
           ).then(({data: res})=> {
             if(res.success == 1) {
-              Notify.success(res.info);
+              pgAdmin.Browser.notifier.success(res.info);
               t.removeIcon(i);
               data.icon = 'icon-compound_trigger-bad';
               t.addIcon(i, {icon: data.icon});
-              t.unload(i);
-              t.setInode(false);
-              t.deselect(i);
-              // Fetch updated data from server
-              setTimeout(function() {
-                t.select(i);
-              }, 10);
+              t.updateAndReselectNode(i, data);
             }
           }).catch(function(error) {
-            Notify.pgRespErrorNotify(error);
-            t.unload(i);
+            pgAdmin.Browser.notifier.pgRespErrorNotify(error);
+            t.refresh(i);
           });
         },
       },
@@ -204,7 +191,7 @@ define('pgadmin.node.compound_trigger', [
         }
 
         return itemData.icon === 'icon-compound_trigger-bad' &&
-          this.canCreate.apply(this, [itemData, item, data]);
+          this.canCreate(itemData, item, data);
       },
       // Check to whether trigger is enable ?
       canCreate_with_compound_trigger_disable: function(itemData, item, data) {
@@ -214,7 +201,7 @@ define('pgadmin.node.compound_trigger', [
         }
 
         return itemData.icon === 'icon-compound_trigger' &&
-          this.canCreate.apply(this, [itemData, item, data]);
+          this.canCreate(itemData, item, data);
       },
     });
   }

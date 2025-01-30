@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -61,7 +61,9 @@ class DomainModule(SchemaChildModule):
         """
         Generate the domain collection node.
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=DomainView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -151,6 +153,7 @@ class DomainView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     node_label = "Domain"
+    BASE_TEMPLATE_PATH = 'domains/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -301,10 +304,8 @@ class DomainView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     kwargs['did']]['datistemplate']
 
             # we will set template path for sql scripts
-            self.template_path = compile_template_path(
-                'domains/sql/',
-                self.manager.version
-            )
+            self.template_path = \
+                self.BASE_TEMPLATE_PATH.format(self.manager.version)
 
             return f(*args, **kwargs)
 
@@ -358,7 +359,8 @@ class DomainView(PGChildNodeView, DataTypeReader, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-domain"
+                    icon="icon-domain",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -583,7 +585,7 @@ AND relkind != 'c'))"""
         """
 
         data = self.request
-        SQL, name = self.get_sql(gid, sid, data, scid)
+        SQL, _ = self.get_sql(gid, sid, data, scid)
         # Most probably this is due to error
         if not isinstance(SQL, str):
             return SQL
@@ -713,12 +715,17 @@ AND relkind != 'c'))"""
         if not status:
             return internal_server_error(errormsg=scid)
 
+        other_node_info = {}
+        if 'description' in self.request:
+            other_node_info['description'] = self.request['description']
+
         return jsonify(
             node=self.blueprint.generate_browser_node(
                 doid,
                 scid,
                 name,
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                **other_node_info
             )
         )
 
@@ -807,7 +814,7 @@ AND relkind != 'c'))"""
         """
 
         try:
-            SQL, name = self.get_sql(gid, sid, self.request, scid, doid)
+            SQL, _ = self.get_sql(gid, sid, self.request, scid, doid)
             # Most probably this is due to error
             if not isinstance(SQL, str):
                 return SQL
@@ -973,9 +980,8 @@ AND relkind != 'c'))"""
         if data:
             if target_schema:
                 data['schema'] = target_schema
-            sql, name = self.get_sql(gid=gid, sid=sid, scid=scid,
-                                     data=data, doid=oid,
-                                     is_schema_diff=True)
+            sql, _ = self.get_sql(gid=gid, sid=sid, scid=scid,
+                                  data=data, doid=oid, is_schema_diff=True)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

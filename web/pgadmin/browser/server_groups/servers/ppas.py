@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -18,7 +18,7 @@ class PPAS(ServerType):
         " programs (pg_dump, pg_restore etc)."
     )
 
-    def instance_of(self, ver):
+    def instance_of(self, ver=None):
         return "EnterpriseDB" in ver
 
 

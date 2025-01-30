@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -16,12 +16,11 @@ import copy
 
 from flask import render_template, request, current_app
 from flask_babel import gettext
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from werkzeug.user_agent import UserAgent
 
 from pgadmin.utils import PgAdminModule, \
-    SHORTCUT_FIELDS as shortcut_fields, \
-    ACCESSKEY_FIELDS as accesskey_fields
+    SHORTCUT_FIELDS as shortcut_fields
 from pgadmin.utils.ajax import bad_request
 from pgadmin.utils.ajax import make_json_response, \
     internal_server_error, gone
@@ -36,7 +35,6 @@ from pgadmin.browser.server_groups.servers.databases.extensions.utils \
 from pgadmin.utils.constants import PREF_LABEL_KEYBOARD_SHORTCUTS, \
     SERVER_CONNECTION_CLOSED
 from pgadmin.preferences import preferences
-from pgadmin.utils.constants import PSYCOPG2
 
 MODULE_NAME = 'debugger'
 
@@ -46,6 +44,7 @@ ASYNC_OK = 1
 DEBUGGER_SQL_PATH = 'debugger/sql'
 DEBUGGER_SQL_V1_PATH = 'debugger/sql/v1'
 DEBUGGER_SQL_V3_PATH = 'debugger/sql/v3'
+SET_SEARCH_PATH = "SET search_path={0};"
 
 
 class DebuggerModule(PgAdminModule):
@@ -59,80 +58,98 @@ class DebuggerModule(PgAdminModule):
     def register_preferences(self):
         self.preference.register(
             'keyboard_shortcuts', 'btn_start',
-            gettext('Accesskey (Continue/Start)'), 'keyboardshortcut',
+            gettext('Continue/Start'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 67,
                     'char': 'c'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
             'keyboard_shortcuts', 'btn_stop',
-            gettext('Accesskey (Stop)'), 'keyboardshortcut',
+            gettext('Stop'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 83,
                     'char': 's'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
             'keyboard_shortcuts', 'btn_step_into',
-            gettext('Accesskey (Step into)'), 'keyboardshortcut',
+            gettext('Step into'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 73,
                     'char': 'i'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
             'keyboard_shortcuts', 'btn_step_over',
-            gettext('Accesskey (Step over)'), 'keyboardshortcut',
+            gettext('Step over'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 79,
                     'char': 'o'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
             'keyboard_shortcuts', 'btn_toggle_breakpoint',
-            gettext('Accesskey (Toggle breakpoint)'), 'keyboardshortcut',
+            gettext('Toggle breakpoint'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 84,
                     'char': 't'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
             'keyboard_shortcuts', 'btn_clear_breakpoints',
-            gettext('Accesskey (Clear all breakpoints)'), 'keyboardshortcut',
+            gettext('Clear all breakpoints'), 'keyboardshortcut',
             {
+                'alt': True,
+                'shift': True,
+                'control': False,
                 'key': {
                     'key_code': 88,
                     'char': 'x'
                 }
             },
             category_label=PREF_LABEL_KEYBOARD_SHORTCUTS,
-            fields=accesskey_fields
+            fields=shortcut_fields
         )
 
         self.preference.register(
@@ -238,7 +255,7 @@ blueprint = DebuggerModule(MODULE_NAME, __name__)
 
 
 @blueprint.route("/", endpoint='index')
-@login_required
+@pga_login_required
 def index():
     return bad_request(
         errormsg=gettext("This URL cannot be called directly.")
@@ -246,7 +263,7 @@ def index():
 
 
 def execute_dict_search_path(conn, sql, search_path):
-    sql_search = "SET search_path={0};".format(search_path)
+    sql_search = SET_SEARCH_PATH.format(search_path)
     status, res = conn.execute_void(sql_search)
 
     if not status:
@@ -259,7 +276,7 @@ def execute_dict_search_path(conn, sql, search_path):
 
 
 def execute_async_search_path(conn, sql, search_path):
-    sql_search = "SET search_path={0};".format(search_path)
+    sql_search = SET_SEARCH_PATH.format(search_path)
     status, res = conn.execute_void(sql_search)
 
     if not status:
@@ -351,7 +368,7 @@ def check_node_type(node_type, fid, trid, conn, ppas_server,
     '/init/<node_type>/<int:sid>/<int:did>/<int:scid>/<int:fid>/<int:trid>',
     methods=['GET'], endpoint='init_for_trigger'
 )
-@login_required
+@pga_login_required
 def init_function(node_type, sid, did, scid, fid, trid=None):
     """
     init_function(node_type, sid, did, scid, fid, trid)
@@ -558,7 +575,7 @@ def check_user_ip_req(r_set, data):
 
 
 @blueprint.route('/direct/<int:trans_id>', methods=['GET'], endpoint='direct')
-@login_required
+@pga_login_required
 def direct_new(trans_id):
     de_inst = DebuggerInstance(trans_id)
 
@@ -639,8 +656,6 @@ def direct_new(trans_id):
         is_linux=is_linux_platform,
         client_platform=user_agent.platform,
         function_name_with_arguments=function_name_with_arguments,
-        requirejs=True,
-        basejs=True,
         layout=layout
     )
 
@@ -665,7 +680,7 @@ def get_debugger_version(conn, search_path):
     :return:
     """
     debugger_version = 0
-    status, res = conn.execute_void("SET search_path={0};".format(search_path))
+    status, res = conn.execute_void(SET_SEARCH_PATH.format(search_path))
 
     if not status:
         return False, internal_server_error(errormsg=res)
@@ -772,7 +787,7 @@ def get_search_path(conn):
     methods=['POST'],
     endpoint='initialize_target_for_trigger'
 )
-@login_required
+@pga_login_required
 def initialize_target(debug_type, trans_id, sid, did,
                       scid, func_id, tri_id=None):
     """
@@ -897,7 +912,7 @@ def close(trans_id):
 @blueprint.route(
     '/restart/<int:trans_id>', methods=['GET'], endpoint='restart'
 )
-@login_required
+@pga_login_required
 def restart_debugging(trans_id):
     """
     restart_debugging(trans_id)
@@ -962,7 +977,7 @@ def restart_debugging(trans_id):
     '/start_listener/<int:trans_id>', methods=['POST'],
     endpoint='start_listener'
 )
-@login_required
+@pga_login_required
 def start_debugger_listener(trans_id):
     """
     start_debugger_listener(trans_id)
@@ -989,9 +1004,6 @@ def start_debugger_listener(trans_id):
     conn = manager.connection(
         did=de_inst.debugger_data['database_id'],
         conn_id=de_inst.debugger_data['conn_id'])
-
-    ver = manager.version
-    server_type = manager.server_type
 
     # find the debugger version and execute the query accordingly
     dbg_version = de_inst.debugger_data['debugger_version']
@@ -1050,38 +1062,6 @@ def start_debugger_listener(trans_id):
                 if not status:
                     return internal_server_error(errormsg=res)
 
-            if de_inst.function_data['arg_mode']:
-                # In EDBAS 90, if an SPL-function has both an OUT-parameter
-                # and a return value (which is not possible on PostgreSQL
-                # otherwise), the return value is transformed into an extra
-                # OUT-parameter named "_retval_"
-                if de_inst.function_data['args_name']:
-                    arg_name = de_inst.function_data['args_name'].split(",")
-                    if '_retval_' in arg_name:
-                        arg_mode = de_inst.function_data['arg_mode'].split(",")
-                        arg_mode.pop()
-                    else:
-                        arg_mode = de_inst.function_data['arg_mode'].split(",")
-                else:
-                    arg_mode = de_inst.function_data['arg_mode'].split(",")
-            else:
-                arg_mode = ['i'] * len(
-                    de_inst.function_data['args_type'].split(",")
-                )
-
-            if de_inst.function_data['args_type']:
-                if de_inst.function_data['args_name']:
-                    arg_name = de_inst.function_data['args_name'].split(",")
-                    if '_retval_' in arg_name:
-                        arg_type = de_inst.function_data[
-                            'args_type'].split(",")
-                        arg_type.pop()
-                    else:
-                        arg_type = de_inst.function_data[
-                            'args_type'].split(",")
-                else:
-                    arg_type = de_inst.function_data['args_type'].split(",")
-
             debugger_args_values = []
             if de_inst.function_data['args_value']:
                 debugger_args_values = copy.deepcopy(
@@ -1092,29 +1072,16 @@ def start_debugger_listener(trans_id):
                         val_list = arg['value'][1:-1].split(',')
                         arg['value'] = get_debugger_arg_val(val_list)
 
-            # Below are two different template to execute and start executer
-            if manager.server_type != 'pg' and manager.version < 90300:
-                str_query = render_template(
-                    "/".join([DEBUGGER_SQL_PATH, 'execute_edbspl.sql']),
-                    func_name=func_name,
-                    is_func=de_inst.function_data['is_func'],
-                    lan_name=de_inst.function_data['language'],
-                    ret_type=de_inst.function_data['return_type'],
-                    data=debugger_args_values,
-                    arg_type=arg_type,
-                    args_mode=arg_mode,
-                    conn=conn
-                )
-            else:
-                str_query = render_template(
-                    "/".join([DEBUGGER_SQL_PATH, 'execute_plpgsql.sql']),
-                    func_name=func_name,
-                    is_func=de_inst.function_data['is_func'],
-                    ret_type=de_inst.function_data['return_type'],
-                    data=debugger_args_values,
-                    is_ppas_database=de_inst.function_data['is_ppas_database'],
-                    conn=conn
-                )
+            # Template to execute and start executer
+            str_query = render_template(
+                "/".join([DEBUGGER_SQL_PATH, 'execute_plpgsql.sql']),
+                func_name=func_name,
+                is_func=de_inst.function_data['is_func'],
+                ret_type=de_inst.function_data['return_type'],
+                data=debugger_args_values,
+                is_ppas_database=de_inst.function_data['is_ppas_database'],
+                conn=conn
+            )
 
             status, result = execute_async_search_path(
                 conn, str_query, de_inst.debugger_data['search_path'])
@@ -1135,34 +1102,16 @@ def start_debugger_listener(trans_id):
             # other information during debugging
             int_session_id = res['rows'][0]['pldbg_create_listener']
 
-            # In EnterpriseDB versions <= 9.1 the
-            # pldbg_set_global_breakpoint function took five arguments,
-            # the 2nd argument being the package's OID, if any. Starting
-            # with 9.2, the package OID argument is gone, and the function
-            # takes four arguments like the community version has always
-            # done.
-            if server_type == 'ppas' and ver <= 90100:
-                sql = render_template(
-                    "/".join([template_path, 'add_breakpoint_edb.sql']),
-                    session_id=int_session_id,
-                    function_oid=de_inst.debugger_data['function_id']
-                )
+            sql = render_template(
+                "/".join([template_path, 'add_breakpoint_pg.sql']),
+                session_id=int_session_id,
+                function_oid=de_inst.debugger_data['function_id']
+            )
 
-                status, res = execute_dict_search_path(
-                    conn, sql, de_inst.debugger_data['search_path'])
-                if not status:
-                    return internal_server_error(errormsg=res)
-            else:
-                sql = render_template(
-                    "/".join([template_path, 'add_breakpoint_pg.sql']),
-                    session_id=int_session_id,
-                    function_oid=de_inst.debugger_data['function_id']
-                )
-
-                status, res = execute_dict_search_path(
-                    conn, sql, de_inst.debugger_data['search_path'])
-                if not status:
-                    return internal_server_error(errormsg=res)
+            status, res = execute_dict_search_path(
+                conn, sql, de_inst.debugger_data['search_path'])
+            if not status:
+                return internal_server_error(errormsg=res)
 
             # wait for the target
             sql = render_template(
@@ -1206,7 +1155,7 @@ def get_debugger_arg_val(val_list):
     '/execute_query/<int:trans_id>/<query_type>', methods=['GET'],
     endpoint='execute_query'
 )
-@login_required
+@pga_login_required
 def execute_debugger_query(trans_id, query_type):
     """
     execute_debugger_query(trans_id, query_type)
@@ -1264,6 +1213,11 @@ def execute_debugger_query(trans_id, query_type):
 
         status, result = execute_async_search_path(
             conn, sql, de_inst.debugger_data['search_path'])
+
+        if result and 'select() failed waiting for target' in result:
+            status = True
+            result = None
+
         if not status:
             return internal_server_error(errormsg=result)
         return make_json_response(
@@ -1288,7 +1242,7 @@ def execute_debugger_query(trans_id, query_type):
 @blueprint.route(
     '/messages/<int:trans_id>/', methods=["GET"], endpoint='messages'
 )
-@login_required
+@pga_login_required
 def messages(trans_id):
     """
     messages(trans_id)
@@ -1318,11 +1272,6 @@ def messages(trans_id):
 
     if conn.connected():
         status = 'Busy'
-        if PG_DEFAULT_DRIVER == PSYCOPG2:
-            # psycopg3 doesn't require polling to get the
-            # messages as debugger connection is already open
-            # Remove this block while removing psucopg2 completely
-            _, result = conn.poll()
         notify = conn.messages()
         if notify:
             # In notice message we need to find "PLDBGBREAK" string to find
@@ -1351,7 +1300,7 @@ def messages(trans_id):
     '/start_execution/<int:trans_id>/<int:port_num>', methods=['GET'],
     endpoint='start_execution'
 )
-@login_required
+@pga_login_required
 def start_execution(trans_id, port_num):
     """
     start_execution(trans_id, port_num)
@@ -1427,7 +1376,7 @@ def start_execution(trans_id, port_num):
     '/set_breakpoint/<int:trans_id>/<int:line_no>/<int:set_type>',
     methods=['GET'], endpoint='set_breakpoint'
 )
-@login_required
+@pga_login_required
 def set_clear_breakpoint(trans_id, line_no, set_type):
     """
     set_clear_breakpoint(trans_id, line_no, set_type)
@@ -1528,7 +1477,7 @@ def get_debugger_template_path(de_inst):
     '/clear_all_breakpoint/<int:trans_id>', methods=['POST'],
     endpoint='clear_all_breakpoint'
 )
-@login_required
+@pga_login_required
 def clear_all_breakpoint(trans_id):
     """
     clear_all_breakpoint(trans_id)
@@ -1600,7 +1549,7 @@ def clear_all_breakpoint(trans_id):
     '/deposit_value/<int:trans_id>', methods=['POST'],
     endpoint='deposit_value'
 )
-@login_required
+@pga_login_required
 def deposit_parameter_value(trans_id):
     """
     deposit_parameter_value(trans_id)
@@ -1674,7 +1623,7 @@ def deposit_parameter_value(trans_id):
     '/select_frame/<int:trans_id>/<int:frame_id>', methods=['GET'],
     endpoint='select_frame'
 )
-@login_required
+@pga_login_required
 def select_frame(trans_id, frame_id):
     """
     select_frame(trans_id, frame_id)
@@ -1736,7 +1685,7 @@ def select_frame(trans_id, frame_id):
     '/get_arguments/<int:sid>/<int:did>/<int:scid>/<int:func_id>',
     methods=['GET'], endpoint='get_arguments'
 )
-@login_required
+@pga_login_required
 def get_arguments_sqlite(sid, did, scid, func_id):
     """
     get_arguments_sqlite(sid, did, scid, func_id)
@@ -1821,7 +1770,7 @@ def get_array_string(data, i):
     '/set_arguments/<int:sid>/<int:did>/<int:scid>/<int:func_id>',
     methods=['POST'], endpoint='set_arguments'
 )
-@login_required
+@pga_login_required
 def set_arguments_sqlite(sid, did, scid, func_id):
     """
     set_arguments_sqlite(sid, did, scid, func_id)
@@ -1847,7 +1796,7 @@ def set_arguments_sqlite(sid, did, scid, func_id):
         for i in range(0, len(data)):
             dbg_func_args_exists = int(
                 DebuggerFunctionArguments.query.filter_by(
-                    server_id=data[i]['server_id'],
+                    server_id=int(data[i]['server_id']),
                     database_id=data[i]['database_id'],
                     schema_id=data[i]['schema_id'],
                     function_id=data[i]['function_id'],
@@ -1866,7 +1815,7 @@ def set_arguments_sqlite(sid, did, scid, func_id):
             # existing value otherwise add the new value
             if dbg_func_args_exists:
                 dbg_func_args = DebuggerFunctionArguments.query.filter_by(
-                    server_id=data[i]['server_id'],
+                    server_id=int(data[i]['server_id']),
                     database_id=data[i]['database_id'],
                     schema_id=data[i]['schema_id'],
                     function_id=data[i]['function_id'],
@@ -1879,7 +1828,7 @@ def set_arguments_sqlite(sid, did, scid, func_id):
                 dbg_func_args.value = array_string
             else:
                 debugger_func_args = DebuggerFunctionArguments(
-                    server_id=data[i]['server_id'],
+                    server_id=int(data[i]['server_id']),
                     database_id=data[i]['database_id'],
                     schema_id=data[i]['schema_id'],
                     function_id=data[i]['function_id'],
@@ -1910,7 +1859,7 @@ def set_arguments_sqlite(sid, did, scid, func_id):
     '/clear_arguments/<int:sid>/<int:did>/<int:scid>/<int:func_id>',
     methods=['POST'], endpoint='clear_arguments'
 )
-@login_required
+@pga_login_required
 def clear_arguments_sqlite(sid, did, scid, func_id):
     """
     clear_arguments_sqlite(sid, did, scid, func_id)
@@ -2036,8 +1985,7 @@ def check_result(result, conn, statusmsg):
         )
     else:
         status = 'Success'
-        additional_msgs, statusmsg = get_additional_msgs(conn,
-                                                         statusmsg)
+        _, statusmsg = get_additional_msgs(conn, statusmsg)
 
         columns, result = convert_data_to_dict(conn, result)
 
@@ -2056,7 +2004,7 @@ def check_result(result, conn, statusmsg):
     '/poll_end_execution_result/<int:trans_id>/',
     methods=["GET"], endpoint='poll_end_execution_result'
 )
-@login_required
+@pga_login_required
 def poll_end_execution_result(trans_id):
     """
     poll_end_execution_result(trans_id)
@@ -2100,7 +2048,7 @@ def poll_end_execution_result(trans_id):
             (de_inst.function_data['language'] == 'edbspl' or
                 de_inst.function_data['language'] == 'plpgsql'):
             status = 'Success'
-            additional_msgs, statusmsg = get_additional_msgs(conn, statusmsg)
+            _, statusmsg = get_additional_msgs(conn, statusmsg)
 
             return make_json_response(
                 success=1,
@@ -2114,8 +2062,7 @@ def poll_end_execution_result(trans_id):
             return check_result(result, conn, statusmsg)
         else:
             status = 'Busy'
-            additional_msgs, statusmsg = get_additional_msgs(conn,
-                                                             statusmsg)
+            _, statusmsg = get_additional_msgs(conn, statusmsg)
             return make_json_response(
                 data={
                     'status': status,
@@ -2133,7 +2080,7 @@ def poll_end_execution_result(trans_id):
 @blueprint.route(
     '/poll_result/<int:trans_id>/', methods=["GET"], endpoint='poll_result'
 )
-@login_required
+@pga_login_required
 def poll_result(trans_id):
     """
     poll_result(trans_id)
@@ -2167,7 +2114,7 @@ def poll_result(trans_id):
             status = 'ERROR'
         elif status == ASYNC_OK and result is not None:
             status = 'Success'
-            columns, result = convert_data_to_dict(conn, result)
+            _, result = convert_data_to_dict(conn, result)
         else:
             status = 'Busy'
     else:

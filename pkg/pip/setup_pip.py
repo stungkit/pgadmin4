@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -39,8 +39,8 @@ kerberos_extras = []
 # Ensure the Wheel will use psycopg-binary, not the source distro, and stick
 # gssapi in it's own list
 for index, req in enumerate(all_requires):
-    if 'psycopg' in req:
-        req = req.replace('psycopg', 'psycopg-binary')
+    if 'psycopg[c]' in req:
+        req = req.replace('psycopg[c]', 'psycopg[binary]')
 
     if 'gssapi' in req:
         kerberos_extras.append(req)
@@ -48,7 +48,12 @@ for index, req in enumerate(all_requires):
         requires.append(req)
 
 # Get the version
-config = load_source('APP_VERSION', '../web/config.py')
+path = '../web/'
+if not os.path.exists(path):
+    print("ERROR: Could not find %s" % path)
+    sys.exit(1)
+sys.path.append(path)
+import config
 
 setup(
     name='pgadmin4',
@@ -75,11 +80,12 @@ setup(
         'Development Status :: 5 - Production/Stable',
 
         # Supported programming languages
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10'
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13'
     ],
 
     keywords='pgadmin4,postgresql,postgres',
@@ -95,7 +101,8 @@ setup(
     },
 
     entry_points={
-        'console_scripts': ['pgadmin4=pgadmin4.pgAdmin4:main'],
+        'console_scripts': ['pgadmin4=pgadmin4.pgAdmin4:main',
+                            'pgadmin4-cli=pgadmin4.setup:main'],
     },
 
 )

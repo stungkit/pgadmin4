@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -47,6 +47,8 @@ class AddServerTest(BaseTestGenerator):
             self.server['tunnel_host'] = self.test_data['tunnel_host']
             self.server['tunnel_port'] = self.test_data['tunnel_port']
             self.server['tunnel_username'] = self.test_data['tunnel_username']
+            self.server['tunnel_keep_alive'] = \
+                self.test_data['tunnel_keep_alive']
 
             if self.with_password:
                 self.server['tunnel_authentication'] = self.test_data[
@@ -85,6 +87,9 @@ class AddServerTest(BaseTestGenerator):
             self.server['fgcolor'] = self.test_data['fgcolor']
         if 'bgcolor' in self.test_data:
             self.server['bgcolor'] = self.test_data['bgcolor']
+
+        if 'tags' in self.test_data:
+            self.server['tags'] = self.test_data['tags']
 
         if self.is_positive_test:
             if hasattr(self, 'with_save'):

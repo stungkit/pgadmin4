@@ -12,6 +12,10 @@ installed in Server mode. You can copy these settings from *config.py* file
 and modify the values for the following parameters:
 
 
+.. _AzureAD: https://learn.microsoft.com/en-us/security/zero-trust/develop/configure-tokens-group-claims-app-roles
+.. _GitLab: https://docs.gitlab.com/ee/integration/openid_connect_provider.html#shared-information
+
+
 .. csv-table::
    :header: "**Parameter**", "**Description**"
    :class: longtable
@@ -30,20 +34,27 @@ and modify the values for the following parameters:
     "OAUTH2_AUTHORIZATION_URL", "Endpoint for user authorization"
     "OAUTH2_SERVER_METADATA_URL", "Server metadata url for your OAuth2 provider"
     "OAUTH2_API_BASE_URL", "Oauth2 base URL endpoint to make requests simple, ex: *https://api.github.com/*"
-    "OAUTH2_USERINFO_ENDPOINT", "User Endpoint, ex: *user* (for github) and *useinfo* (for google)"
+    "OAUTH2_USERINFO_ENDPOINT", "User Endpoint, ex: *user* (for github, or *user/emails* if the user's email address is private) and *userinfo* (for google),"
     "OAUTH2_SCOPE", "Oauth scope, ex: 'openid email profile'. Note that an 'email' claim is required in the resulting profile."
     "OAUTH2_ICON", "The Font-awesome icon to be placed on the oauth2 button,  ex: fa-github"
     "OAUTH2_BUTTON_COLOR", "Oauth2 button color"
     "OAUTH2_USERNAME_CLAIM", "The claim which is used for the username. If the value is empty
-    the email is used as username, but if a value is provided, the claim has to exist. Ex: *oid* (for AzureAD)"
+    the email is used as username, but if a value is provided, the claim has to exist. Ex: *oid* (for AzureAD), *email* (for Github)"
     "OAUTH2_AUTO_CREATE_USER", "Set the value to *True* if you want to automatically
     create a pgAdmin user corresponding to a successfully authenticated Oauth2 user.
     Please note that password is not stored in the pgAdmin database."
+    "OAUTH2_ADDITIONAL_CLAIMS", "If a dictionary is provided, pgAdmin will check for a matching key and value on the userinfo endpoint 
+    and in the Id Token. In case there is no match with the provided config, the user will receive an authorization error.
+    Useful for checking AzureAD_ *wids* or *groups*, GitLab_ *owner*, *maintainer* and *reporter* claims."
+    "OAUTH2_SSL_CERT_VERIFICATION", "Set this variable to False to disable SSL certificate verification for OAuth2 provider.
+    This may need to set False, in case of self-signed certificates."
 
 Redirect URL
 ============
 
-The redirect url to configure Oauth2 server is *http://<pgAdmin Server URL>/oauth2/authorize*
+The redirect url to configure Oauth2 server is *<http/https>://<pgAdmin Server URL>/oauth2/authorize*
+After successful application authorization, the authorization server will redirect the user back to the pgAdmin url
+specified here. Select https scheme if your pgAdmin server serves over https protocol otherwise select http.
 
 Master Password
 ===============

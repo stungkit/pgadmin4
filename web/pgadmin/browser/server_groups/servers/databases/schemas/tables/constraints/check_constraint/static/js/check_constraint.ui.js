@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -67,7 +67,7 @@ export default class CheckConstraintSchema extends BaseUISchema {
     },{
       id: 'consrc', label: gettext('Check'), type: 'multiline', cell: 'text',
       group: gettext('Definition'), mode: ['properties', 'create', 'edit'],
-      readonly: obj.isReadonly, editable: false, noEmpty: true,
+      readonly: obj.isReadonly, noEmpty: true, editable: (state)  => {return obj.isNew(state);},
     },{
       id: 'connoinherit', label: gettext('No inherit?'), type: 'switch', cell: 'switch',
       group: gettext('Definition'), mode: ['properties', 'create', 'edit'], min_version: 90200,

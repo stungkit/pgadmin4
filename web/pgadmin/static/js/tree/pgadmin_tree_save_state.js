@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,7 +11,8 @@ import _ from 'lodash';
 import url_for from 'sources/url_for';
 import gettext from 'sources/gettext';
 import pgAdmin from 'sources/pgadmin';
-import getApiInstance from '../api_instance';
+import getApiInstance, { callFetch } from '../api_instance';
+import usePreferences from '../../../preferences/static/js/store';
 
 export const pgBrowser = pgAdmin.Browser = pgAdmin.Browser || {};
 
@@ -56,28 +57,46 @@ _.extend(pgBrowser.browserTreeState, {
 
   init: function() {
 
-    const save_tree_state_period = pgBrowser.get_preference('browser', 'browser_tree_state_save_interval');
+    let saveIntervalId, offExpandFromPrevState, offRemoveFromTreeState, offUpdateTreeState;
+    usePreferences.subscribe((prefStore)=>{
+      // Subscribe to listen for preferences change
+      const save_tree_state_period = prefStore.getPreferences('browser', 'browser_tree_state_save_interval')?.value;
+      if (saveIntervalId) {
+        clearInterval(saveIntervalId);
+        saveIntervalId = null;
+        offEventListener();
+      }
+      if (!_.isUndefined(save_tree_state_period) &&  save_tree_state_period !== -1) {
+        // Save the tree state at given save_tree_state_period
+        saveIntervalId = setInterval(this.save_state, (save_tree_state_period) * 1000);
+        this.fetch_state.apply(this);
+        onEventListener();
+      } else if (!_.isUndefined(save_tree_state_period)) {
+        offEventListener();
+        getApiInstance().delete(url_for('settings.reset_tree_state'))
+          .catch(function(error) {
+            console.warn(
+              gettext('Error resetting the tree saved state."'), error);
+          });
+      }
+    });
 
-    if (!_.isUndefined(save_tree_state_period) &&  save_tree_state_period.value !== -1) {
-      // Save the tree state every 30 seconds
-      setInterval(this.save_state, (save_tree_state_period.value) * 1000);
-
-      // Fetch the tree last state while loading the browser tree
-      this.fetch_state.apply(this);
-
-      pgBrowser.Events.on('pgadmin:browser:tree:expand-from-previous-tree-state',
+    const onEventListener = () => {
+      // Register event listener
+      offExpandFromPrevState = pgBrowser.Events.on('pgadmin:browser:tree:expand-from-previous-tree-state',
         this.expand_from_previous_state.bind(this));
-      pgBrowser.Events.on('pgadmin:browser:tree:remove-from-tree-state',
+      offRemoveFromTreeState = pgBrowser.Events.on('pgadmin:browser:tree:remove-from-tree-state',
         this.remove_from_cache.bind(this));
-      pgBrowser.Events.on('pgadmin:browser:tree:update-tree-state',
+      offUpdateTreeState = pgBrowser.Events.on('pgadmin:browser:tree:update-tree-state',
         this.update_cache.bind(this));
-    } else if (!_.isUndefined(save_tree_state_period)) {
-      getApiInstance().delete(url_for('settings.reset_tree_state'))
-        .catch(function(error) {
-          console.warn(
-            gettext('Error resetting the tree saved state."'), error);
-        });
-    }
+    };
+
+    const offEventListener = () => {
+      // Deregister event listener
+      offExpandFromPrevState?.();
+      offRemoveFromTreeState?.();
+      offUpdateTreeState?.();
+    };
 
   },
   save_state: function() {
@@ -86,16 +105,23 @@ _.extend(pgBrowser.browserTreeState, {
     if(self.last_state == JSON.stringify(self.current_state))
       return;
 
-    getApiInstance().post(
-      url_for('settings.save_tree_state'),
-      JSON.stringify(self.current_state)
-    ).then(()=> {
-      self.last_state = JSON.stringify(self.current_state);
-      self.fetch_state();
-    }).catch(function(error) {
-      console.warn(
-        gettext('Error resetting the tree saved state."'), error);
-    });
+    /* Using fetch with keepalive as the browser may
+    cancel the axios request on tab close. keepalive will
+    make sure the request is completed */
+    callFetch(
+      url_for('settings.save_tree_state'), {
+        keepalive: true,
+        method: 'POST',
+        body: JSON.stringify(self.current_state)
+      })
+      .then(()=> {
+        self.last_state = JSON.stringify(self.current_state);
+        self.fetch_state();
+      })
+      .catch((error)=> {
+        console.warn(
+          gettext('Error resetting the tree saved state."'), error);
+      });
   },
   fetch_state: function() {
 
@@ -113,14 +139,14 @@ _.extend(pgBrowser.browserTreeState, {
   update_cache: function(item) {
     let data = item && pgBrowser.tree.itemData(item),
       treeHierarchy = pgBrowser.tree.getTreeNodeHierarchy(item),
-      topParent = undefined,
+      topParent,
       pathIDs = pgBrowser.tree.pathId(pgBrowser.tree.parent(item)),
       oldPath = pathIDs.join(),
       path = [],
       tmpIndex = -1;
 
     // If no parent or the server not in tree hierarchy then return
-    if (!pgBrowser.tree.hasParent(item) || !(this.parent in treeHierarchy))
+    if (!pgBrowser.tree.hasParent(item) || !(this.parent in treeHierarchy) || (data._type === 'server' && !data.connected))
       return;
 
     topParent = treeHierarchy[this.parent]['_id'];
@@ -172,13 +198,13 @@ _.extend(pgBrowser.browserTreeState, {
     if (treeHierarchy === null || !pgBrowser.tree.hasParent(item) || !(treeHierarchy.hasOwnProperty(self.parent)))
       return;
 
-    let topParent = treeHierarchy && treeHierarchy[self.parent]['_id'],
-      origParent = treeHierarchy && treeHierarchy[self.orig_parent]['id'];
+    let topParent = treeHierarchy?.[self.parent]['_id'],
+      origParent = treeHierarchy?.[self.orig_parent]['id'];
 
     this.update_database_status(item);
 
     if (data._type == self.parent || data._type == 'database') {
-      if (topParent in treeData && 'paths' in treeData[topParent]) {
+      if (treeData?.[topParent]?.['paths'] && self.current_state?.[topParent]?.['paths']) {
         treeData[topParent]['paths'] = self.current_state[topParent]['paths'];
         self.save_state();
       }
@@ -187,14 +213,13 @@ _.extend(pgBrowser.browserTreeState, {
 
     if (pgBrowser.tree.isClosed(item)) {
       let tmpTreeData =  self.current_state[topParent]['paths'],
-        databaseId = undefined;
+        databaseId;
 
       if (treeHierarchy.hasOwnProperty('database'))
         databaseId = treeHierarchy['database']['id'];
 
       if (!_.isUndefined(tmpTreeData) && !_.isUndefined(tmpTreeData.length)) {
-        let tcnt = 0,
-          tmpItemDataStr = undefined;
+        let tcnt = 0, tmpItemDataStr;
         _.each(tmpTreeData, function(tData) {
           if (_.isUndefined(tData))
             return;
@@ -245,7 +270,7 @@ _.extend(pgBrowser.browserTreeState, {
 
     if (!_.isUndefined(tmpTreeData) && ('paths' in tmpTreeData) && !_.isUndefined(tmpTreeData['paths'].length)) {
       let tmpTreeDataPaths = [...tmpTreeData['paths']],
-        databaseId = undefined;
+        databaseId;
 
       if (treeHierarchy.hasOwnProperty('database'))
         databaseId = treeHierarchy['database']['id'];
@@ -282,7 +307,7 @@ _.extend(pgBrowser.browserTreeState, {
 
     if (treeHierarchy.hasOwnProperty('database')) {
       let databaseItem = treeHierarchy['database']['id'],
-        topParent = treeHierarchy && treeHierarchy[this.parent]['_id'];
+        topParent = treeHierarchy?.[this.parent]['_id'];
 
       if (topParent in this.current_state && 'selected' in this.current_state[topParent]) {
         if (treeHierarchy['database'].connected) {
@@ -307,9 +332,9 @@ _.extend(pgBrowser.browserTreeState, {
     if (!(this.parent in treeHierarchy))
       return;
 
-    let topParent = treeHierarchy && treeHierarchy[this.parent]['_id'],
+    let topParent = treeHierarchy?.[this.parent]['_id'],
       selectedItem = pgBrowser.tree.itemData(pgBrowser.tree.selected()),
-      databaseItem = undefined;
+      databaseItem;
 
     selectedItem = selectedItem ? selectedItem.id : undefined;
 

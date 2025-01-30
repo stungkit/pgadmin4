@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -521,13 +521,13 @@ def parse_rule_definition(res):
         # Parse data for condition
         condition = ''
         condition_part_match = re.search(
-            r"((?:ON)\s+(?:[\s\S]+?)"
-            r"(?:TO)\s+(?:[\s\S]+?)(?:DO))", data_def)
+            r"(ON\s+[\s\S]+?"
+            r"TO\s+[\s\S]+?DO)", data_def)
         if condition_part_match is not None:
             condition_part = condition_part_match.group(1)
 
             condition_match = re.search(
-                r"(?:WHERE)\s+(\([\s\S]*\))\s+(?:DO)", condition_part)
+                r"WHERE\s+(\([\s\S]*\))\s+DO", condition_part)
 
             if condition_match is not None:
                 condition = condition_match.group(1)
@@ -537,7 +537,7 @@ def parse_rule_definition(res):
 
             # Parse data for statements
         statement_match = re.search(
-            r"(?:DO\s+)(?:INSTEAD\s+)?([\s\S]*)(?:;)", data_def)
+            r"DO\s+(?:INSTEAD\s+)?([\s\S]*);", data_def)
 
         statement = ''
         if statement_match is not None:
@@ -720,3 +720,20 @@ def get_schemas(conn, show_system_objects=False):
 
     status, rset = conn.execute_2darray(SQL)
     return status, rset
+
+
+def check_pgstattuple(conn, oid):
+    """
+    This function is used to check pgstattuple extension is already created,
+    and current_user have permission to access that object.
+    """
+    status, is_pgstattuple = conn.execute_scalar("""
+        SELECT CASE WHEN (SELECT(count(extname) > 0) AS is_pgstattuple
+            FROM pg_catalog.pg_extension WHERE extname = 'pgstattuple')
+        THEN (SELECT pg_catalog.has_table_privilege(current_user, {0},
+            'SELECT')) ELSE FALSE END""".format(oid))
+
+    if not status:
+        return status, internal_server_error(errormsg=is_pgstattuple)
+
+    return status, is_pgstattuple

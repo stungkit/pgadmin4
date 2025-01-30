@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -18,20 +18,18 @@ from flask import request, Response, session,\
     current_app, render_template, flash, url_for
 from flask_security.views import _security
 from flask_security.utils import logout_user
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 
 import config
 from pgadmin.model import User
 from pgadmin.tools.user_management import create_user
-from pgadmin.utils.constants import KERBEROS
+from pgadmin.utils.constants import KERBEROS, MessageType
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import make_json_response, internal_server_error
-
 
 from pgadmin.authenticate.internal import BaseAuthentication
 from pgadmin.authenticate import get_auth_sources
 from pgadmin.utils.csrf import pgCSRFProtect
-
 
 try:
     import gssapi
@@ -97,7 +95,7 @@ def init_app(app):
     @blueprint.route("/update_ticket",
                      endpoint="update_ticket", methods=["GET"])
     @pgCSRFProtect.exempt
-    @login_required
+    @pga_login_required
     def kerberos_update_ticket():
         """
         Update the kerberos ticket.
@@ -127,7 +125,7 @@ def init_app(app):
     @blueprint.route("/validate_ticket",
                      endpoint="validate_ticket", methods=["GET"])
     @pgCSRFProtect.exempt
-    @login_required
+    @pga_login_required
     def kerberos_validate_ticket():
         """
         Return the kerberos ticket lifetime left after getting the
@@ -177,7 +175,7 @@ class KerberosAuthentication(BaseAuthentication):
         negotiate = False
         headers = Headers()
         authorization = request.headers.get("Authorization", None)
-        form_class = _security.login_form
+        form_class = _security.forms.get('login_form').cls
         req_json = request.get_json(silent=True)
 
         if req_json:
@@ -199,7 +197,7 @@ class KerberosAuthentication(BaseAuthentication):
                         retval = self.__auto_create_user(
                             str(negotiate.initiator_name))
                     elif isinstance(negotiate, Exception):
-                        flash(gettext(negotiate), 'danger')
+                        flash(gettext(negotiate), MessageType.ERROR)
                         retval = [status,
                                   Response(render_template(
                                       "security/login_user.html",
@@ -209,8 +207,8 @@ class KerberosAuthentication(BaseAuthentication):
                                     str(base64.b64encode(negotiate), 'utf-8'))
                         return False, Response("Success", 200, headers)
             else:
-                flash(gettext("Kerberos authentication failed."
-                              " Couldn't find kerberos ticket."), 'danger')
+                flash(gettext("Kerberos authentication failed. Couldn't find "
+                              "kerberos ticket."), MessageType.ERROR)
                 headers.add('WWW-Authenticate', 'Negotiate')
                 retval = [False,
                           Response(render_template(

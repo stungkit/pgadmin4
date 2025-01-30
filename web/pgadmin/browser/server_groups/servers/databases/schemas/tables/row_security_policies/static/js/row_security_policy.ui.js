@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -79,13 +79,13 @@ export default class RowSecurityPolicySchema extends BaseUISchema {
       },
       {
         id: 'using', label: gettext('Using'), deps: ['using', 'event'],
-        type: 'text', disabled: obj.disableUsingField,
+        type: 'sql', disabled: obj.disableUsingField,
         mode: ['create', 'edit', 'properties'],
         control: 'sql', visible: true, group: gettext('Commands'),
       },
       {
         id: 'withcheck', label: gettext('With check'), deps: ['withcheck', 'event'],
-        type: 'text', mode: ['create', 'edit', 'properties'],
+        type: 'sql', mode: ['create', 'edit', 'properties'],
         control: 'sql', visible: true, group: gettext('Commands'),
         disabled: obj.disableWithCheckField,
       },
@@ -123,6 +123,10 @@ export default class RowSecurityPolicySchema extends BaseUISchema {
           return obj.nodeInfo.server.version >= 100000;
         },
       },
+      {
+        id: 'description', label: gettext('Comment'), type: 'multiline',
+        mode: ['properties', 'create', 'edit'],
+      }
     ];
   }
 }

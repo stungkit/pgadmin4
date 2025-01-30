@@ -1,12 +1,3 @@
-/////////////////////////////////////////////////////////////
-//
-// pgAdmin 4 - PostgreSQL Tools
-//
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
-// This software is released under the PostgreSQL Licence
-//
-//////////////////////////////////////////////////////////////
-import { makeStyles } from '@material-ui/core';
 import React from 'react';
 import SchemaView from '../../../../../../static/js/SchemaView';
 import BaseUISchema from '../../../../../../static/js/SchemaView/base_schema.ui';
@@ -14,6 +5,7 @@ import gettext from 'sources/gettext';
 import { QueryToolContext } from '../QueryToolComponent';
 import url_for from 'sources/url_for';
 import PropTypes from 'prop-types';
+
 
 class SortingCollection extends BaseUISchema {
   constructor(columnOptions) {
@@ -35,7 +27,8 @@ class SortingCollection extends BaseUISchema {
       {
         id: 'name', label: gettext('Column'), cell: 'select', controlProps: {
           allowClear: false,
-        }, noEmpty: true, options: this.columnOptions, optionsReloadBasis: this.reloadColOptions
+        }, noEmpty: true, options: this.columnOptions, optionsReloadBasis: this.reloadColOptions,
+        width: 300,
       },
       {
         id: 'order', label: gettext('Order'), cell: 'select', controlProps: {
@@ -43,7 +36,17 @@ class SortingCollection extends BaseUISchema {
         }, options: [
           {label: gettext('ASC'), value: 'asc'},
           {label: gettext('DESC'), value: 'desc'},
-        ]
+        ],
+        width: 150,
+      },
+      {
+        id: 'order_null', label: gettext('NULLs'), cell: 'select', controlProps: {
+          allowClear: true,
+        }, options: [
+          {label: gettext('FIRST'), value: 'nulls first'},
+          {label: gettext('LAST'), value: 'nulls last'},
+        ],
+        width: 150,
       },
     ];
   }
@@ -70,6 +73,23 @@ class FilterSchema extends BaseUISchema {
           options: {
             lineWrapping: true,
           },
+          autocompleteOnKeyPress: true,
+          autocompleteProvider: (context, onAvailable)=>{
+            return new Promise((resolve)=>{
+              const word = context.matchBefore(/\w*/);
+              const fullSql = context.state.doc.toString();
+              onAvailable();
+              resolve({
+                from: word.from,
+                options: (this.sortingCollObj.columnOptions??[]).map((col)=>({
+                  label: col.label, type: 'property',
+                })),
+                validFor: (text, from)=>{
+                  return text.startsWith(fullSql.slice(from));
+                }
+              });
+            });
+          }
         }
       },
       {
@@ -80,14 +100,8 @@ class FilterSchema extends BaseUISchema {
   }
 }
 
-const useStyles = makeStyles((theme)=>({
-  root: {
-    ...theme.mixins.tabPanel,
-  },
-}));
-
 export default function FilterDialog({onClose, onSave}) {
-  const classes = useStyles();
+
   const queryToolCtx = React.useContext(QueryToolContext);
   const filterSchemaObj = React.useMemo(()=>new FilterSchema([]));
 
@@ -102,7 +116,7 @@ export default function FilterDialog({onClose, onSave}) {
           filterSchemaObj.setColumnOptions((columns||[]).map((c)=>({label: c, value: c})));
           resolve(filterData);
         } catch (error) {
-          reject(error);
+          reject(error instanceof Error ? error : Error(gettext('Something went wrong')));
         }
       };
       getFilterData();
@@ -120,17 +134,17 @@ export default function FilterDialog({onClose, onSave}) {
             resolve();
             onSave();
           } else {
-            reject(respData.data.result);
+            reject(new Error(respData.data.result));
           }
         } catch (error) {
-          reject(error);
+          reject(error instanceof Error ? error : Error(gettext('Something went wrong')));
         }
       };
       setFilterData();
     });
   };
 
-  return (<>
+  return (
     <SchemaView
       formType={'dialog'}
       getInitData={getInitData}
@@ -144,10 +158,9 @@ export default function FilterDialog({onClose, onSave}) {
       disableSqlHelp={true}
       disableDialogHelp={true}
       isTabView={false}
-      formClassName={classes.root}
       checkDirtyOnEnableSave={true}
     />
-  </>);
+  );
 }
 
 FilterDialog.propTypes = {

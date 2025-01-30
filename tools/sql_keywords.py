@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -21,7 +21,7 @@ PG_CODES_URLS = [
     "https://raw.githubusercontent.com/postgres/postgres/master/src/pl/"
     "plpgsql/src/pl_scanner.c",
 ]
-PG_CODES_REGEX = "PG_KEYWORD\(\"([a-z]*)\"[A-Z_, ]*\)"
+PG_CODES_REGEX = r"PG_KEYWORD\(\"([a-z]*)\"[A-Z_, ]*\)"
 
 PG_SQL_DOCS_URL = \
     "https://www.postgresql.org/docs/current/sql-keywords-appendix.html"

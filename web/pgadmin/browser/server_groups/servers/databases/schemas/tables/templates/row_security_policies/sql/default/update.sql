@@ -30,4 +30,11 @@ ALTER POLICY {{ conn|qtIdent(o_data.name) }} ON {{conn|qtIdent(o_data.schema, o_
     RENAME TO {{ conn|qtIdent(data.name) }};
 {% endif %}
 
+{#####################################################}
+{## Change policy comment ##}
+{#####################################################}
+{% if data.description is defined and data.description != o_data.description %}
+COMMENT ON POLICY {{ conn|qtIdent(o_data.name) }} ON {{conn|qtIdent(o_data.schema, o_data.table)}}
+    IS {{ data.description|qtLiteral(conn) }};
+{% endif %}
 

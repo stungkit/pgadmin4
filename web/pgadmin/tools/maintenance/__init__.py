@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -11,9 +11,9 @@
 
 import json
 
-from flask import url_for, Response, render_template, request, current_app
+from flask import Response, render_template, request, current_app
 from flask_babel import gettext as _
-from flask_security import login_required, current_user
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.misc.bgprocess.processes import BatchProcess, IProcessDesc
 from pgadmin.utils import PgAdminModule, html, does_utility_exist, get_server
 from pgadmin.utils.ajax import bad_request, make_json_response
@@ -21,7 +21,7 @@ from pgadmin.utils.driver import get_driver
 
 from config import PG_DEFAULT_DRIVER
 from pgadmin.model import Server, SharedServer
-from pgadmin.utils.constants import MIMETYPE_APP_JS
+from pgadmin.utils.constants import MIMETYPE_APP_JS, SERVER_NOT_FOUND
 
 MODULE_NAME = 'maintenance'
 
@@ -34,14 +34,6 @@ class MaintenanceModule(PgAdminModule):
         PgAdminModule.
     """
     LABEL = _('Maintenance')
-
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def get_exposed_url_endpoints(self):
         """
@@ -75,58 +67,49 @@ class Message(IProcessDesc):
 
         return "{0} ({1}:{2})".format(s.name, host, port)
 
-    def get_op(self):
-        op = self._check_for_vacuum()
-
-        if self.data['op'] == "ANALYZE":
-            op = _('ANALYZE')
-            if self.data['verbose']:
-                op += '(' + _('VERBOSE') + ')'
-
-        if self.data['op'] == "REINDEX":
-            if 'schema' in self.data and self.data['schema']:
-                if 'primary_key' in self.data or \
-                    'unique_constraint' in self.data or \
-                        'index' in self.data:
-                    return _('REINDEX INDEX')
-                else:
-                    return _('REINDEX TABLE')
-            op = _('REINDEX')
-
-        if self.data['op'] == "CLUSTER":
-            op = _('CLUSTER')
-
-        return op
+    def get_object_msg(self):
+        msg = _("on database '{0}'").format(self.data['database'])
+        if 'primary_key' in self.data or 'unique_constraint' in self.data:
+            msg = _("on constraint '{0}/{1}/{2}/{3}'").format(
+                self.data['database'], self.data['schema'], self.data['table'],
+                self.data['primary_key'] if 'primary_key' in self.data else
+                self.data['unique_constraint'])
+        elif 'index' in self.data:
+            msg = _("on index '{0}/{1}/{2}/{3}'").format(
+                self.data['database'], self.data['schema'],
+                self.data['table'], self.data['index'])
+        elif 'table' in self.data:
+            msg = _("on table '{0}/{1}/{2}'").format(
+                self.data['database'], self.data['schema'], self.data['table'])
+        elif 'schema' in self.data:
+            msg = _("on schema '{0}/{1}'").format(self.data['database'],
+                                                  self.data['schema'])
+        return msg
 
     @property
     def message(self):
-        res = _("{0} on database '{1}' of server {2}")
-        return res.format(
-            self.get_op(), self.data['database'], self.get_server_name())
+        op = _('VACUUM')
+        if self.data['op'] == "ANALYZE":
+            op = _('ANALYZE')
+        elif self.data['op'] == "REINDEX" and 'schema' not in self.data:
+            op = _('REINDEX')
+        elif self.data['op'] == "REINDEX" and 'schema' in self.data:
+            if 'primary_key' in self.data or 'unique_constraint' in self.data\
+                    or 'index' in self.data:
+                op = _('REINDEX INDEX')
+            elif 'table' in self.data:
+                op = _('REINDEX TABLE')
+            else:
+                op = _('REINDEX SCHEMA')
+        elif self.data['op'] == "CLUSTER":
+            op = _('CLUSTER')
+
+        res = _("{0} {1} of server {2}")
+        return res.format(op, self.get_object_msg(), self.get_server_name())
 
     @property
     def type_desc(self):
         return _("Maintenance")
-
-    def _check_for_vacuum(self):
-        """
-        Check for VACUUM in data and return format response.
-        :return: response.
-        """
-        res = None
-        if self.data['op'] == "VACUUM":
-            res = _('VACUUM ({0})')
-
-            opts = []
-            if 'vacuum_full' in self.data and self.data['vacuum_full']:
-                opts.append(_('FULL'))
-            if 'vacuum_freeze' in self.data and self.data['vacuum_freeze']:
-                opts.append(_('FREEZE'))
-            if self.data['verbose']:
-                opts.append(_('VERBOSE'))
-
-            res = res.format(', '.join(str(x) for x in opts))
-        return res
 
     def details(self, cmd, args):
         return {
@@ -139,7 +122,7 @@ class Message(IProcessDesc):
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(
         errormsg=_("This URL cannot be called directly.")
@@ -147,7 +130,7 @@ def index():
 
 
 @blueprint.route("/js/maintenance.js")
-@login_required
+@pga_login_required
 def script():
     """render the maintenance tool of vacuum javascript file"""
     return Response(
@@ -177,7 +160,7 @@ def get_index_name(data):
 @blueprint.route(
     '/job/<int:sid>/<int:did>', methods=['POST'], endpoint='create_job'
 )
-@login_required
+@pga_login_required
 def create_maintenance_job(sid, did):
     """
     Args:
@@ -246,19 +229,9 @@ def create_maintenance_job(sid, did):
     try:
         p = BatchProcess(
             desc=Message(server.id, data, query),
-            cmd=utility, args=args
+            cmd=utility, args=args, manager_obj=manager
         )
-        manager.export_password_env(p.id)
-        # Check for connection timeout and if it is greater than 0 then
-        # set the environment variable PGCONNECT_TIMEOUT.
-        timeout = manager.get_connection_param_value('connect_timeout')
-        if timeout and timeout > 0:
-            env = dict()
-            env['PGCONNECT_TIMEOUT'] = str(timeout)
-            p.set_env_variables(server, env=env)
-        else:
-            p.set_env_variables(server)
-
+        p.set_env_variables(server)
         p.start()
         jid = p.id
     except Exception as e:
@@ -279,7 +252,7 @@ def create_maintenance_job(sid, did):
 @blueprint.route(
     '/utility_exists/<int:sid>', endpoint='utility_exists'
 )
-@login_required
+@pga_login_required
 def check_utility_exists(sid):
     """
     This function checks the utility file exist on the given path.
@@ -295,7 +268,7 @@ def check_utility_exists(sid):
     if server is None:
         return make_json_response(
             success=0,
-            errormsg=_("Could not find the specified server.")
+            errormsg=SERVER_NOT_FOUND
         )
 
     from pgadmin.utils.driver import get_driver

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -42,7 +42,7 @@ define('pgadmin.node.package', [
       hasSQL: true,
       hasDepends: true,
       Init: function() {
-        /* Avoid mulitple registration of menus */
+        /* Avoid multiple registration of menus */
         if (this.initialized)
           return;
 
@@ -52,7 +52,7 @@ define('pgadmin.node.package', [
           name: 'create_package_on_coll', node: 'coll-package', module: this,
           applies: ['object', 'context'], callback: 'show_obj_properties',
           category: 'create', priority: 4, label: gettext('Package...'),
-          data: {action: 'create', check: true, 
+          data: {action: 'create', check: true,
             data_disabled: gettext('This option is only available on EPAS servers.')},
           enable: 'canCreate',
         },{
@@ -97,7 +97,7 @@ define('pgadmin.node.package', [
             }),
             node_info: treeNodeInfo
           }, {
-            schema: treeNodeInfo.schema.label
+            schema: ('schema' in treeNodeInfo)? treeNodeInfo.schema.label : ''
           }
         );
       }

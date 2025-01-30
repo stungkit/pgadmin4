@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -656,7 +656,7 @@ class UserMappingView(PGChildNodeView, SchemaDiffObjectCompare):
             except ValueError:
                 data[k] = v
         try:
-            sql, name = self.get_sql(data=data, fsid=fsid, umid=umid)
+            sql, _ = self.get_sql(data=data, fsid=fsid, umid=umid)
             # Most probably this is due to error
             if not isinstance(sql, str):
                 return sql
@@ -941,7 +941,7 @@ class UserMappingView(PGChildNodeView, SchemaDiffObjectCompare):
         drop_sql = kwargs.get('drop_sql', False)
 
         if data:
-            sql, name = self.get_sql(data=data, fsid=fsid, umid=oid)
+            sql, _ = self.get_sql(data=data, fsid=fsid, umid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did, fid=fid,

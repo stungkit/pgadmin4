@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -12,7 +12,7 @@ describe('ERDModel', ()=>{
   it('getNodesDict', ()=>{
     let model = new ERDModel();
 
-    spyOn(model, 'getNodes').and.returnValue([
+    jest.spyOn(model, 'getNodes').mockReturnValue([
       {
         name: 'test1',
         getID: function() {

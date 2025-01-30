@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -27,9 +27,9 @@ depends_on = None
 
 def upgrade():
     # get metadata from current connection
-    meta = sa.MetaData(bind=op.get_bind())
+    meta = sa.MetaData()
     # define table representation
-    meta.reflect(only=('server',))
+    meta.reflect(op.get_bind(), only=('server',))
     server_table = sa.Table('server', meta)
     op.execute(
         server_table.update().where(server_table.c.connect_timeout == 0 or

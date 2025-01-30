@@ -2,18 +2,19 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import '../helper/enzyme.helper';
-import { createMount } from '@material-ui/core/test-utils';
+
 import BaseUISchema from '../../../pgadmin/static/js/SchemaView/base_schema.ui';
 import _ from 'lodash';
 import * as nodeAjax from '../../../pgadmin/browser/static/js/node_ajax';
 import { PartitionKeysSchema, PartitionsSchema } from '../../../pgadmin/browser/server_groups/servers/databases/schemas/tables/static/js/partition.utils.ui';
-import {genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
+import {addNewDatagridRow, genericBeforeEach, getCreateView, getEditView, getPropertiesView} from '../genericFunctions';
+import { initializeSchemaWithData } from './utils';
+
 
 function getFieldDepChange(schema, id) {
   return _.find(schema.fields, (f)=>f.id==id)?.depChange;
@@ -40,42 +41,38 @@ class SchemaInColl extends BaseUISchema {
 }
 
 describe('PartitionKeysSchema', ()=>{
-  let mount;
-  let schemaObj;
+
+  const createSchemaObject = () => {
+    let partitionObj =  new PartitionKeysSchema();
+    return new SchemaInColl(partitionObj);
+  };
+  let schemaObj = createSchemaObject();
   let getInitData = ()=>Promise.resolve({});
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
   beforeAll(()=>{
-    mount = createMount();
-    spyOn(nodeAjax, 'getNodeAjaxOptions').and.returnValue(Promise.resolve([]));
-    spyOn(nodeAjax, 'getNodeListByName').and.returnValue(Promise.resolve([]));
-    let partitionObj =  new PartitionKeysSchema();
-    schemaObj = new SchemaInColl(partitionObj);
-  });
-
-  afterAll(() => {
-    mount.cleanUp();
+    jest.spyOn(nodeAjax, 'getNodeAjaxOptions').mockReturnValue(Promise.resolve([]));
+    jest.spyOn(nodeAjax, 'getNodeListByName').mockReturnValue(Promise.resolve([]));
   });
 
   beforeEach(()=>{
     genericBeforeEach();
   });
 
-  it('create', ()=>{
-    let ctrl = mount(getCreateView(schemaObj));
+  it('create', async ()=>{
+    const {ctrl, user} = await getCreateView(createSchemaObject());
 
     /* Make sure you hit every corner */
-    ctrl.find('DataGridView').at(0).find('PgIconButton[data-test="add-row"]').find('button').simulate('click');
+
+    await addNewDatagridRow(user, ctrl);
 
   });
 
-  it('edit', ()=>{
-    mount(getEditView(schemaObj, getInitData));
+  it('edit', async ()=>{
+    await getEditView(createSchemaObject(), getInitData);
   });
 
-  it('properties', ()=>{
-    mount(getPropertiesView(schemaObj, getInitData));
+  it('properties', async ()=>{
+    await getPropertiesView(createSchemaObject(), getInitData);
   });
 
   it('depChange', ()=>{
@@ -94,7 +91,7 @@ describe('PartitionKeysSchema', ()=>{
 
   it('validate', ()=>{
     let state = {};
-    let setError = jasmine.createSpy('setError');
+    let setError = jest.fn();
 
     state.key_type = 'expression';
     schemaObj.collSchema.validate(state, setError);
@@ -107,47 +104,46 @@ describe('PartitionKeysSchema', ()=>{
 
 
 describe('PartitionsSchema', ()=>{
-  let mount;
-  let schemaObj;
+
+  const createSchemaObject = () => {
+    let schemaObj = new PartitionsSchema();
+    schemaObj.top = schemaObj;
+    return schemaObj;
+  };
+  let schemaObj = createSchemaObject();
   let getInitData = ()=>Promise.resolve({});
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
   beforeAll(()=>{
-    mount = createMount();
-    spyOn(nodeAjax, 'getNodeAjaxOptions').and.returnValue(Promise.resolve([]));
-    spyOn(nodeAjax, 'getNodeListByName').and.returnValue(Promise.resolve([]));
-    schemaObj = new PartitionsSchema();
-    schemaObj.top = schemaObj;
+    jest.spyOn(nodeAjax, 'getNodeAjaxOptions').mockReturnValue(Promise.resolve([]));
+    jest.spyOn(nodeAjax, 'getNodeListByName').mockReturnValue(Promise.resolve([]));
   });
 
-  afterAll(() => {
-    mount.cleanUp();
-  });
+
 
   beforeEach(()=>{
     genericBeforeEach();
   });
 
-  it('create', ()=>{
-    mount(getCreateView(schemaObj));
+  it('create', async ()=>{
+    await getCreateView(createSchemaObject());
   });
 
-  it('edit', ()=>{
-    mount(getEditView(schemaObj, getInitData));
+  it('edit', async ()=>{
+    await getEditView(createSchemaObject(), getInitData);
   });
 
-  it('properties', ()=>{
-    mount(getPropertiesView(schemaObj, getInitData));
+  it('properties', async ()=>{
+    await getPropertiesView(createSchemaObject(), getInitData);
   });
 
-  it('create collection', ()=>{
+  it('create collection', async ()=>{
     let schemaCollObj = new SchemaInColl(
       schemaObj,[ 'is_attach', 'partition_name', 'is_default', 'values_from', 'values_to', 'values_in', 'values_modulus', 'values_remainder']
     );
-    let ctrl = mount(getCreateView(schemaCollObj));
+    const {ctrl, user} = await getCreateView(schemaCollObj);
     /* Make sure you hit every corner */
-    ctrl.find('DataGridView').at(0).find('PgIconButton[data-test="add-row"]').find('button').simulate('click');
+
+    await addNewDatagridRow(user, ctrl);
   });
 
 
@@ -162,16 +158,15 @@ describe('PartitionsSchema', ()=>{
 
   it('validate', ()=>{
     let state = {is_sub_partitioned: true};
-    let setError = jasmine.createSpy('setError');
+    let setError = jest.fn();
 
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('sub_partition_keys', 'Please specify at least one key for partitioned table.');
 
     state.is_sub_partitioned = false;
     state.is_default = false;
-    schemaObj.top._sessData = {
-      partition_type: 'range',
-    };
+    initializeSchemaWithData(schemaObj.top, {partition_type: 'range'});
+
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('values_from', 'For range partition From field cannot be empty.');
 
@@ -179,11 +174,11 @@ describe('PartitionsSchema', ()=>{
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('values_to', 'For range partition To field cannot be empty.');
 
-    schemaObj.top._sessData.partition_type = 'list';
+    initializeSchemaWithData(schemaObj.top, {partition_type: 'list'});
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('values_in', 'For list partition In field cannot be empty.');
 
-    schemaObj.top._sessData.partition_type = 'hash';
+    initializeSchemaWithData(schemaObj.top, {partition_type: 'hash'});
     schemaObj.validate(state, setError);
     expect(setError).toHaveBeenCalledWith('values_modulus', 'For hash partition Modulus field cannot be empty.');
 

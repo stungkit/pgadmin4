@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -20,7 +20,7 @@ from flask_security import current_user
 from pgadmin.browser.server_groups.servers import databases
 from config import PG_DEFAULT_DRIVER
 from pgadmin.browser.server_groups.servers.databases.schemas.utils import \
-    SchemaChildModule, parse_rule_definition, VacuumSettings, get_schema
+    SchemaChildModule, parse_rule_definition, VacuumSettings, check_pgstattuple
 from pgadmin.browser.server_groups.servers.utils import parse_priv_from_db, \
     parse_priv_to_db
 from pgadmin.browser.utils import PGChildNodeView
@@ -28,10 +28,11 @@ from pgadmin.utils.ajax import make_json_response, internal_server_error, \
     make_response as ajax_response, gone
 from pgadmin.utils.driver import get_driver
 from pgadmin.tools.schema_diff.node_registry import SchemaDiffRegistry
-from pgadmin.tools.schema_diff.compare import SchemaDiffObjectCompare
-from pgadmin.utils import html, does_utility_exist, get_server
+from .schema_diff_view_utils import SchemaDiffViewCompare
+from pgadmin.utils import does_utility_exist, get_server
 from pgadmin.model import Server
 from pgadmin.misc.bgprocess.processes import BatchProcess, IProcessDesc
+from pgadmin.utils.constants import SERVER_NOT_FOUND
 
 
 """
@@ -91,7 +92,10 @@ class ViewModule(SchemaChildModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(
+            sid, did, scid, base_template_path=ViewNode.BASE_TEMPLATE_PATH +
+                '/' + ViewNode._SQL_PREFIX):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -216,6 +220,15 @@ class MViewModule(ViewModule):
         self.min_ver = 90300
         self.max_ver = None
 
+    def get_nodes(self, gid, sid, did, scid):
+        """
+        Generate the collection node
+        """
+        if self.has_nodes(
+            sid, did, scid, base_template_path=MViewNode.BASE_TEMPLATE_PATH +
+                '/' + MViewNode._SQL_PREFIX):
+            yield self.generate_browser_collection_node(scid)
+
 
 view_blueprint = ViewModule(__name__)
 mview_blueprint = MViewModule(__name__)
@@ -242,15 +255,33 @@ def check_precondition(f):
             kwargs['sid']
         )
         self.conn = self.manager.connection(did=kwargs['did'])
-        # Set template path for sql scripts
-        if self.manager.server_type == 'ppas':
-            _temp = self.ppas_template_path(self.manager.version)
-        else:
-            _temp = self.pg_template_path(self.manager.version)
-        self.template_path = self.template_initial + '/' + _temp
+        self.template_path = self.BASE_TEMPLATE_PATH.format(
+            self.manager.server_type, self.manager.version)
 
         self.column_template_path = 'columns/sql/#{0}#'.format(
             self.manager.version)
+
+        # Template for trigger node
+        self.trigger_template_path = 'triggers/sql/{0}/#{1}#'.format(
+            self.manager.server_type, self.manager.version)
+
+        # Template for compound trigger node
+        self.compound_trigger_template_path = (
+            'compound_triggers/sql/{0}/#{1}#'.format(
+                self.manager.server_type, self.manager.version))
+
+        # Template for rules node
+        self.rules_template_path = 'rules/sql'
+
+        # Template for index node
+        self.index_template_path = 'indexes/sql/#{0}#'.format(
+            self.manager.version)
+
+        # Submodule list for schema diff
+        self.view_sub_modules = ['rule', 'trigger', 'index']
+        if (self.manager.server_type == 'ppas' and
+                self.manager.version >= 120000):
+            self.view_sub_modules.append('compound_trigger')
 
         try:
             self.allowed_acls = render_template(
@@ -265,7 +296,7 @@ def check_precondition(f):
     return wrap
 
 
-class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
+class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffViewCompare):
     """
     This class is responsible for generating routes for view node.
 
@@ -327,6 +358,7 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
     _SQL_PREFIX = 'sql/'
     _ALLOWED_PRIVS_JSON = 'sql/allowed_privs.json'
     PROPERTIES_PATH = 'sql/{0}/#{1}#/properties.sql'
+    BASE_TEMPLATE_PATH = 'views/{0}/#{1}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -350,7 +382,7 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
         'nodes': [{'get': 'node'}, {'get': 'nodes'}],
         'sql': [{'get': 'sql'}],
         'msql': [{'get': 'msql'}, {'get': 'msql'}],
-        'stats': [{'get': 'statistics'}],
+        'stats': [{'get': 'statistics'}, {'get': 'statistics'}],
         'dependency': [{'get': 'dependencies'}],
         'dependent': [{'get': 'dependents'}],
         'configs': [{'get': 'configs'}],
@@ -365,8 +397,6 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             {'get': 'get_toast_table_vacuum'}]
     })
 
-    keys_to_ignore = ['oid', 'schema', 'xmin', 'oid-2', 'setting']
-
     def __init__(self, *args, **kwargs):
         """
         Initialize the variables used by methods of ViewNode.
@@ -377,22 +407,7 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
         self.manager = None
         self.conn = None
         self.template_path = None
-        self.template_initial = 'views'
         self.allowed_acls = []
-
-    @staticmethod
-    def ppas_template_path(ver):
-        """
-        Returns the template path for PPAS servers.
-        """
-        return 'ppas/#{0}#'.format(ver)
-
-    @staticmethod
-    def pg_template_path(ver):
-        """
-        Returns the template path for PostgreSQL servers.
-        """
-        return 'pg/#{0}#'.format(ver)
 
     @check_precondition
     def list(self, gid, sid, did, scid):
@@ -431,7 +446,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             scid,
             rset['rows'][0]['name'],
             icon="icon-view" if self.node_type == 'view'
-            else "icon-mview"
+            else "icon-mview",
+            description=rset['rows'][0]['comment']
         )
 
         return make_json_response(
@@ -459,7 +475,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
                     scid,
                     row['name'],
                     icon="icon-view" if self.node_type == 'view'
-                    else "icon-mview"
+                    else "icon-mview",
+                    description=row['comment']
                 ))
 
         return make_json_response(
@@ -514,7 +531,7 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
         # sending result to formtter
         frmtd_reslt = self.formatter(result)
 
-        # merging formated result with main result again
+        # merging formatted result with main result again
         result.update(frmtd_reslt)
 
         return True, result
@@ -583,13 +600,18 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=new_scid)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     view_id,
                     new_scid,
                     data['name'],
                     icon="icon-view" if self.node_type == 'view'
-                    else "icon-mview"
+                    else "icon-mview",
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -631,13 +653,18 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=new_scid)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     view_id,
                     new_scid,
                     new_view_name,
                     icon="icon-view" if self.node_type == 'view'
-                    else "icon-mview"
+                    else "icon-mview",
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -1134,7 +1161,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
                 [self.ct_trigger_temp_path,
                  'sql/{0}/#{1}#/create.sql'.format(
                      self.manager.server_type, self.manager.version)]),
-                data=res_rows, display_comments=display_comments)
+                data=res_rows, display_comments=display_comments,
+                conn=self.conn)
             sql_data += '\n'
             sql_data += SQL
 
@@ -1258,7 +1286,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
                 [self.trigger_temp_path,
                  'sql/{0}/#{1}#/create.sql'.format(
                      self.manager.server_type, self.manager.version)]),
-                data=res_rows, display_comments=display_comments)
+                data=res_rows, display_comments=display_comments,
+                conn=self.conn)
             sql_data += '\n'
             sql_data += SQL
 
@@ -1304,7 +1333,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             SQL = render_template("/".join(
                 [self.index_temp_path,
                  'sql/#{0}#/create.sql'.format(self.manager.version)]),
-                data=data, display_comments=display_comments)
+                data=data, display_comments=display_comments,
+                conn=self.conn)
             sql_data += '\n'
             sql_data += SQL
         return sql_data
@@ -1355,7 +1385,8 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             SQL = render_template("/".join(
                 [self.column_template_path,
                     self._UPDATE_SQL.format(self.manager.version)]),
-                o_data=o_data, data=res, is_view_only=True)
+                o_data=o_data, data=res, is_view_only=True,
+                conn=self.conn)
             sql_data += SQL
 
         # Get Column Grant SQL
@@ -1382,11 +1413,15 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
                         'acl' in self.allowed_acls['datacl']:
                     allowed_acls = self.allowed_acls['datacl']['acl']
 
+                deftypes = set()
                 for row in acl['rows']:
                     priv = parse_priv_from_db(row)
                     res.setdefault(row['deftype'], []).append(priv)
-                    res[row['deftype']] = \
-                        parse_priv_to_db(res[row['deftype']], allowed_acls)
+                    deftypes.add(row['deftype'])
+
+                for deftype in deftypes:
+                    res[deftype] = \
+                        parse_priv_to_db(res[deftype], allowed_acls)
 
                 grant_sql = render_template("/".join(
                     [self.template_path, self._SQL_PREFIX + self._GRANT_SQL]),
@@ -1669,6 +1704,19 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
 
         return ajax_response(response=sql)
 
+    def _get_sub_module_data_for_compare(self, sid, did, scid, data, vid):
+        # Get sub module data of a specified view for object
+        # comparison
+        for module in self.view_sub_modules:
+            module_view = SchemaDiffRegistry.get_node_view(module)
+            if module_view.blueprint.server_type is None or \
+                self.manager.server_type in \
+                    module_view.blueprint.server_type:
+                sub_data = module_view.fetch_objects_to_compare(
+                    sid=sid, did=did, scid=scid, tid=vid,
+                    oid=None)
+                data[module] = sub_data
+
     @check_precondition
     def fetch_objects_to_compare(self, sid, did, scid, oid=None):
         """
@@ -1696,6 +1744,9 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
             for row in views['rows']:
                 status, data = self._fetch_properties(scid, row['oid'])
                 if status:
+                    # Fetch the data of sub module
+                    self._get_sub_module_data_for_compare(
+                        sid, did, scid, data, row['oid'])
                     res[row['name']] = data
         else:
             status, data = self._fetch_properties(scid, oid)
@@ -1706,7 +1757,7 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
 
         return res
 
-    def get_sql_from_diff(self, **kwargs):
+    def get_sql_from_view_diff(self, **kwargs):
         """
         This function is used to get the DDL/DML statements.
         :param kwargs
@@ -1716,15 +1767,15 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
         sid = kwargs.get('sid')
         did = kwargs.get('did')
         scid = kwargs.get('scid')
-        oid = kwargs.get('oid')
-        data = kwargs.get('data', None)
+        oid = kwargs.get('tid')
+        diff_data = kwargs.get('diff_data', None)
         drop_sql = kwargs.get('drop_sql', False)
         target_schema = kwargs.get('target_schema', None)
 
-        if data:
+        if diff_data:
             if target_schema:
-                data['schema'] = target_schema
-            sql, name_or_error = self.getSQL(gid, sid, did, data, oid)
+                diff_data['schema'] = target_schema
+            sql, _ = self.getSQL(gid, sid, did, diff_data, oid)
             if sql.find('DROP VIEW') != -1:
                 sql = gettext("""
 -- Changing the columns in a view requires dropping and re-creating the view.
@@ -1744,11 +1795,68 @@ class ViewNode(PGChildNodeView, VacuumSettings, SchemaDiffObjectCompare):
                                json_resp=False)
         return sql
 
+    def get_submodule_template_path(self, module_name):
+        """
+        This function is used to get the template path based on module name.
+        :param module_name:
+        :return:
+        """
+        template_path = None
+        if module_name == 'trigger':
+            template_path = self.trigger_template_path
+        elif module_name == 'index':
+            template_path = self.index_template_path
+        elif module_name == 'rule':
+            template_path = self.rules_template_path
+        elif module_name == 'compound_trigger':
+            template_path = self.compound_trigger_template_path
+
+        return template_path
+
+    def get_view_submodules_dependencies(self, **kwargs):
+        """
+        This function is used to get the dependencies of view and it's
+        submodules.
+        :param kwargs:
+        :return:
+        """
+        vid = kwargs['tid']
+        view_dependencies = []
+        view_deps = self.get_dependencies(self.conn, vid)
+        if len(view_deps) > 0:
+            view_dependencies.extend(view_deps)
+
+        # Iterate all the submodules of the table and fetch the dependencies.
+        for module in self.view_sub_modules:
+            module_view = SchemaDiffRegistry.get_node_view(module)
+            template_path = self.get_submodule_template_path(module)
+
+            SQL = render_template("/".join([template_path,
+                                            'nodes.sql']), tid=vid)
+            status, rset = self.conn.execute_2darray(SQL)
+            if not status:
+                return internal_server_error(errormsg=rset)
+
+            for row in rset['rows']:
+                result = module_view.get_dependencies(
+                    self.conn, row['oid'], where=None,
+                    show_system_objects=None, is_schema_diff=True)
+                if len(result) > 0:
+                    view_dependencies.extend(result)
+
+        # Remove the same table from the dependency list
+        for item in view_dependencies:
+            if 'oid' in item and item['oid'] == vid:
+                view_dependencies.remove(item)
+
+        return view_dependencies
+
 
 # Override the operations for materialized view
 mview_operations = {
     'refresh_data': [{'put': 'refresh_data'}, {}],
-    'check_utility_exists': [{'get': 'check_utility_exists'}, {}]
+    'check_utility_exists': [{'get': 'check_utility_exists'}, {}],
+    'get_access_methods': [{}, {'get': 'get_access_methods'}],
 }
 mview_operations.update(ViewNode.operations)
 
@@ -1781,6 +1889,7 @@ class MViewNode(ViewNode, VacuumSettings):
     node_type = mview_blueprint.node_type
     operations = mview_operations
     TOAST_STR = 'toast.'
+    BASE_TEMPLATE_PATH = 'mviews/{0}/#{1}#'
 
     def __init__(self, *args, **kwargs):
         """
@@ -1789,7 +1898,6 @@ class MViewNode(ViewNode, VacuumSettings):
 
         super().__init__(*args, **kwargs)
 
-        self.template_initial = 'mviews'
         self.allowed_acls = []
 
     @staticmethod
@@ -2245,19 +2353,9 @@ class MViewNode(ViewNode, VacuumSettings):
             try:
                 p = BatchProcess(
                     desc=Message(sid, data, SQL),
-                    cmd=utility, args=args
+                    cmd=utility, args=args, manager_obj=manager
                 )
-                manager.export_password_env(p.id)
-                # Check for connection timeout and if it is greater than 0
-                # then set the environment variable PGCONNECT_TIMEOUT.
-                timeout = manager.get_connection_param_value('connect_timeout')
-                if timeout and timeout > 0:
-                    env = dict()
-                    env['PGCONNECT_TIMEOUT'] = str(timeout)
-                    p.set_env_variables(server, env=env)
-                else:
-                    p.set_env_variables(server)
-
+                p.set_env_variables(server)
                 p.start()
                 jid = p.id
             except Exception as e:
@@ -2304,6 +2402,9 @@ class MViewNode(ViewNode, VacuumSettings):
         for row in rset['rows']:
             status, data = self._fetch_mview_properties(did, scid, row['oid'])
             if status:
+                # Fetch the data of sub module
+                self._get_sub_module_data_for_compare(
+                    sid, did, scid, data, row['oid'])
                 res[row['name']] = data
 
         return res
@@ -2325,7 +2426,7 @@ class MViewNode(ViewNode, VacuumSettings):
         if server is None:
             return make_json_response(
                 success=0,
-                errormsg=gettext("Could not find the specified server.")
+                errormsg=SERVER_NOT_FOUND
             )
 
         driver = get_driver(PG_DEFAULT_DRIVER)
@@ -2340,6 +2441,101 @@ class MViewNode(ViewNode, VacuumSettings):
             )
 
         return make_json_response(success=1)
+
+    @check_precondition
+    def statistics(self, gid, sid, did, scid, vid=None):
+        """
+        Statistics
+
+        Args:
+            gid: Server Group ID
+            sid: Server ID
+            did: Database ID
+            scid: Schema ID
+            vid: View ID
+
+        Returns the statistics for a particular MView if vid is specified,
+        otherwise it will return statistics for all the MView in that
+        schema.
+        """
+        status, schema_name = self.conn.execute_scalar(
+            render_template(
+                "/".join([self.template_path, 'sql/get_schema.sql']),
+                conn=self.conn, scid=scid
+            )
+        )
+        if not status:
+            return internal_server_error(errormsg=schema_name)
+
+        if vid is None:
+            status, res = self.conn.execute_dict(
+                render_template(
+                    "/".join([self.template_path,
+                              'sql/coll_mview_stats.sql']), conn=self.conn,
+                    schema_name=schema_name
+                )
+            )
+        else:
+            # For Individual mview stats
+            status, is_pgstattuple = check_pgstattuple(self.conn, vid)
+            if not status:
+                return internal_server_error(errormsg=is_pgstattuple)
+
+            # Fetch MView name
+            status, mview_name = self.conn.execute_scalar(
+                render_template(
+                    "/".join([self.template_path, 'sql/get_view_name.sql']),
+                    conn=self.conn, scid=scid, vid=vid
+                )
+            )
+            if not status:
+                return internal_server_error(errormsg=mview_name)
+
+            status, res = self.conn.execute_dict(
+                render_template(
+                    "/".join([self.template_path, 'sql/stats.sql']),
+                    conn=self.conn, schema_name=schema_name,
+                    mview_name=mview_name,
+                    is_pgstattuple=is_pgstattuple, vid=vid
+                )
+            )
+
+        if not status:
+            return internal_server_error(errormsg=res)
+
+        return make_json_response(
+            data=res,
+            status=200
+        )
+
+    @check_precondition
+    def get_access_methods(self, gid, sid, did, scid, vid=None):
+        """
+        Args:
+            gid: Server Group ID
+            sid: Server ID
+            did: Database ID
+            scid: Schema ID
+            vid: View ID
+
+            Returns the access method to be used by mview
+        """
+        res = []
+        sql = render_template("/".join([self.template_path,
+                                        'sql/get_access_methods.sql']))
+        status, rest = self.conn.execute_2darray(sql)
+        if not status:
+            return internal_server_error(errormsg=rest)
+
+        for row in rest['rows']:
+            res.append(
+                {'label': row['amname'], 'value': row['amname']}
+            )
+
+        return make_json_response(
+            data=res,
+            status=200
+        )
 
 
 SchemaDiffRegistry(view_blueprint.node_type, ViewNode)

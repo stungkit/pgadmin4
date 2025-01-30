@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -74,7 +74,7 @@ export default class PackageSchema extends BaseUISchema {
                 if (state && packageSchemaObj.isNew(state)) {
                   options.forEach((option) => {
                     // If schema name start with pg_* then we need to exclude them
-                    if(option && option.label.match(/^pg_/)) {
+                    if(option?.label.match(/^pg_/)) {
                       return;
                     }
                     res.push({ label: option.label, value: option.value, image: 'icon-schema' });
@@ -100,7 +100,10 @@ export default class PackageSchema extends BaseUISchema {
         group: gettext('Header'),
         depChange: (state, source, topState, actionObj) => {
 
-          if(packageSchemaObj._origData.oid && state.pkgheadsrc != actionObj.oldState.pkgheadsrc) {
+          if(
+            packageSchemaObj.origData.oid &&
+            state.pkgheadsrc != actionObj.oldState.pkgheadsrc
+          ) {
             packageSchemaObj.warningText = gettext(
               'Updating the package header definition may remove its existing body.'
             ) + '<br><br><b>' + gettext('Do you want to continue?') +
@@ -116,7 +119,10 @@ export default class PackageSchema extends BaseUISchema {
         mode: ['properties', 'create', 'edit'], group: gettext('Body'),
         depChange: (state, source, topState, actionObj) => {
 
-          if(packageSchemaObj._origData.oid && state.pkgbodysrc != actionObj.oldState.pkgbodysrc) {
+          if(
+            packageSchemaObj.origData.oid &&
+            state.pkgbodysrc != actionObj.oldState.pkgbodysrc
+          ) {
             packageSchemaObj.warningText = gettext(
               'Updating the package header definition may remove its existing body.'
             ) + '<br><br><b>' + gettext('Do you want to continue?') +

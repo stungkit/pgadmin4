@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2022, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,6 +10,7 @@
 #  Get Postgres and Python encoding
 
 import psycopg
+from flask import current_app
 
 encode_dict = {
     'SQL_ASCII': ['SQL_ASCII', 'raw-unicode-escape'],
@@ -17,7 +18,9 @@ encode_dict = {
     # EUC_TW Not availble in Python,
     # so psycopg3 do not support it, we are on our own
     'EUC_TW': ['BIG5', 'big5'],
-    'EUCTW': ['BIG5', 'big5']
+    'EUCTW': ['BIG5', 'big5'],
+    # psycopg3 do not support unicode
+    'UNICODE': ['utf-8', 'utf-8']
 }
 
 
@@ -33,7 +36,12 @@ def get_encoding(key):
     #
     if key == 'ascii':
         key = 'raw_unicode_escape'
-    postgres_encoding = psycopg._encodings.py2pgenc(key).decode()
+    try:
+        postgres_encoding = psycopg._encodings.py2pgenc(key).decode()
+    except Exception as e:
+        # For unsupported encodings by psycopg like UNICODE
+        current_app.logger.error(e)
+        postgres_encoding = 'utf-8'
 
     python_encoding = psycopg._encodings._py_codecs.get(postgres_encoding,
                                                         'utf-8')
@@ -52,7 +60,7 @@ def configure_driver_encodings(encodings):
     # python encoding of pyscopg's internal encodings dict.
 
     for key, val in encode_dict.items():
-        postgres_encoding, python_encoding = val
+        _, python_encoding = val
         psycopg._encodings._py_codecs[key] = python_encoding
 
     encodings.update((k.encode(), v

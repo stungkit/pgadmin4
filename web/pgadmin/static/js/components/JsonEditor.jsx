@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -22,6 +22,8 @@ export default function JsonEditor({getEditor, value, options, className}) {
 
   useEffect(()=>{
     const editorResizeObserver = new ResizeObserver(()=>{
+      // Using resize from json editor to resize it
+      // after resizing the container.
       editor.current.resize();
     });
     editorResizeObserver.observe(eleRef.current);

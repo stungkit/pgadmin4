@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -48,7 +48,9 @@ class ExtensionModule(CollectionNodeModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(did)
+        if self.has_nodes(sid, did,
+                          base_template_path=ExtensionView.EXT_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(did)
 
     @property
     def node_inode(self):
@@ -188,7 +190,8 @@ class ExtensionView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     did,
                     row['name'],
-                    'icon-extension'
+                    'icon-extension',
+                    description=row['comment']
                 ))
 
         return make_json_response(
@@ -327,12 +330,17 @@ class ExtensionView(PGChildNodeView, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     eid,
                     did,
                     name,
-                    icon="icon-%s" % self.node_type
+                    icon="icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -399,9 +407,15 @@ class ExtensionView(PGChildNodeView, SchemaDiffObjectCompare):
         """
         This function returns modified SQL
         """
-        data = request.args.copy()
+        data = {}
+        for k, v in request.args.items():
+            try:
+                data[k] = json.loads(v)
+            except ValueError:
+                data[k] = v
+
         try:
-            SQL, name = self.getSQL(gid, sid, data, did, eid)
+            SQL, _ = self.getSQL(gid, sid, data, did, eid)
             # Most probably this is due to error
             if not isinstance(SQL, str):
                 return SQL
@@ -587,8 +601,8 @@ class ExtensionView(PGChildNodeView, SchemaDiffObjectCompare):
         drop_sql = kwargs.get('drop_sql', False)
 
         if data:
-            sql, name = self.getSQL(gid=gid, sid=sid, did=did, data=data,
-                                    eid=oid)
+            sql, _ = self.getSQL(gid=gid, sid=sid, did=did, data=data,
+                                 eid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

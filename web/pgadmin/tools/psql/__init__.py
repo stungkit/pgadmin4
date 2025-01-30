@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -11,14 +11,16 @@ import os
 import select
 import struct
 import config
+import re
+import subprocess
 from sys import platform as _platform
-from eventlet.green import subprocess
 from config import PG_DEFAULT_DRIVER
 from flask import Response, request
 from flask import render_template, copy_current_request_context, \
     current_app as app
 from flask_babel import gettext
-from flask_security import login_required, current_user
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.browser.utils import underscore_unescape, underscore_escape
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.constants import MIMETYPE_APP_JS
@@ -43,6 +45,7 @@ else:
 session_input = dict()
 pdata = dict()
 cdata = dict()
+open_psql_connections = dict()
 
 
 class PSQLModule(PgAdminModule):
@@ -55,9 +58,6 @@ class PSQLModule(PgAdminModule):
 
     def get_own_menuitems(self):
         return {}
-
-    def get_panels(self):
-        return []
 
     def get_exposed_url_endpoints(self):
         """
@@ -73,7 +73,7 @@ blueprint = PSQLModule('psql', __name__, static_url_path='/static')
 
 
 @blueprint.route("/psql.js")
-@login_required
+@pga_login_required
 def script():
     """render the required javascript"""
     return Response(
@@ -86,7 +86,7 @@ def script():
 @blueprint.route('/panel/<int:trans_id>',
                  methods=["POST"],
                  endpoint="panel")
-@login_required
+@pga_login_required
 def panel(trans_id):
     """
     Return panel template for PSQL tools.
@@ -101,22 +101,23 @@ def panel(trans_id):
     if request.args:
         params.update({k: v for k, v in request.args.items()})
 
-    o_db_name = _get_database(params['sid'], params['did'])
+    data = _get_database_role(params['sid'], params['did'])
+
+    params = {
+        'sid': params['sid'],
+        'db': underscore_escape(data['db_name']),
+        'server_type': params['server_type'],
+        'is_enable': config.ENABLE_PSQL,
+        'title': underscore_escape(params['title']),
+        'theme': params['theme'],
+        'o_db_name': underscore_escape(data['db_name']),
+        'role': underscore_escape(data['role']),
+        'platform': _platform
+    }
 
     set_env_variables(is_win=_platform == 'win32')
-    return render_template('editor_template.html',
-                           sid=params['sid'],
-                           db=underscore_unescape(
-                               o_db_name) if o_db_name else 'postgres',
-                           server_type=params['server_type'],
-                           is_enable=config.ENABLE_PSQL,
-                           title=underscore_unescape(params['title']),
-                           theme=params['theme'],
-                           o_db_name=o_db_name,
-                           requirejs=True,
-                           basejs=True,
-                           platform=_platform
-                           )
+    return render_template("psql/index.html",
+                           params=json.dumps(params))
 
 
 def set_env_variables(is_win=False):
@@ -175,7 +176,7 @@ def get_user_env():
     return env
 
 
-def create_pty_terminal(connection_data):
+def create_pty_terminal(connection_data, server_id):
     # Create the pty terminal process, parent and fd are file descriptors
     # for parent and child.
     parent, fd = pty.openpty()
@@ -194,6 +195,7 @@ def create_pty_terminal(connection_data):
         app.config['sessions'][request.sid] = parent
         pdata[request.sid] = p
         cdata[request.sid] = fd
+        open_psql_connections[request.sid] = server_id
     else:
         app.config['sessions'][request.sid] = parent
         cdata[request.sid] = fd
@@ -234,7 +236,7 @@ def read_stdout(process, sid, max_read_bytes, win_emit_output=True):
     sio.sleep(0)
 
 
-def windows_platform(connection_data, sid, max_read_bytes):
+def windows_platform(connection_data, sid, max_read_bytes, server_id):
     process = PtyProcess.spawn('cmd.exe', env=get_user_env())
 
     process.write(r'"{0}" "{1}" 2>>&1'.format(connection_data[0],
@@ -242,6 +244,7 @@ def windows_platform(connection_data, sid, max_read_bytes):
     process.write("\r\n")
     app.config['sessions'][request.sid] = process
     pdata[request.sid] = process
+    open_psql_connections[request.sid] = server_id
     set_term_size(process, 50, 50)
 
     while True:
@@ -263,18 +266,25 @@ def non_windows_platform(parent, p, fd, data, max_read_bytes, sid):
             timeout = 0
             # module provides access to platform-specific I/O
             # monitoring functions
-            (data_ready, _, _) = select.select([parent, fd], [], [],
-                                               timeout)
+            try:
+                (data_ready, _, _) = select.select([parent, fd], [], [],
+                                                   timeout)
 
-            read_terminal_data(parent, data_ready, max_read_bytes, sid)
+                read_terminal_data(parent, data_ready, max_read_bytes, sid)
+            except OSError as e:
+                # If the process is killed, bad file descriptor exception may
+                # occur. Handle it gracefully
+                if p.poll() is not None:
+                    raise e
 
 
 def pty_handel_io(connection_data, data, sid):
     max_read_bytes = 1024 * 20
     if _platform == 'win32':
-        windows_platform(connection_data, sid, max_read_bytes)
+        windows_platform(connection_data, sid, max_read_bytes,
+                         int(data['sid']))
     else:
-        p, parent, fd = create_pty_terminal(connection_data)
+        p, parent, fd = create_pty_terminal(connection_data, int(data['sid']))
         non_windows_platform(parent, p, fd, data, max_read_bytes, sid)
 
 
@@ -296,12 +306,23 @@ def start_process(data):
         try:
             db = ''
             if data['db']:
-                db = underscore_unescape(data['db']).replace('\\', "\\\\")
+                db = underscore_unescape(data['db'])
 
             data['db'] = db
 
-            conn, manager = _get_connection(int(data['sid']), data)
+            _, manager = _get_connection(int(data['sid']), data)
             psql_utility = manager.utility('sql')
+            if psql_utility is None:
+                sio.emit('pty-output',
+                         {
+                             'result': gettext(
+                                 'PSQL utility not found. Specify the binary '
+                                 'path in the preferences for the appropriate '
+                                 'server version, or select "Set as default" '
+                                 'to use an existing binary path.'),
+                             'error': True},
+                         namespace='/pty', room=request.sid)
+                return
             connection_data = get_connection_str(psql_utility, db,
                                                  manager)
         except Exception as e:
@@ -378,10 +399,8 @@ def get_connection_str(psql_utility, db, manager):
     :return: connection attribute list for PSQL connection.
     """
     manager.export_password_env('PGPASSWORD')
-    db = db.replace('"', '\\"')
-    db = db.replace("'", "\\'")
     database = db if db != '' else 'postgres'
-    user = underscore_unescape(manager.user) if manager.user else 'postgres'
+    user = underscore_unescape(manager.user) if manager.user else None
     conn_attr = manager.create_connection_string(database, user)
 
     conn_attr_list = list()
@@ -397,8 +416,8 @@ def enter_key_press(data):
     """
     user_input = data['input']
 
-    if user_input == '\q' or user_input == 'q\\q' or user_input in\
-            ['\quit', 'exit', 'exit;']:
+    if user_input == r'\q' or user_input == 'q\\q' or user_input in\
+            [r'\quit', 'exit', 'exit;']:
         # If user enter \q to terminate the PSQL, emit the msg to
         # notify user connection is terminated.
         sio.emit('pty-output',
@@ -474,6 +493,40 @@ def socket_input(data):
         del app.config['sessions'][request.sid]
 
 
+@sio.on('socket_set_role', namespace='/pty')
+def socket_set_role(data):
+    """
+    This function sets the role used to connect to server.
+    :param data: User input from socket.
+    """
+    try:
+        if request.sid in app.config['sessions']:
+            # checking if role contains special characters and quoting it.
+            if re.search('[^a-z0-9_]', data['role']):
+                data['role'] = data['role'].replace('"', '""')
+                data['role'] = '"{0}"'.format(data['role'])
+
+            input_data = "SET ROLE {0};".format(data['role'])
+            if _platform == 'win32':
+                app.config['sessions'][request.sid].write(
+                    "{0}".format(input_data))
+                app.config['sessions'][request.sid].write("\r\n")
+            else:
+                os.write(app.config['sessions'][request.sid],
+                         input_data.encode())
+                os.write(app.config['sessions'][request.sid], '\n'.encode())
+    except Exception:
+        # Delete socket id from sessions.
+        # request.sid: refer request.sid as socket id.
+        sio.emit('pty-output',
+                 {
+                     'result': gettext('Invalid session.\r\n'),
+                     'error': True
+                 },
+                 namespace='/pty', room=request.sid)
+        del app.config['sessions'][request.sid]
+
+
 @sio.on('resize', namespace='/pty')
 def resize(data):
     """
@@ -518,18 +571,31 @@ def server_disconnect(data):
         disconnect_socket()
 
 
+def cleanup_globals():
+    del pdata[request.sid]
+    del cdata[request.sid]
+    server_id = open_psql_connections[request.sid]
+    del open_psql_connections[request.sid]
+    # Check if all the connections of the adhoc server is closed
+    # then delete the server from the pgadmin database.
+    from pgadmin.misc.workspaces import check_and_delete_adhoc_server
+    check_and_delete_adhoc_server(server_id)
+
+
 def disconnect_socket():
     if _platform == 'win32':
         if request.sid in app.config['sessions']:
             process = app.config['sessions'][request.sid]
             process.terminate()
             del app.config['sessions'][request.sid]
+            cleanup_globals()
     else:
-        os.write(app.config['sessions'][request.sid], '\q\n'.encode())
+        os.write(app.config['sessions'][request.sid], r'\q\n'.encode())
         sio.sleep(1)
         os.close(app.config['sessions'][request.sid])
         os.close(cdata[request.sid])
         del app.config['sessions'][request.sid]
+        cleanup_globals()
 
 
 def get_connection_status(conn):
@@ -539,50 +605,30 @@ def get_connection_status(conn):
     return False
 
 
-def _get_database(sid, did):
+def _get_database_role(sid, did):
     """
     This method is used to get database based on sid, did.
     """
     try:
         from pgadmin.utils.driver import get_driver
         manager = get_driver(PG_DEFAULT_DRIVER).connection_manager(int(sid))
-        conn = manager.connection()
-        db_name = None
+        conn = manager.connection(did=int(did))
 
         is_connected = get_connection_status(conn)
 
-        if is_connected:
+        if not is_connected:
+            conn.connect()
 
-            if conn.manager and conn.manager.db_info \
-                    and conn.manager.db_info[int(did)] is not None:
-
-                db_name = conn.manager.db_info[int(did)]['datname']
-                return db_name
-            elif sid:
-                template_path = 'databases/sql/#{0}#'.format(manager.version)
-                last_system_oid = 0
-                server_node_res = manager
-
-                db_disp_res = None
-                params = None
-                if server_node_res and server_node_res.db_res:
-                    db_disp_res = ", ".join(
-                        ['%s'] * len(server_node_res.db_res.split(','))
-                    )
-                    params = tuple(server_node_res.db_res.split(','))
-                sql = render_template(
-                    "/".join([template_path, _NODES_SQL]),
-                    last_system_oid=last_system_oid,
-                    db_restrictions=db_disp_res,
-                    did=did
-                )
-                status, databases = conn.execute_dict(sql, params)
-                database = databases['rows'][0]
-                if database is not None:
-                    db_name = database['name']
-
-            return db_name
-        else:
-            return db_name
+        db_name = conn.db
+        role = manager.role if manager.role else None
+        return {'db_name': db_name, 'role': role}
     except Exception:
         return None
+
+
+def get_open_psql_connections():
+    """
+    This function returns open connections
+    """
+
+    return open_psql_connections

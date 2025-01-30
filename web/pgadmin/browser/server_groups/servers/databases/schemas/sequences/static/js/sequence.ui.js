@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -89,6 +89,7 @@ export default class SequenceSchema extends BaseUISchema {
       maximum: undefined,
       cache: undefined,
       cycled: undefined,
+      relpersistence: undefined,
       relacl: [],
       securities: [],
       ...initValues,
@@ -135,6 +136,7 @@ export default class SequenceSchema extends BaseUISchema {
       }, {
         id: 'current_value', label: gettext('Current value'), type: 'int',
         mode: ['properties', 'edit'], group: gettext('Definition'),
+        helpMessage: gettext('Sets the sequence object\'s current value. The next nextval will return exactly the specified value, and sequence advancement commences with the following nextval.')
       }, {
         id: 'increment', label: gettext('Increment'), type: 'int',
         mode: ['properties', 'create', 'edit'], group: gettext('Definition'),
@@ -154,6 +156,10 @@ export default class SequenceSchema extends BaseUISchema {
       }, {
         id: 'cycled', label: gettext('Cycled'), type: 'switch',
         mode: ['properties', 'create', 'edit'], group: gettext('Definition'),
+      }, {
+        id: 'relpersistence', label: gettext('Unlogged?'), type: 'switch',
+        mode: ['properties', 'create', 'edit'], group: gettext('Definition'),
+        min_version: 150000,
       }, {
         type: 'nested-fieldset', label: gettext('Owned By'), group: gettext('Definition'),
         schema: this.ownedSchemaObj,

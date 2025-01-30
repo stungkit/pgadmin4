@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -12,6 +12,8 @@ import _ from 'lodash';
 import { isEmptyString } from 'sources/validators';
 import { SCHEMA_STATE_ACTIONS } from '../../../../../../../../../../static/js/SchemaView';
 import TableSchema from '../../../../static/js/table.ui';
+
+
 export default class PrimaryKeySchema extends BaseUISchema {
   constructor(fieldOptions={}, nodeInfo={}) {
     super({
@@ -26,6 +28,7 @@ export default class PrimaryKeySchema extends BaseUISchema {
       condeferred: undefined,
       columns: [],
       include: [],
+      columns_updated_at: 0,
     });
 
     this.fieldOptions = fieldOptions;
@@ -42,6 +45,8 @@ export default class PrimaryKeySchema extends BaseUISchema {
 
   changeColumnOptions(columns) {
     this.fieldOptions.columns = columns;
+    if (this.state)
+      this.state.data = {...this.state.data, columns_updated_at: Date.now()};
   }
 
   get baseFields() {
@@ -69,14 +74,14 @@ export default class PrimaryKeySchema extends BaseUISchema {
       }
     },{
       id: 'columns', label: gettext('Columns'),
-      deps: ()=>{
-        let ret = ['index'];
+      deps: () => {
+        let ret = ['index', 'columns_updated_at'];
         if(obj.inTable) {
           ret.push(['columns']);
         }
         return ret;
       },
-      depChange: (state, source, topState, actionObj)=>{
+      depChange: (state, source, topState, actionObj) => {
         /* If in table, sync up value with columns in table */
         if(obj.inTable && !state) {
           /* the FK is removed by some other dep, this can be a no-op */
@@ -89,16 +94,18 @@ export default class PrimaryKeySchema extends BaseUISchema {
             currColumns = _.filter(currColumns, (cc)=>cc.column != oldColumn.name);
           } else if(actionObj.type == SCHEMA_STATE_ACTIONS.SET_VALUE) {
             let tabColPath = _.slice(actionObj.path, 0, -1);
-            let oldColName = _.get(actionObj.oldState, tabColPath).name;
-            let idx = _.findIndex(currColumns, (cc)=>cc.column == oldColName);
-            if(idx > -1) {
-              currColumns[idx].column = _.get(topState, tabColPath).name;
+            let oldCol = _.get(actionObj.oldState, tabColPath);
+            let idx = _.findIndex(currColumns, (cc)=>cc.column == oldCol.name);
+            let updatedCol = _.get(topState, tabColPath);
+            if(idx > -1 && updatedCol.is_primary_key) {
+              currColumns[idx].column = updatedCol.name;
             }
           }
         }
         return {columns: currColumns};
       },
-      cell: ()=>({
+      editable: false,
+      cell: () => ({
         cell: '',
         controlProps: {
           formatter: {
@@ -109,7 +116,7 @@ export default class PrimaryKeySchema extends BaseUISchema {
           },
         }
       }),
-      type: ()=>({
+      type: () => ({
         type: 'select',
         optionsReloadBasis: obj.fieldOptions.columns?.map ? _.join(obj.fieldOptions.columns.map((c)=>c.label), ',') : null,
         options: obj.fieldOptions.columns,
@@ -129,16 +136,8 @@ export default class PrimaryKeySchema extends BaseUISchema {
           },
         },
       }), group: gettext('Definition'),
-      editable: false,
-      readonly: function(state) {
-        if(!obj.isNew(state)) {
-          return true;
-        }
-      },
-      disabled: function(state) {
-        // Disable if index is selected.
-        return !(_.isUndefined(state.index) || state.index == '');
-      },
+      readonly: (state) => !obj.isNew(state),
+      disabled: (state) => !(_.isUndefined(state.index) || state.index == ''),
     },{
       id: 'include', label: gettext('Include columns'),
       type: ()=>({
@@ -151,10 +150,7 @@ export default class PrimaryKeySchema extends BaseUISchema {
       editable: false,
       canDelete: true, canAdd: true,
       mode: ['properties', 'create', 'edit'],
-      visible: function() {
-        /* In table properties, nodeInfo is not available */
-        return this.getServerVersion() >= 110000;
-      },
+      min_version: 110000,
       deps: ['index'],
       readonly: function(state) {
         return obj.isReadOnly(state);
@@ -259,6 +255,13 @@ export default class PrimaryKeySchema extends BaseUISchema {
   }
 
   validate(state, setError) {
+    if (!this.isNew(state) && isEmptyString(state.name)) {
+      setError('name', gettext('Name cannot be empty in edit mode.'));
+      return true;
+    } else {
+      setError('name', null);
+    }
+
     if(isEmptyString(state.index)
       && (_.isUndefined(state.columns) || _.isNull(state.columns) || state.columns.length < 1)) {
       setError('columns', gettext('Please specify columns for %s.', gettext('Primary key')));

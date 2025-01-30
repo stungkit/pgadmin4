@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##############################################################################
@@ -13,7 +13,7 @@ from functools import wraps
 
 from flask import url_for, session, request, redirect
 from flask_login.utils import login_url
-from flask_security import current_user
+from flask_security import current_user, login_required
 
 import config
 from pgadmin.model import UserMFA, db
@@ -160,7 +160,7 @@ def mfa_enabled(execute_if_enabled, execute_if_disabled) -> None:
     supported_methods = getattr(config, "MFA_SUPPORTED_METHODS", [])
 
     if is_server_mode is True and enabled is True and \
-            type(supported_methods) == list:
+            isinstance(supported_methods, list):
         supported_methods, _ = segregate_valid_and_invalid_mfa_methods(
             supported_methods
         )
@@ -279,7 +279,7 @@ def mfa_required(wrapped):
         registration_url = url_for('mfa.register')
 
         if next_url.startswith(registration_url):
-            return url('browser.index')
+            return url_for('browser.index')
 
         return next_url
 
@@ -290,8 +290,8 @@ def mfa_required(wrapped):
         return redirect(login_url("mfa.register", next_url=get_next_url()))
 
     @wraps(wrapped)
+    @login_required
     def inner(*args, **kwargs):
-
         def execute_func():
             session['mfa_authenticated'] = True
             return wrapped(*args, **kwargs)

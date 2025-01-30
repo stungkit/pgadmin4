@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -65,7 +65,10 @@ class FtsTemplateModule(SchemaChildModule):
         :param did: database id
         :param scid: schema id
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(
+            sid, did, scid,
+                base_template_path=FtsTemplateView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def node_inode(self):
@@ -157,6 +160,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
 
     node_type = blueprint.node_type
     node_label = "FTS Template"
+    BASE_TEMPLATE_PATH = 'fts_templates/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -217,7 +221,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
             ):
                 self.datistemplate = self.manager.db_info[
                     kwargs['did']]['datistemplate']
-            self.template_path = 'fts_templates/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version)
 
             return f(*args, **kwargs)
@@ -257,7 +261,8 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-fts_template"
+                    icon="icon-fts_template",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -421,7 +426,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
         )
 
         # Fetch sql query to update fts template
-        sql, name = self.get_sql(gid, sid, did, scid, data, tid)
+        sql, _ = self.get_sql(gid, sid, did, scid, data, tid)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -445,7 +450,8 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
                 tid,
                 rset['schema'],
                 rset['name'],
-                icon="icon-%s" % self.node_type
+                icon="icon-%s" % self.node_type,
+                description=rset['description']
             )
         )
 
@@ -534,7 +540,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
                 data[k] = v
 
         # Fetch sql query for modified data
-        SQL, name = self.get_sql(gid, sid, did, scid, data, tid)
+        SQL, _ = self.get_sql(gid, sid, did, scid, data, tid)
         # Most probably this is due to error
         if not isinstance(SQL, str):
             return SQL
@@ -618,9 +624,9 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, res = self.conn.execute_dict(sql)
             if not status:
-                return internal_server_error(errormsg=res)
+                return internal_server_error(errormsg=res), ''
             elif len(res['rows']) == 0:
-                return gone(self.not_found_error_msg())
+                return gone(self.not_found_error_msg()), ''
 
             old_data = res['rows'][0]
             if 'schema' not in data:
@@ -635,7 +641,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, new_schema = self.conn.execute_scalar(sql)
             if not status:
-                return internal_server_error(errormsg=new_schema)
+                return internal_server_error(errormsg=new_schema), ''
 
             # Replace schema oid with schema name
             new_data = data.copy()
@@ -644,7 +650,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
                                                                new_data)
             if error:
                 print('ERROR INSIDE UPDATE:: {0}'.format(errmsg))
-                return internal_server_error(errormsg=errmsg)
+                return internal_server_error(errormsg=errmsg), ''
 
             sql = render_template(
                 "/".join([self.template_path, self._UPDATE_SQL]),
@@ -663,7 +669,7 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
 
             status, schema = self.conn.execute_scalar(sql)
             if not status:
-                return internal_server_error(errormsg=schema)
+                return internal_server_error(errormsg=schema), ''
 
             sql = self._get_sql_for_create(data, schema)
             return sql.strip('\n'), data['name']
@@ -861,8 +867,8 @@ class FtsTemplateView(PGChildNodeView, SchemaDiffObjectCompare):
         target_schema = kwargs.get('target_schema', None)
 
         if data:
-            sql, name = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
-                                     data=data, tid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, did=did, scid=scid,
+                                  data=data, tid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

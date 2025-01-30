@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,7 +11,7 @@ import * as React from 'react';
 import { CanvasWidget, Action, InputType } from '@projectstorm/react-canvas-core';
 import PropTypes from 'prop-types';
 import _ from 'lodash';
-import html2canvas from 'html2canvas';
+import {toPng} from 'html-to-image';
 
 import ERDCore from '../ERDCore';
 import ConnectionBar, { STATUS as CONNECT_STATUS } from './ConnectionBar';
@@ -20,19 +20,23 @@ import {setPanelTitle} from '../../ERDModule';
 import gettext from 'sources/gettext';
 import url_for from 'sources/url_for';
 import {showERDSqlTool} from 'tools/sqleditor/static/js/show_query_tool';
-import 'wcdocker';
 import TableSchema from '../../../../../../browser/server_groups/servers/databases/schemas/tables/static/js/table.ui';
-import Notify from '../../../../../../static/js/helpers/Notifier';
 import { ModalContext } from '../../../../../../static/js/helpers/ModalProvider';
 import ERDDialogs from '../dialogs';
 import ConfirmSaveContent from '../../../../../../static/js/Dialogs/ConfirmSaveContent';
 import Loader from '../../../../../../static/js/components/Loader';
 import { MainToolBar } from './MainToolBar';
-import { Box, withStyles } from '@material-ui/core';
+import { Box } from '@mui/material';
 import EventBus from '../../../../../../static/js/helpers/EventBus';
 import { ERD_EVENTS } from '../ERDConstants';
-import getApiInstance, { parseApiError } from '../../../../../../static/js/api_instance';
+import getApiInstance, { callFetch, parseApiError } from '../../../../../../static/js/api_instance';
 import { openSocket, socketApiGet } from '../../../../../../static/js/socket_instance';
+import { LAYOUT_EVENTS } from '../../../../../../static/js/helpers/Layout';
+import usePreferences from '../../../../../../preferences/static/js/store';
+import pgAdmin from 'sources/pgadmin';
+import { styled } from '@mui/material/styles';
+import BeforeUnload from './BeforeUnload';
+import { isMac } from '../../../../../../static/js/keyboard_shortcuts';
 
 /* Custom react-diagram action for keyboard events */
 export class KeyboardShortcutAction extends Action {
@@ -44,11 +48,12 @@ export class KeyboardShortcutAction extends Action {
       },
     });
     this.shortcuts = {};
+    this.preferencesStore = usePreferences.getState();
 
     for(let shortcut_val of shortcut_handlers){
       let [key, handler] = shortcut_val;
       if(key) {
-        this.shortcuts[this.shortcutKey(key.alt, key.control, key.shift, false, key.key.key_code)] = handler;
+        this.shortcuts[this.shortcutKey(key.alt, (isMac() && key.ctrl_is_meta) ? false : key.control, key.shift, isMac() && Boolean(key.ctrl_is_meta), key.key.key_code)] = handler;
       }
     }
   }
@@ -60,6 +65,8 @@ export class KeyboardShortcutAction extends Action {
   callHandler(event) {
     let handler = this.shortcuts[this.shortcutKey(event.altKey, event.ctrlKey, event.shiftKey, event.metaKey, event.keyCode)];
     if(handler) {
+      event.stopPropagation();
+      event.preventDefault();
       handler();
     }
   }
@@ -72,31 +79,30 @@ const getCanvasGrid = (theme)=>{
   return `url("data:image/svg+xml, %3Csvg width='100%25' viewBox='0 0 45 45' style='background-color:${erdCanvasBg}' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='smallGrid' width='15' height='15' patternUnits='userSpaceOnUse'%3E%3Cpath d='M 15 0 L 0 0 0 15' fill='none' stroke='${erdGridColor}' stroke-width='0.5'/%3E%3C/pattern%3E%3Cpattern id='grid' width='45' height='45' patternUnits='userSpaceOnUse'%3E%3Crect width='100' height='100' fill='url(%23smallGrid)'/%3E%3Cpath d='M 100 0 L 0 0 0 100' fill='none' stroke='${erdGridColor}' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23grid)' /%3E%3C/svg%3E%0A")`;
 };
 
-const styles = ((theme)=>({
-  diagramContainer: {
+const StyledBox = styled(Box)(({theme})=>({
+  '& .ERDTool-diagramContainer': {
     position: 'relative',
     width: '100%',
-    height: '100%',
-    minHeight: 0,
-  },
-  diagramCanvas: {
-    width: '100%',
-    height: '100%',
-    color: theme.palette.text.primary,
-    fontFamily: 'sans-serif',
-    backgroundColor: theme.otherVars.erdCanvasBg,
-    backgroundImage: getCanvasGrid(theme),
-    cursor: 'unset',
     flexGrow: 1,
+    minHeight: 0,
+    '& .ERDTool-diagramCanvas': {
+      width: '100%',
+      height: '100%',
+      color: theme.palette.text.primary,
+      backgroundColor: theme.otherVars.erdCanvasBg,
+      backgroundImage: getCanvasGrid(theme),
+      cursor: 'unset',
+      flexGrow: 1,
+    },
   },
-  html2canvasReset: {
+  '& .ERDTool-html2canvasReset': {
     backgroundImage: 'none !important',
     overflow: 'auto !important',
   }
 }));
 
 /* The main body container for the ERD */
-class ERDTool extends React.Component {
+export default class ERDTool extends React.Component {
   static contextType = ModalContext;
   constructor(props) {
     super(props);
@@ -126,27 +132,27 @@ class ERDTool extends React.Component {
     this.diagram = new ERDCore();
     /* Flag for checking if user has opted for save before close */
     this.closeOnSave = React.createRef();
-    this.fileInputRef = React.createRef();
     this.containerRef = React.createRef();
     this.diagramContainerRef = React.createRef();
-    this.canvasEle = null;
+    this.canvasEle = props.isTest ? document.createElement('div') : null;
     this.noteRefEle = null;
-    this.noteNode = null;
     this.keyboardActionObj = null;
     this.erdDialogs = new ERDDialogs(this.context);
     this.apiObj = getApiInstance();
+    this.preferencesStore = usePreferences.getState();
 
     this.eventBus = new EventBus();
 
-    _.bindAll(this, ['onLoadDiagram', 'onSaveDiagram', 'onSaveAsDiagram', 'onSQLClick',
+    _.bindAll(this, ['onLoadDiagram', 'onSaveDiagram', 'onSQLClick',
       'onImageClick', 'onAddNewNode', 'onEditTable', 'onCloneNode', 'onDeleteNode', 'onNoteClick',
       'onNoteClose', 'onOneToManyClick', 'onManyToManyClick', 'onAutoDistribute', 'onDetailsToggle',
-      'onChangeColors', 'onHelpClick', 'onDropNode', 'onBeforeUnload', 'onNotationChange',
+      'onChangeColors', 'onDropNode', 'onNotationChange', 'closePanel'
     ]);
 
     this.diagram.zoomToFit = this.diagram.zoomToFit.bind(this.diagram);
     this.diagram.zoomIn = this.diagram.zoomIn.bind(this.diagram);
     this.diagram.zoomOut = this.diagram.zoomOut.bind(this.diagram);
+    this.forceClose = this.closePanel;
   }
 
   registerModelEvents() {
@@ -292,13 +298,13 @@ class ERDTool extends React.Component {
   async componentDidMount() {
     this.setLoading(gettext('Preparing...'));
     this.registerEvents();
-
-    const erdPref = this.props.pgWindow.pgAdmin.Browser.get_preferences_for_module('erd');
+    this.diagramContainerRef.current?.focus();
+    const erdPref = this.preferencesStore.getPreferencesForModule('erd');
     this.setState({
       preferences: erdPref,
-      is_new_tab: (this.props.pgWindow.pgAdmin.Browser.get_preferences_for_module('browser').new_browser_tab_open || '')
+      is_new_tab: (this.preferencesStore.getPreferencesForModule('browser').new_browser_tab_open || '')
         .includes('erd_tool'),
-      is_close_tab_warning: this.props.pgWindow.pgAdmin.Browser.get_preferences_for_module('browser').confirm_on_refresh_close,
+      is_close_tab_warning: this.preferencesStore.getPreferencesForModule('browser').confirm_on_refresh_close,
       cardinality_notation: erdPref.cardinality_notation,
     }, ()=>{
       this.registerKeyboardShortcuts();
@@ -310,35 +316,29 @@ class ERDTool extends React.Component {
       backgroundPosition: '0px 0px',
     });
 
-    this.props.pgWindow.pgAdmin.Browser.onPreferencesChange('erd', () => {
-      this.setState({
-        preferences: this.props.pgWindow.pgAdmin.Browser.get_preferences_for_module('erd'),
-      }, ()=>this.registerKeyboardShortcuts());
-    });
-
-    this.props.pgWindow.pgAdmin.Browser.onPreferencesChange('browser', () => {
-      this.setState({
-        is_close_tab_warning: this.props.pgWindow.pgAdmin.Browser.get_preferences_for_module('browser').confirm_on_refresh_close,
-      });
-    });
-
-    this.props.panel?.on(window.wcDocker?.EVENT.CLOSING, () => {
-      window.removeEventListener('beforeunload', this.onBeforeUnload);
-      if(this.state.dirty) {
-        this.closeOnSave = false;
+    this.props.panelDocker.eventBus.registerListener(LAYOUT_EVENTS.CLOSING, (id)=>{
+      if(this.props.panelId == id) {
         this.confirmBeforeClose();
-        return false;
       }
-      return true;
     });
 
     window.addEventListener('unload', ()=>{
-      this.apiObj.delete(url_for('erd.close', {
-        trans_id: this.props.params.trans_id,
-        sgid: this.props.params.sgid,
-        sid: this.props.params.sid,
-        did: this.props.params.did
-      }));
+      /* Using fetch with keepalive as the browser may
+      cancel the axios request on tab close. keepalive will
+      make sure the request is completed */
+      callFetch(
+        url_for('erd.close', {
+          trans_id: this.props.params.trans_id,
+          sgid: this.props.params.sgid,
+          sid: this.props.params.sid,
+          did: this.props.params.did
+        }), {
+          keepalive: true,
+          method: 'DELETE',
+        }
+      )
+        .then(()=>{/* Success */})
+        .catch((err)=>console.error(err));
     });
 
     let done = await this.initConnection();
@@ -350,50 +350,38 @@ class ERDTool extends React.Component {
     if(this.props.params.gen) {
       await this.loadTablesData();
     }
-
-    if(this.state.is_close_tab_warning) {
-      window.addEventListener('beforeunload', this.onBeforeUnload);
-    } else {
-      window.removeEventListener('beforeunload', this.onBeforeUnload);
-    }
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener('beforeunload', this.onBeforeUnload);
   }
 
   componentDidUpdate() {
     if(this.state.dirty) {
       this.setTitle(this.state.current_file, true);
     }
-    // Add beforeunload event if "Confirm on close or refresh" option is enabled in the preferences.
-    if(this.state.is_close_tab_warning){
-      window.addEventListener('beforeunload', this.onBeforeUnload);
-    } else {
-      window.removeEventListener('beforeunload', this.onBeforeUnload);
-    }
   }
 
   confirmBeforeClose() {
     let bodyObj = this;
-    this.context.showModal(gettext('Save changes?'), (closeModal)=>(
-      <ConfirmSaveContent
-        closeModal={closeModal}
-        text={gettext('The diagram has changed. Do you want to save changes?')}
-        onDontSave={()=>{
-          bodyObj.closePanel();
-        }}
-        onSave={()=>{
-          bodyObj.onSaveDiagram(false, true);
-        }}
-      />
-    ));
-    return false;
+    if(this.state.dirty) {
+      this.closeOnSave = false;
+      this.context.showModal(gettext('Save changes?'), (closeModal)=>(
+        <ConfirmSaveContent
+          closeModal={closeModal}
+          text={gettext('The diagram has changed. Do you want to save changes?')}
+          onDontSave={()=>{
+            this.forceClose();
+          }}
+          onSave={()=>{
+            bodyObj.onSaveDiagram(false, true);
+          }}
+        />
+      ));
+      return false;
+    } else {
+      this.forceClose();
+    }
   }
 
   closePanel() {
-    this.props.panel.off(window.wcDocker.EVENT.CLOSING);
-    this.props.pgWindow.pgAdmin.Browser.docker.removePanel(this.props.panel);
+    this.props.panelDocker.close(this.props.panelId, true);
   }
 
   getDialog(dialogName) {
@@ -460,21 +448,12 @@ class ERDTool extends React.Component {
     }
   }
 
-  onBeforeUnload(e) {
-    if(this.state.dirty) {
-      e.preventDefault();
-      e.returnValue = 'prevent';
-    } else {
-      delete e['returnValue'];
-    }
-  }
-
   onDropNode(e) {
     let nodeDropData = JSON.parse(e.dataTransfer.getData('text'));
     if(nodeDropData.objUrl && nodeDropData.nodeType === 'table') {
       let matchUrl = `/${this.props.params.sgid}/${this.props.params.sid}/${this.props.params.did}/`;
       if(nodeDropData.objUrl.indexOf(matchUrl) == -1) {
-        Notify.error(gettext('Cannot drop table from outside of the current database.'));
+        pgAdmin.Browser.notifier.error(gettext('Cannot drop table from outside of the current database.'));
       } else {
         let dataPromise = new Promise((resolve, reject)=>{
           this.apiObj.get(nodeDropData.objUrl)
@@ -483,7 +462,7 @@ class ERDTool extends React.Component {
             })
             .catch((err)=>{
               console.error(err);
-              reject();
+              reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
             });
         });
         const {x, y} = this.diagram.getEngine().getRelativeMousePoint(e);
@@ -520,7 +499,7 @@ class ERDTool extends React.Component {
   }
 
   onDeleteNode() {
-    Notify.confirm(
+    pgAdmin.Browser.notifier.confirmDelete(
       gettext('Delete ?'),
       gettext('You have selected %s tables and %s links.', this.diagram.getSelectedNodes().length, this.diagram.getSelectedLinks().length)
         + '<br />' + gettext('Are you sure you want to delete ?'),
@@ -531,14 +510,22 @@ class ERDTool extends React.Component {
         this.diagram.getSelectedLinks().forEach((link)=>{
           this.diagram.removeOneToManyLink(link);
         });
+        if (this.diagram.getNodesData().length === 0){
+          this.setState({dirty: false});
+          this.eventBus.fireEvent(ERD_EVENTS.DIRTY, false);
+        }
         this.diagram.repaint();
       },
-      () => {/*This is intentional (SonarQube)*/}
+      () => {/*This is intentional (SonarQube)*/},
+      gettext('Delete'),
+      gettext('Cancel'),
     );
   }
 
-  onAutoDistribute() {
-    this.diagram.dagreDistributeNodes();
+  async onAutoDistribute() {
+    this.setLoading('Auto distributing...');
+    await this.diagram.dagreDistributeNodes();
+    this.setLoading();
   }
 
   onChangeColors(fillColor, textColor) {
@@ -563,16 +550,6 @@ class ERDTool extends React.Component {
 
   onNotationChange(e) {
     this.setState({cardinality_notation: e.value});
-  }
-
-  onHelpClick() {
-    let url = url_for('help.static', {'filename': 'erd_tool.html'});
-    if (this.props.pgWindow) {
-      this.props.pgWindow.open(url, 'pgadmin_help');
-    }
-    else {
-      window.open(url, 'pgadmin_help');
-    }
   }
 
   onLoadDiagram() {
@@ -608,7 +585,7 @@ class ERDTool extends React.Component {
     this.closeOnSave = closeOnSave;
     if(this.state.current_file && !isSaveAs) {
       this.saveFile(this.state.current_file);
-    } else {
+    } else if (this.diagram.getNodesData().length > 0){ {
       let params = {
         'supported_types': ['*','pgerd'],
         'dialog_type': 'create_file',
@@ -617,10 +594,7 @@ class ERDTool extends React.Component {
       };
       this.props.pgAdmin.Tools.FileManager.show(params, this.saveFile.bind(this), null, this.context);
     }
-  }
-
-  onSaveAsDiagram() {
-    this.onSaveDiagram(true);
+    }
   }
 
   saveFile(fileName) {
@@ -629,7 +603,7 @@ class ERDTool extends React.Component {
       'file_name': decodeURI(fileName),
       'file_content': JSON.stringify(this.diagram.serialize(this.props.pgAdmin.Browser.utils.app_version_int)),
     }).then(()=>{
-      Notify.success(gettext('Project saved successfully.'));
+      this.props.pgAdmin.Browser.notifier.success(gettext('Project saved successfully.'));
       this.setState({
         current_file: fileName,
         dirty: false,
@@ -638,7 +612,7 @@ class ERDTool extends React.Component {
       this.setTitle(fileName);
       this.setLoading(null);
       if(this.closeOnSave) {
-        this.closePanel.call(this);
+        this.forceClose();
       }
     }).catch((err)=>{
       this.setLoading(null);
@@ -659,13 +633,13 @@ class ERDTool extends React.Component {
     if (this.state.is_new_tab) {
       window.document.title = title;
     } else {
-      setPanelTitle(this.props.panel, title);
+      setPanelTitle(this.props.panelDocker, this.props.panelId, title);
     }
   }
 
   onSQLClick(sqlWithDrop=false) {
     let scriptHeader = gettext('-- This script was generated by the ERD tool in pgAdmin 4.\n');
-    scriptHeader += gettext('-- Please log an issue at https://redmine.postgresql.org/projects/pgadmin4/issues/new if you find any bugs, including reproduction steps.\n');
+    scriptHeader += gettext('-- Please log an issue at https://github.com/pgadmin-org/pgadmin4/issues/new/choose if you find any bugs, including reproduction steps.\n');
 
     let url = url_for('erd.sql', {
       trans_id: this.props.params.trans_id,
@@ -712,66 +686,49 @@ class ERDTool extends React.Component {
      * the canvas back to original state.
      * Code referred from - zoomToFitNodes function.
      */
-    let nodesRect = this.diagram.getEngine().getBoundingNodesRect(this.diagram.getModel().getNodes(), 10);
+    this.diagramContainerRef.current?.classList.add('ERDTool-html2canvasReset');
+    const margin = 10;
+    let nodesRect = this.diagram.getEngine().getBoundingNodesRect(this.diagram.getModel().getNodes());
+    let linksRect = this.diagram.getBoundingLinksRect();
+
+    // Check what is to the most top left - links or nodes?
+    let topLeftXY = {
+      x: nodesRect.getTopLeft().x,
+      y: nodesRect.getTopLeft().y
+    };
+    if(topLeftXY.x > linksRect.TL.x) {
+      topLeftXY.x = linksRect.TL.x;
+    }
+    if(topLeftXY.y > linksRect.TL.y) {
+      topLeftXY.y = linksRect.TL.y;
+    }
+    topLeftXY.x -= margin;
+    topLeftXY.y -= margin;
+
     let canvasRect = this.canvasEle.getBoundingClientRect();
-    let canvasTopLeftPoint = {
+    let canvasTopLeftOnScreen = {
       x: canvasRect.left,
       y: canvasRect.top
     };
     let nodeLayerTopLeftPoint = {
-      x: canvasTopLeftPoint.x + this.diagram.getModel().getOffsetX(),
-      y: canvasTopLeftPoint.y + this.diagram.getModel().getOffsetY()
+      x: canvasTopLeftOnScreen.x + this.diagram.getModel().getOffsetX(),
+      y: canvasTopLeftOnScreen.y + this.diagram.getModel().getOffsetY()
     };
     let nodesRectTopLeftPoint = {
-      x: nodeLayerTopLeftPoint.x + nodesRect.getTopLeft().x,
-      y: nodeLayerTopLeftPoint.y + nodesRect.getTopLeft().y
+      x: nodeLayerTopLeftPoint.x + topLeftXY.x,
+      y: nodeLayerTopLeftPoint.y + topLeftXY.y
     };
+
     let prevTransform = this.canvasEle.querySelector('div').style.transform;
     this.canvasEle.childNodes.forEach((ele)=>{
       ele.style.transform = `translate(${nodeLayerTopLeftPoint.x - nodesRectTopLeftPoint.x}px, ${nodeLayerTopLeftPoint.y - nodesRectTopLeftPoint.y}px) scale(1.0)`;
     });
 
-    /* Change the styles for suiting html2canvas */
-    this.canvasEle.classList.add(this.props.classes.html2canvasReset);
-    this.canvasEle.style.width = this.canvasEle.scrollWidth + 'px';
-    this.canvasEle.style.height = this.canvasEle.scrollHeight + 'px';
-
-    /* html2canvas ignores CSS styles, set the CSS styles to inline */
-    const setSvgInlineStyles = (targetElem) => {
-      const transformProperties = [
-        'fill',
-        'color',
-        'font-size',
-        'stroke',
-        'font',
-        'display',
-      ];
-      let svgElems = Array.from(targetElem.getElementsByTagName('svg'));
-      for (let svgEle of svgElems) {
-        svgEle.setAttribute('width', svgEle.clientWidth);
-        svgEle.setAttribute('height', svgEle.clientHeight);
-        /* Wrap the SVG in a div tag so that transforms are consistent with html */
-        let wrap = document.createElement('div');
-        wrap.setAttribute('style', svgEle.getAttribute('style'));
-        svgEle.setAttribute('style', null);
-        svgEle.style.display = 'block';
-        svgEle.parentNode.insertBefore(wrap, svgEle);
-        wrap.appendChild(svgEle);
-        recurseElementChildren(svgEle);
-      }
-      function recurseElementChildren(node) {
-        if (!node.style)
-          return;
-
-        let styles = getComputedStyle(node);
-        for (let transformProperty of transformProperties) {
-          node.style[transformProperty] = styles[transformProperty];
-        }
-        for (let child of Array.from(node.childNodes)) {
-          recurseElementChildren(child);
-        }
-      }
-    };
+    // Capture the links beyond the nodes as well.
+    const linkOutsideWidth = linksRect.BR.x - nodesRect.getBottomRight().x;
+    const linkOutsideHeight = linksRect.BR.y - nodesRect.getBottomRight().y;
+    this.canvasEle.style.width = this.canvasEle.scrollWidth + (linkOutsideWidth > 0 ? linkOutsideWidth : 0) + margin + 'px';
+    this.canvasEle.style.height = this.canvasEle.scrollHeight + (linkOutsideHeight > 0 ? linkOutsideHeight : 0) + margin + 'px';
 
     setTimeout(()=>{
       let width = this.canvasEle.scrollWidth + 10;
@@ -786,46 +743,34 @@ class ERDTool extends React.Component {
         height = 32766;
         isCut = true;
       }
-      html2canvas(this.canvasEle, {
-        width: width,
-        height: height,
-        scrollX: 0,
-        scrollY: 0,
-        scale: 1,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: window.getComputedStyle(this.canvasEle).backgroundColor,
-        onclone: (clonedEle)=>{
-          setSvgInlineStyles(clonedEle.body.querySelector('div[data-test="diagram-container"]'));
-          return clonedEle;
-        },
-      }).then((canvas)=>{
-        let link = document.createElement('a');
-        link.setAttribute('href', canvas.toDataURL('image/png'));
-        link.setAttribute('download', this.getCurrentProjectName() + '.png');
-        link.click();
-        link.remove();
-      }).catch((err)=>{
-        console.error(err);
-        let msg = gettext('Unknown error. Check console logs');
-        if(err.name) {
-          msg = `${err.name}: ${err.message}`;
-        }
-        Notify.alert(gettext('Error'), msg);
-      }).then(()=>{
-        /* Revert back to the original CSS styles */
-        this.canvasEle.classList.remove(this.props.classes.html2canvasReset);
-        this.canvasEle.style.width = '';
-        this.canvasEle.style.height = '';
-        this.canvasEle.childNodes.forEach((ele)=>{
-          ele.style.transform = prevTransform;
+      toPng(this.canvasEle, {width, height})
+        .then((dataUrl)=>{
+          let link = document.createElement('a');
+          link.setAttribute('href', dataUrl);
+          link.setAttribute('download', this.getCurrentProjectName() + '.png');
+          link.click();
+          link.remove();
+        }).catch((err)=>{
+          console.error(err);
+          let msg = gettext('Unknown error. Check console logs');
+          if(err.name) {
+            msg = `${err.name}: ${err.message}`;
+          }
+          pgAdmin.Browser.notifier.alert(gettext('Error'), msg);
+        }).then(()=>{
+          /* Revert back to the original CSS styles */
+          this.diagramContainerRef.current.classList.remove('ERDTool-html2canvasReset');
+          this.canvasEle.style.width = '';
+          this.canvasEle.style.height = '';
+          this.canvasEle.childNodes.forEach((ele)=>{
+            ele.style.transform = prevTransform;
+          });
+          this.setLoading(null);
+          if(isCut) {
+            pgAdmin.Browser.notifier.alert(gettext('Maximum image size limit'),
+              gettext('The downloaded image has exceeded the maximum size of 32767 x 32767 pixels, and has been cropped to that size.'));
+          }
         });
-        this.setLoading(null);
-        if(isCut) {
-          Notify.alert(gettext('Maximum image size limit'),
-            gettext('The downloaded image has exceeded the maximum size of 32767 x 32767 pixels, and has been cropped to that size.'));
-        }
-      });
     }, 1000);
   }
 
@@ -942,36 +887,43 @@ class ERDTool extends React.Component {
     } catch (error) {
       this.handleAxiosCatch(error);
     }
-    this.setLoading(null);
+    setTimeout(()=>{
+      this.onAutoDistribute();
+    }, 250);
   }
 
   render() {
     this.erdDialogs.modal = this.context;
 
     return (
-      <Box ref={this.containerRef} height="100%">
+      <StyledBox ref={this.containerRef} height="100%" display="flex" flexDirection="column">
+        <BeforeUnload
+          onInit={({forceClose})=>{this.forceClose = forceClose;}}
+          enabled={this.state.is_close_tab_warning}
+          isNewTab={this.state.is_new_tab}
+          beforeClose={this.confirmBeforeClose}
+          closePanel={this.closePanel}
+        />
         <ConnectionBar status={this.state.conn_status} bgcolor={this.props.params.bgcolor}
-          fgcolor={this.props.params.fgcolor} title={this.props.params.title}/>
+          fgcolor={this.props.params.fgcolor} title={_.unescape(this.props.params.title)}/>
         <MainToolBar preferences={this.state.preferences} eventBus={this.eventBus}
           fillColor={this.state.fill_color} textColor={this.state.text_color}
           notation={this.state.cardinality_notation} onNotationChange={this.onNotationChange}
         />
         <FloatingNote open={this.state.note_open} onClose={this.onNoteClose}
           anchorEl={this.noteRefEle} noteNode={this.state.note_node} appendTo={this.diagramContainerRef.current} rows={8}/>
-        <div className={this.props.classes.diagramContainer} data-test="diagram-container" ref={this.diagramContainerRef} onDrop={this.onDropNode} onDragOver={e => {e.preventDefault();}}>
+        <div className='ERDTool-diagramContainer' data-test="diagram-container" ref={this.diagramContainerRef} onDrop={this.onDropNode} onDragOver={e => {e.preventDefault();}} tabIndex={0}>
           <Loader message={this.state.loading_msg} autoEllipsis={true}/>
           <ERDCanvasSettings.Provider value={{
             cardinality_notation: this.state.cardinality_notation
           }}>
-            <CanvasWidget className={this.props.classes.diagramCanvas} ref={(ele)=>{this.canvasEle = ele?.ref?.current;}} engine={this.diagram.getEngine()} />
+            {!this.props.isTest && <CanvasWidget className='ERDTool-diagramCanvas' ref={(ele)=>{this.canvasEle = ele?.ref?.current;}} engine={this.diagram.getEngine()} />}
           </ERDCanvasSettings.Provider>
         </div>
-      </Box>
+      </StyledBox>
     );
   }
 }
-
-export default withStyles(styles)(ERDTool);
 
 ERDTool.propTypes = {
   params:PropTypes.shape({
@@ -989,8 +941,9 @@ ERDTool.propTypes = {
   }),
   pgWindow: PropTypes.object.isRequired,
   pgAdmin: PropTypes.object.isRequired,
-  panel: PropTypes.object,
-  classes: PropTypes.object,
+  panelId: PropTypes.string,
+  panelDocker: PropTypes.object,
+  isTest: PropTypes.bool,
 };
 
 export const ERDCanvasSettings = React.createContext({});

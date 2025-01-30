@@ -2,15 +2,17 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
+import _ from 'lodash';
 import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import SecLabelSchema from '../../../../../static/js/sec_label.ui';
 import { isEmptyString } from 'sources/validators';
+import { getPrivilegesForTableAndLikeObjects } from '../../../tables/static/js/table.ui';
 
 
 export default class ViewSchema extends BaseUISchema {
@@ -75,6 +77,10 @@ export default class ViewSchema extends BaseUISchema {
       type: 'switch', min_version: '90200', group: gettext('Definition'),
       disabled: obj.notInSchema,
     },{
+      id: 'security_invoker', label: gettext('Security invoker?'),
+      type: 'switch', min_version: '150000', group: gettext('Definition'),
+      disabled: obj.notInSchema,
+    },{
       id: 'check_option', label: gettext('Check options'),
       type: 'select', group: gettext('Definition'),
       min_version: '90400', mode:['properties', 'create', 'edit'],
@@ -93,12 +99,12 @@ export default class ViewSchema extends BaseUISchema {
       id: 'definition', label: gettext('Code'), cell: 'text',
       type: 'sql', mode: ['create', 'edit'], group: gettext('Code'),
       isFullTab: true,
-      controlProps: { readOnly: obj.nodeInfo && 'catalog' in obj.nodeInfo ? true: false },
+      controlProps: { readOnly: obj.nodeInfo && 'catalog' in obj.nodeInfo },
     },
 
     {
       id: 'datacl', label: gettext('Privileges'), type: 'collection',
-      schema: this.getPrivilegeRoleSchema(['a', 'r', 'w', 'd', 'D', 'x', 't']),
+      schema: this.getPrivilegeRoleSchema(getPrivilegesForTableAndLikeObjects(this.getServerVersion())),
       uniqueCol : ['grantee'],
       editable: false,
       group: gettext('Security'), mode: ['edit', 'create'],
@@ -131,9 +137,10 @@ export default class ViewSchema extends BaseUISchema {
       }
 
       if (state.definition) {
-        if (!(obj.nodeInfo.server.server_type == 'pg' &&
+        if (!(
+          obj.nodeInfo.server.server_type == 'pg' &&
           // No need to check this when creating a view
-          obj.origData.oid !== undefined
+          !_.isUndefined(obj.sessData.oid)
         ) || (
           state.definition === obj.origData.definition
         )) {
@@ -141,13 +148,12 @@ export default class ViewSchema extends BaseUISchema {
           return false;
         }
 
-        let old_def = obj.origData.definition &&
-          obj.origData.definition.replace(
+        let old_def = obj.origData.definition?.replace(
             /\s/gi, ''
           ).split('FROM'),
           new_def = [];
 
-        if (state.definition !== undefined) {
+        if (!_.isUndefined(state.definition)) {
           new_def = state.definition.replace(
             /\s/gi, ''
           ).split('FROM');

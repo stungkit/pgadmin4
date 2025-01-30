@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -159,6 +159,21 @@ def get_parent(conn, tid, template_path=None):
     return schema, table
 
 
+@get_template_path
+def get_delete_sql(conn, fk_data, template_path=None):
+    """
+    This function will generate sql from model data.
+    :param conn: Connection Object
+    :param data: data
+    :param template_path: Template Path
+    :return:
+    """
+    return render_template("/".join(
+        [template_path,
+         'delete.sql']),
+        data=fk_data, conn=conn).strip('\n')
+
+
 def _get_sql_for_delete_fk_constraint(data, constraint, sql, template_path,
                                       conn):
     """
@@ -209,7 +224,7 @@ def get_foreign_key_sql(conn, tid, data, template_path=None):
                 c['schema'] = data['schema']
                 c['table'] = data['name']
 
-                modified_sql, name = get_sql(conn, c, tid, c['oid'])
+                modified_sql, _ = get_sql(conn, c, tid, c['oid'])
                 sql.append(modified_sql.strip("\n"))
 
         if 'added' in constraint:
@@ -217,7 +232,7 @@ def get_foreign_key_sql(conn, tid, data, template_path=None):
                 c['schema'] = data['schema']
                 c['table'] = data['name']
 
-                add_sql, name = get_sql(conn, c, tid)
+                add_sql, _ = get_sql(conn, c, tid)
                 sql.append(add_sql.strip("\n"))
 
     if len(sql) > 0:

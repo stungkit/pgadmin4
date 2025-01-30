@@ -2,21 +2,22 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import jasmineEnzyme from 'jasmine-enzyme';
-import React from 'react';
-import '../helper/enzyme.helper';
-import { createMount } from '@material-ui/core/test-utils';
+
+import React, { act} from 'react';
+
+import { render } from '@testing-library/react';
 import Theme from '../../../pgadmin/static/js/Theme';
 import FileManager, { FileManagerUtils, getComparator } from '../../../pgadmin/misc/file_manager/static/js/components/FileManager';
 import MockAdapter from 'axios-mock-adapter';
-import axios from 'axios/index';
+import axios from 'axios';
 import getApiInstance from '../../../pgadmin/static/js/api_instance';
 import * as pgUtils from '../../../pgadmin/static/js/utils';
+import userEvent from '@testing-library/user-event';
 
 const files = [
   {
@@ -42,7 +43,6 @@ const files = [
     }
   }
 ];
-
 const transId = 140391;
 const configData = {
   'transId': transId,
@@ -67,7 +67,8 @@ const configData = {
     'platform_type': 'darwin',
     'show_volumes': true,
     'homedir': '/home/',
-    'last_selected_format': '*'
+    'last_selected_format': '*',
+    'storage_folder': ''
   },
   'security': {
     'uploadPolicy': '',
@@ -85,18 +86,18 @@ const configData = {
   }
 };
 
+const sharedStorageConfig = ['Shared Storage'];
+const restrictedSharedStorage = [];
+
 const params={
   dialog_type: 'select_file',
 };
 
 describe('FileManger', ()=>{
-  let mount;
+
   let networkMock;
 
-  /* Use createMount so that material ui components gets the required context */
-  /* https://material-ui.com/guides/testing/#api */
   beforeAll(()=>{
-    mount = createMount();
     networkMock = new MockAdapter(axios);
     networkMock.onPost(`/file_manager/filemanager/${transId}/`).reply(200, {data: {result: files}});
     networkMock.onPost(`/file_manager/save_file_dialog_view/${transId}`).reply(200, {});
@@ -104,50 +105,78 @@ describe('FileManger', ()=>{
   });
 
   afterAll(() => {
-    mount.cleanUp();
     networkMock.restore();
   });
 
   beforeEach(()=>{
-    jasmineEnzyme();
+
   });
 
   describe('FileManger', ()=>{
-    let closeModal=jasmine.createSpy('closeModal'),
-      onOK=jasmine.createSpy('onOK'),
-      onCancel=jasmine.createSpy('onCancel'),
-      ctrlMount = (props)=>{
-        return mount(<Theme>
+    let closeModal=jest.fn(),
+      onOK=jest.fn(),
+      onCancel=jest.fn(),
+      ctrlMount = async (props)=>{
+        return await render(<Theme>
           <FileManager
             params={params}
             closeModal={closeModal}
             onOK={onOK}
             onCancel={onCancel}
+            sharedStorages={sharedStorageConfig}
+            restrictedSharedStorage={restrictedSharedStorage}
             {...props}
           />
         </Theme>);
       };
 
-    it('init', (done)=>{
+    it('init', async ()=>{
       networkMock.onPost('/file_manager/init').reply(200, {'data': configData});
-      let ctrl = ctrlMount({});
-      setTimeout(()=>{
-        ctrl.update();
-        ctrl.find('button[name="menu-options"]').simulate('click');
-        ctrl.find('Memo(MenuItem)[data-label="List View"]').simulate('click');
-        ctrl.update();
-        expect(ctrl.find('ListView').length).toBe(1);
-        expect(ctrl.find('GridView').length).toBe(0);
-        expect(ctrl.find('InputText[data-label="file-path"]').prop('value')).toBe('/home/current');
-        ctrl.find('button[name="menu-options"]').simulate('click');
-        ctrl.find('Memo(MenuItem)[data-label="Grid View"]').simulate('click');
-        setTimeout(()=>{
-          ctrl.update();
-          expect(ctrl.find('ListView').length).toBe(0);
-          expect(ctrl.find('GridView').length).toBe(1);
-          done();
-        }, 500);
-      }, 0);
+      networkMock.onPost(`/file_manager/save_last_dir/${transId}`).reply(200, {'success':1,'errormsg':'','info':'','result':null,'data':null});
+      let ctrl;
+      await act(async ()=>{
+        ctrl = await ctrlMount({});
+      });
+      const user = userEvent.setup();
+      await user.click(ctrl.container.querySelector('[name="menu-options"]'));
+      await user.click(ctrl.container.querySelector('[data-label="List View"]'));
+
+      expect(ctrl.container.querySelector('[id="list"]')).not.toBeNull();
+      expect(ctrl.container.querySelector('[id="grid"]')).toBeNull();
+      expect(ctrl.container.querySelector('[data-label="file-path"] input')).toHaveValue('/home/current');
+
+      await user.click(ctrl.container.querySelector('button[name="menu-options"]'));
+      await user.click(ctrl.container.querySelector('[data-label="Grid View"]'));
+      expect(ctrl.container.querySelector('[id="list"]')).toBeNull();
+      expect(ctrl.container.querySelector('[id="grid"]')).not.toBeNull();
+    });
+
+    it('Change Shared Storage', async ()=>{
+      networkMock.onPost('/file_manager/init').reply(200, {'data': configData});
+      networkMock.onPost(`/file_manager/save_last_dir/${transId}`).reply(200, {'success':1,'errormsg':'','info':'','result':null,'data':null});
+      let ctrl;
+      const user = userEvent.setup();
+      await act(async ()=>{
+        ctrl = await ctrlMount({});
+      });
+
+      await user.click(ctrl.container.querySelector('[name="menu-shared-storage"]'));
+      await user.click(ctrl.container.querySelector('[data-label="Shared Storage"]'));
+      expect(ctrl.container.querySelector('button[aria-label="Shared Storage"]')).not.toBeNull();
+    });
+
+    it('Change Storage to My Storage', async ()=>{
+      networkMock.onPost('/file_manager/init').reply(200, {'data': configData});
+      networkMock.onPost(`/file_manager/save_last_dir/${transId}`).reply(200, {'success':1,'errormsg':'','info':'','result':null,'data':null});
+      let ctrl;
+      const user = userEvent.setup();
+      await act(async ()=>{
+        ctrl = await ctrlMount({});
+      });
+
+      await user.click(ctrl.container.querySelector('[name="menu-shared-storage"]'));
+      await user.click(ctrl.container.querySelector('[data-label="My Storage"]'));
+      expect(ctrl.container.querySelector('button[aria-label="My Storage"]')).not.toBeNull();
     });
 
     describe('getComparator', ()=>{
@@ -257,7 +286,7 @@ describe('FileManagerUtils', ()=>{
   });
 
   it('addFolder', async ()=>{
-    let res = await fmObj.addFolder({Filename: 'newfolder'});
+    let res = await fmObj.addFolder({Filename: 'newfolder', 'storage_folder': 'my_storage'});
     expect(res).toEqual({
       Filename: 'newfolder',
       Path: '/home/newfolder',
@@ -279,10 +308,10 @@ describe('FileManagerUtils', ()=>{
 
   it('deleteItem', async ()=>{
     let row = {Filename: 'newfolder', Path: '/home/newfolder'};
-    let path = await fmObj.deleteItem(row);
+    let path = await fmObj.deleteItem(row, '');
     expect(path).toBe('/home/newfolder');
 
-    path = await fmObj.deleteItem(row, 'file1');
+    path = await fmObj.deleteItem(row, '', 'file1');
     expect(path).toBe('/home/newfolder/file1');
   });
 
@@ -316,8 +345,8 @@ describe('FileManagerUtils', ()=>{
   });
 
   it('downloadFile', async ()=>{
-    spyOn(pgUtils, 'downloadBlob');
-    let row = {Filename: 'newfile1', Path: '/home/newfile1'};
+    jest.spyOn(pgUtils, 'downloadBlob').mockImplementation(() => {});
+    let row = {Filename: 'newfile1', Path: '/home/newfile1', 'storage_folder': 'my_storage'};
     await fmObj.downloadFile(row);
     expect(pgUtils.downloadBlob).toHaveBeenCalledWith('blobdata', 'newfile1');
   });

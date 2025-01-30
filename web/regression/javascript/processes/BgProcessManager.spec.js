@@ -1,19 +1,24 @@
-import MockAdapter from 'axios-mock-adapter';
-import axios from 'axios/index';
-import BgProcessManager, { BgProcessManagerProcessState } from '../../../pgadmin/misc/bgprocess/static/js/BgProcessManager';
-import * as BgProcessNotify from '../../../pgadmin/misc/bgprocess/static/js/BgProcessNotify';
+/////////////////////////////////////////////////////////////
+//
+// pgAdmin 4 - PostgreSQL Tools
+//
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
+// This software is released under the PostgreSQL Licence
+//
+//////////////////////////////////////////////////////////////
 
+import MockAdapter from 'axios-mock-adapter';
+import axios from 'axios';
+import pgAdmin from 'sources/pgadmin';
+import BgProcessManager from '../../../pgadmin/misc/bgprocess/static/js/BgProcessManager';
+import { BgProcessManagerProcessState } from '../../../pgadmin/misc/bgprocess/static/js/BgProcessConstants';
+import * as BgProcessNotify from '../../../pgadmin/misc/bgprocess/static/js/BgProcessNotify';
 
 
 describe('BgProcessManager', ()=>{
   let obj;
   let networkMock;
-  const pgBrowser = jasmine.createSpyObj('pgBrowser', [], {
-    docker: {
-      findPanels: ()=>{/* dummy */},
-      addPanel: ()=>{/* dummy */}
-    }
-  });
+  const pgBrowser = pgAdmin.Browser;
 
   beforeAll(()=>{
     networkMock = new MockAdapter(axios);
@@ -31,7 +36,7 @@ describe('BgProcessManager', ()=>{
   });
 
   it('init', ()=>{
-    spyOn(obj, 'startWorker');
+    jest.spyOn(obj, 'startWorker').mockImplementation(() => {});
     obj.init();
     expect(obj.startWorker).toHaveBeenCalled();
   });
@@ -42,7 +47,7 @@ describe('BgProcessManager', ()=>{
   });
 
   it('startWorker', (done)=>{
-    spyOn(obj, 'syncProcesses');
+    jest.spyOn(obj, 'syncProcesses').mockImplementation(() => {});
     obj._pendingJobId = ['123123123123'];
     obj.startWorker();
 
@@ -53,10 +58,10 @@ describe('BgProcessManager', ()=>{
   });
 
   it('startProcess', ()=>{
-    let nSpy = spyOn(BgProcessNotify, 'processStarted');
+    let nSpy = jest.spyOn(BgProcessNotify, 'processStarted');
     obj.startProcess('12345', 'process desc');
     expect(obj._pendingJobId).toEqual(['12345']);
-    expect(nSpy.calls.mostRecent().args[0]).toBe('process desc');
+    expect(nSpy.mock.calls[nSpy.mock.calls.length - 1][0]).toBe('process desc');
   });
 
 
@@ -91,30 +96,29 @@ describe('BgProcessManager', ()=>{
     obj._procList = [{
       id: '12345',
       process_state: BgProcessManagerProcessState.PROCESS_FINISHED,
+      desc: 'Some desc',
     }];
     obj._pendingJobId = ['12345'];
-    let nSpy = spyOn(BgProcessNotify, 'processCompleted');
+    let nSpy = jest.spyOn(BgProcessNotify, 'processCompleted');
     obj.checkPending();
     expect(nSpy).toHaveBeenCalled();
   });
 
 
   it('openProcessesPanel', ()=>{
-    const panel = {
-      focus: ()=>{/* dummy */}
-    };
-    spyOn(pgBrowser.docker, 'addPanel').and.returnValue(panel);
+    const panel = {};
+    jest.spyOn(pgBrowser.docker.default_workspace, 'openTab').mockReturnValue(panel);
 
     /* panel open */
-    spyOn(pgBrowser.docker, 'findPanels').and.returnValue([panel]);
+    jest.spyOn(pgBrowser.docker.default_workspace, 'find').mockReturnValue(panel);
+    jest.spyOn(pgBrowser.docker.default_workspace, 'focus');
     obj.openProcessesPanel();
-    expect(pgBrowser.docker.addPanel).not.toHaveBeenCalled();
+    expect(pgBrowser.docker.default_workspace.focus).toHaveBeenCalled();
+    expect(pgBrowser.docker.default_workspace.openTab).not.toHaveBeenCalled();
 
     /* panel closed */
-    spyOn(pgBrowser.docker, 'findPanels')
-      .withArgs('processes').and.returnValue([])
-      .withArgs('properties').and.returnValue([panel]);
+    jest.spyOn(pgBrowser.docker.default_workspace, 'find').mockReturnValue(null);
     obj.openProcessesPanel();
-    expect(pgBrowser.docker.addPanel).toHaveBeenCalled();
+    expect(pgBrowser.docker.default_workspace.openTab).toHaveBeenCalled();
   });
 });

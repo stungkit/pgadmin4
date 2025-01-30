@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -15,7 +15,8 @@ import copy
 
 from flask import Response, session, url_for, request
 from flask import render_template, current_app as app
-from flask_security import current_user, login_required
+from flask_security import current_user
+from pgadmin.user_login_check import pga_login_required
 from flask_babel import gettext
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import make_json_response, bad_request, \
@@ -34,6 +35,7 @@ from pgadmin import socketio
 MODULE_NAME = 'schema_diff'
 COMPARE_MSG = gettext("Comparing objects...")
 SOCKETIO_NAMESPACE = '/{0}'.format(MODULE_NAME)
+SCH_OBJ_STR = 'Schema Objects'
 
 
 class SchemaDiffModule(PgAdminModule):
@@ -47,9 +49,6 @@ class SchemaDiffModule(PgAdminModule):
 
     def get_own_menuitems(self):
         return {}
-
-    def get_panels(self):
-        return []
 
     def get_exposed_url_endpoints(self):
         """
@@ -73,7 +72,7 @@ class SchemaDiffModule(PgAdminModule):
 
         self.preference.register(
             'display', 'ignore_whitespaces',
-            gettext("Ignore whitespace"), 'boolean', False,
+            gettext("Ignore Whitespace"), 'boolean', False,
             category_label=PREF_LABEL_DISPLAY,
             help_str=gettext('Set ignore whitespace on or off by default in '
                              'the drop-down menu near the Compare button in '
@@ -82,11 +81,29 @@ class SchemaDiffModule(PgAdminModule):
 
         self.preference.register(
             'display', 'ignore_owner',
-            gettext("Ignore owner"), 'boolean', False,
+            gettext("Ignore Owner"), 'boolean', False,
             category_label=PREF_LABEL_DISPLAY,
             help_str=gettext('Set ignore owner on or off by default in the '
                              'drop-down menu near the Compare button in the '
                              'Schema Diff tab.')
+        )
+
+        self.preference.register(
+            'display', 'ignore_tablespace',
+            gettext("Ignore Tablespace"), 'boolean', False,
+            category_label=PREF_LABEL_DISPLAY,
+            help_str=gettext('Set ignore tablespace on or off by default in '
+                             'the drop-down menu near the Compare button in '
+                             'the Schema Diff tab.')
+        )
+
+        self.preference.register(
+            'display', 'ignore_grants',
+            gettext("Ignore Grants/Revoke"), 'boolean', False,
+            category_label=PREF_LABEL_DISPLAY,
+            help_str=gettext('Set ignore grants/revoke on or off by default '
+                             'in the drop-down menu near the Compare button '
+                             'in the Schema Diff tab.')
         )
 
 
@@ -94,7 +111,7 @@ blueprint = SchemaDiffModule(MODULE_NAME, __name__, static_url_path='/static')
 
 
 @blueprint.route("/")
-@login_required
+@pga_login_required
 def index():
     return bad_request(
         errormsg=gettext('This URL cannot be requested directly.')
@@ -127,8 +144,6 @@ def panel(trans_id, editor_title):
         "schema_diff/index.html",
         _=gettext,
         trans_id=trans_id,
-        requirejs=True,
-        basejs=True,
         editor_title=editor_title,
     )
 
@@ -176,21 +191,17 @@ def update_session_diff_transaction(trans_id, session_obj, diff_model_obj):
 
 
 @blueprint.route(
-    '/initialize',
+    '/initialize/<int:trans_id>',
     methods=["GET"],
     endpoint="initialize"
 )
-@login_required
-def initialize():
+@pga_login_required
+def initialize(trans_id):
     """
     This function will initialize the schema diff and return the list
     of all the server's.
     """
-    trans_id = None
     try:
-        # Create a unique id for the transaction
-        trans_id = str(secrets.choice(range(1, 9999999)))
-
         if 'schemaDiff' not in session:
             schema_diff_data = dict()
         else:
@@ -198,7 +209,7 @@ def initialize():
 
         # Use pickle to store the Schema Diff Model which will be used
         # later by the diff module.
-        schema_diff_data[trans_id] = {
+        schema_diff_data[str(trans_id)] = {
             'diff_model_obj': pickle.dumps(SchemaDiffModel(), -1)
         }
 
@@ -208,8 +219,7 @@ def initialize():
     except Exception as e:
         app.logger.exception(e)
 
-    return make_json_response(
-        data={'schemaDiffTransId': trans_id})
+    return make_json_response()
 
 
 @blueprint.route('/close/<int:trans_id>',
@@ -248,7 +258,7 @@ def close(trans_id):
     methods=["GET"],
     endpoint="servers"
 )
-@login_required
+@pga_login_required
 def servers():
     """
     This function will return the list of servers for the specified
@@ -264,7 +274,8 @@ def servers():
             server_icon_and_background
 
         for server in Server.query.filter(
-                or_(Server.user_id == current_user.id, Server.shared)):
+                or_(Server.user_id == current_user.id, Server.shared),
+                Server.is_adhoc == 0):
 
             shared_server = SharedServer.query.filter_by(
                 name=server.name, user_id=current_user.id,
@@ -304,7 +315,7 @@ def servers():
     methods=["GET"],
     endpoint="get_server"
 )
-@login_required
+@pga_login_required
 def get_server(sid, did):
     """
     This function will return the server details for the specified
@@ -341,7 +352,7 @@ def get_server(sid, did):
     methods=["POST"],
     endpoint="connect_server"
 )
-@login_required
+@pga_login_required
 def connect_server(sid):
     # Check if server is already connected then no need to reconnect again.
     driver = get_driver(PG_DEFAULT_DRIVER)
@@ -364,7 +375,7 @@ def connect_server(sid):
     methods=["POST"],
     endpoint="connect_database"
 )
-@login_required
+@pga_login_required
 def connect_database(sid, did):
     server = Server.query.filter_by(id=sid).first()
     view = SchemaDiffRegistry.get_node_view('database')
@@ -376,7 +387,7 @@ def connect_database(sid, did):
     methods=["GET"],
     endpoint="databases"
 )
-@login_required
+@pga_login_required
 def databases(sid):
     """
     This function will return the list of databases for the specified
@@ -413,7 +424,7 @@ def databases(sid):
     methods=["GET"],
     endpoint="schemas"
 )
-@login_required
+@pga_login_required
 def schemas(sid, did):
     """
     This function will return the list of schemas for the specified
@@ -443,11 +454,14 @@ def compare_database(params):
     This function will compare the two databases.
     """
     # Check the pre validation before compare
+    SchemaDiffRegistry.set_schema_diff_compare_mode('Database Objects')
     status, error_msg, diff_model_obj, session_obj = \
         compare_pre_validation(params['trans_id'], params['source_sid'],
                                params['target_sid'])
     if not status:
-        socketio.emit('compare_database_failed', error_msg,
+        socketio.emit('compare_database_failed',
+                      error_msg.json if isinstance(
+                          error_msg, Response) else error_msg,
                       namespace=SOCKETIO_NAMESPACE, to=request.sid)
         return error_msg
 
@@ -462,6 +476,8 @@ def compare_database(params):
     try:
         ignore_owner = bool(params['ignore_owner'])
         ignore_whitespaces = bool(params['ignore_whitespaces'])
+        ignore_tablespace = bool(params['ignore_tablespace'])
+        ignore_grants = bool(params['ignore_grants'])
 
         # Fetch all the schemas of source and target database
         # Compare them and get the status.
@@ -476,7 +492,7 @@ def compare_database(params):
         node_percent = 0
         if total_schema > 0:
             node_percent = round(100 / (total_schema * len(
-                SchemaDiffRegistry.get_registered_nodes())))
+                SchemaDiffRegistry.get_registered_nodes())), 2)
         total_percent = 0
 
         # Compare Database objects
@@ -489,7 +505,9 @@ def compare_database(params):
                 target_did=params['target_did'],
                 diff_model_obj=diff_model_obj, total_percent=total_percent,
                 node_percent=node_percent, ignore_owner=ignore_owner,
-                ignore_whitespaces=ignore_whitespaces)
+                ignore_whitespaces=ignore_whitespaces,
+                ignore_tablespace=ignore_tablespace,
+                ignore_grants=ignore_grants)
         comparison_result = \
             comparison_result + comparison_schema_result
 
@@ -511,7 +529,9 @@ def compare_database(params):
                         node_percent=node_percent,
                         is_schema_source_only=True,
                         ignore_owner=ignore_owner,
-                        ignore_whitespaces=ignore_whitespaces)
+                        ignore_whitespaces=ignore_whitespaces,
+                        ignore_tablespace=ignore_tablespace,
+                        ignore_grants=ignore_grants)
 
                 comparison_result = \
                     comparison_result + comparison_schema_result
@@ -532,7 +552,9 @@ def compare_database(params):
                         total_percent=total_percent,
                         node_percent=node_percent,
                         ignore_owner=ignore_owner,
-                        ignore_whitespaces=ignore_whitespaces)
+                        ignore_whitespaces=ignore_whitespaces,
+                        ignore_tablespace=ignore_tablespace,
+                        ignore_grants=ignore_grants)
 
                 comparison_result = \
                     comparison_result + comparison_schema_result
@@ -555,13 +577,13 @@ def compare_database(params):
                         total_percent=total_percent,
                         node_percent=node_percent,
                         ignore_owner=ignore_owner,
-                        ignore_whitespaces=ignore_whitespaces)
+                        ignore_whitespaces=ignore_whitespaces,
+                        ignore_tablespace=ignore_tablespace,
+                        ignore_grants=ignore_grants)
 
                 comparison_result = \
                     comparison_result + comparison_schema_result
 
-        msg = gettext("Successfully compare the specified databases.")
-        total_percent = 100
         # Update the message and total percentage done in session object
         update_session_diff_transaction(params['trans_id'], session_obj,
                                         diff_model_obj)
@@ -582,11 +604,14 @@ def compare_schema(params):
     This function will compare the two schema.
     """
     # Check the pre validation before compare
+    SchemaDiffRegistry.set_schema_diff_compare_mode(SCH_OBJ_STR)
     status, error_msg, diff_model_obj, session_obj = \
         compare_pre_validation(params['trans_id'], params['source_sid'],
                                params['target_sid'])
     if not status:
-        socketio.emit('compare_schema_failed', error_msg,
+        socketio.emit('compare_schema_failed',
+                      error_msg.json if isinstance(
+                          error_msg, Response) else error_msg,
                       namespace=SOCKETIO_NAMESPACE, to=request.sid)
         return error_msg
 
@@ -597,8 +622,10 @@ def compare_schema(params):
     try:
         ignore_owner = bool(params['ignore_owner'])
         ignore_whitespaces = bool(params['ignore_whitespaces'])
+        ignore_tablespace = bool(params['ignore_tablespace'])
+        ignore_grants = bool(params['ignore_grants'])
         all_registered_nodes = SchemaDiffRegistry.get_registered_nodes()
-        node_percent = round(100 / len(all_registered_nodes))
+        node_percent = round(100 / len(all_registered_nodes), 2)
         total_percent = 0
 
         comparison_schema_result, total_percent = \
@@ -610,18 +637,18 @@ def compare_schema(params):
                 target_sid=params['target_sid'],
                 target_did=params['target_did'],
                 target_scid=params['target_scid'],
-                schema_name=gettext('Schema Objects'),
+                schema_name=gettext(SCH_OBJ_STR),
                 diff_model_obj=diff_model_obj,
                 total_percent=total_percent,
                 node_percent=node_percent,
                 ignore_owner=ignore_owner,
-                ignore_whitespaces=ignore_whitespaces)
+                ignore_whitespaces=ignore_whitespaces,
+                ignore_tablespace=ignore_tablespace,
+                ignore_grants=ignore_grants)
 
         comparison_result = \
             comparison_result + comparison_schema_result
 
-        msg = gettext("Successfully compare the specified schemas.")
-        total_percent = 100
         # Update the message and total percentage done in session object
         update_session_diff_transaction(params['trans_id'], session_obj,
                                         diff_model_obj)
@@ -641,7 +668,7 @@ def compare_schema(params):
     methods=["GET"],
     endpoint="ddl_compare"
 )
-@login_required
+@pga_login_required
 def ddl_compare(trans_id, source_sid, source_did, source_scid,
                 target_sid, target_did, target_scid, source_oid,
                 target_oid, node_type, comp_status):
@@ -650,7 +677,7 @@ def ddl_compare(trans_id, source_sid, source_did, source_scid,
     DDL comparison.
     """
     # Check the transaction and connection status
-    status, error_msg, diff_model_obj, session_obj = \
+    _, error_msg, _, _ = \
         check_transaction_status(trans_id)
 
     if error_msg == ERROR_MSG_TRANS_ID_NOT_FOUND:
@@ -751,6 +778,8 @@ def compare_database_objects(**kwargs):
     node_percent = kwargs.get('node_percent')
     ignore_owner = kwargs.get('ignore_owner')
     ignore_whitespaces = kwargs.get('ignore_whitespaces')
+    ignore_tablespace = kwargs.get('ignore_tablespace')
+    ignore_grants = kwargs.get('ignore_grants')
     comparison_result = []
 
     all_registered_nodes = SchemaDiffRegistry.get_registered_nodes(None,
@@ -774,7 +803,9 @@ def compare_database_objects(**kwargs):
                                target_did=target_did,
                                group_name=gettext('Database Objects'),
                                ignore_owner=ignore_owner,
-                               ignore_whitespaces=ignore_whitespaces)
+                               ignore_whitespaces=ignore_whitespaces,
+                               ignore_tablespace=ignore_tablespace,
+                               ignore_grants=ignore_grants)
 
             if res is not None:
                 comparison_result = comparison_result + res
@@ -805,6 +836,8 @@ def compare_schema_objects(**kwargs):
     is_schema_source_only = kwargs.get('is_schema_source_only', False)
     ignore_owner = kwargs.get('ignore_owner')
     ignore_whitespaces = kwargs.get('ignore_whitespaces')
+    ignore_tablespace = kwargs.get('ignore_tablespace')
+    ignore_grants = kwargs.get('ignore_grants')
 
     source_schema_name = None
     if is_schema_source_only:
@@ -817,7 +850,7 @@ def compare_schema_objects(**kwargs):
     for node_name, node_view in all_registered_nodes.items():
         view = SchemaDiffRegistry.get_node_view(node_name)
         if hasattr(view, 'compare'):
-            if schema_name == 'Schema Objects':
+            if schema_name == SCH_OBJ_STR:
                 msg = gettext('Comparing {0} '). \
                     format(gettext(view.blueprint.collection_label))
             else:
@@ -841,12 +874,14 @@ def compare_schema_objects(**kwargs):
                                group_name=gettext(schema_name),
                                source_schema_name=source_schema_name,
                                ignore_owner=ignore_owner,
-                               ignore_whitespaces=ignore_whitespaces)
+                               ignore_whitespaces=ignore_whitespaces,
+                               ignore_tablespace=ignore_tablespace,
+                               ignore_grants=ignore_grants)
 
             if res is not None:
                 comparison_result = comparison_result + res
         total_percent = total_percent + node_percent
-        # if total_percent is more then 100 then set it to less then 100
+        # if total_percent is more than 100 then set it to less than 100
         if total_percent >= 100:
             total_percent = 96
 

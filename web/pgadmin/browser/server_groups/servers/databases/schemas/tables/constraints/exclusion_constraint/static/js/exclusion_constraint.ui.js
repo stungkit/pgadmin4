@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -10,11 +10,11 @@ import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import _ from 'lodash';
 import { isEmptyString } from 'sources/validators';
-import { SCHEMA_STATE_ACTIONS } from '../../../../../../../../../../static/js/SchemaView';
-import DataGridViewWithHeaderForm from '../../../../../../../../../../static/js/helpers/DataGridViewWithHeaderForm';
+import { SCHEMA_STATE_ACTIONS } from 'sources/SchemaView';
+import { DataGridFormHeader } from 'sources/SchemaView/DataGridView';
 import { getNodeAjaxOptions, getNodeListByName } from '../../../../../../../../../static/js/node_ajax';
 import TableSchema from '../../../../static/js/table.ui';
-import Notify from '../../../../../../../../../../static/js/helpers/Notifier';
+import pgAdmin from 'sources/pgadmin';
 
 function getData(data) {
   let res = [];
@@ -49,6 +49,7 @@ class ExclusionColHeaderSchema extends BaseUISchema {
       is_exp: undefined,
       column: undefined,
       expression: undefined,
+      columns_updated_at: 0,
     });
 
     this.columns = columns;
@@ -56,6 +57,8 @@ class ExclusionColHeaderSchema extends BaseUISchema {
 
   changeColumnOptions(columns) {
     this.columns = columns;
+    if (this.state)
+      this.state.data = {...this.state.data, columns_updated_at: Date.now()};
   }
 
   addDisabled(state) {
@@ -64,11 +67,11 @@ class ExclusionColHeaderSchema extends BaseUISchema {
 
   /* Data to ExclusionColumnSchema will added using the header form */
   getNewData(data) {
-    let colType = data.is_exp ? null : _.find(this.columnOptions, (col)=>col.value==data.column)?.datatype;
+    const column =  _.find(this.columnOptions, (col)=>col.value==data.column);
     return this.exColumnSchema.getNewData({
       is_exp: data.is_exp,
       column: data.is_exp ? data.expression : data.column,
-      col_type: colType,
+      col_type: data.is_exp ? null : column?.datatype,
     });
   }
 
@@ -76,10 +79,14 @@ class ExclusionColHeaderSchema extends BaseUISchema {
     return [{
       id: 'is_exp', label: gettext('Is expression'), type:'switch', editable: false,
     },{
-      id: 'column', label: gettext('Column'), type: 'select', editable: false,
-      options: this.columns, deps: ['is_exp'],
-      optionsReloadBasis: this.columns?.map ? _.join(this.columns.map((c)=>c.label), ',') : null,
-      optionsLoaded: (res)=>this.columnOptions=res,
+      id: 'column', label: gettext('Column'), editable: false,
+      options: this.columns, deps: ['is_exp', 'columns_updated_at'],
+      type: () => ({
+        type: 'select',
+        optionsReloadBasis: this.columns?.map ?
+          _.join(this.columns.map((c)=>c.label), ',') : null,
+        optionsLoaded: (res)=>this.columnOptions=res,
+      }),
       disabled: (state)=>state.is_exp,
     },{
       id: 'expression', label: gettext('Expression'), editable: false, deps: ['is_exp'],
@@ -136,7 +143,7 @@ class ExclusionColumnSchema extends BaseUISchema {
     let obj = this;
     return [{
       id: 'is_exp', label: '', type:'', cell: '', editable: false, width: 20,
-      disableResizing: true,
+      enableResizing: false,
       controlProps: {
         formatter: {
           fromRaw: function (rawValue) {
@@ -161,7 +168,7 @@ class ExclusionColumnSchema extends BaseUISchema {
         {label: 'ASC', value: true},
         {label: 'DESC', value: false},
       ],
-      editable: obj.isEditable, width: 110, disableResizing: true,
+      editable: obj.isEditable, width: 110, enableResizing: false,
       controlProps: {
         allowClear: false,
       },
@@ -171,7 +178,7 @@ class ExclusionColumnSchema extends BaseUISchema {
         {label: 'FIRST', value: true},
         {label: 'LAST', value: false},
       ], controlProps: {allowClear: false},
-      editable: obj.isEditable, width: 110, disableResizing: true,
+      editable: obj.isEditable, width: 110, enableResizing: false,
     },{
       id: 'operator', label: gettext('Operator'), type: 'select',
       width: 95,
@@ -205,6 +212,7 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
       condeferred: undefined,
       columns: [],
       include: [],
+      columns_updated_at: 0,
     });
 
     this.nodeInfo = nodeInfo;
@@ -233,6 +241,8 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
   changeColumnOptions(columns) {
     this.exHeaderSchema.changeColumnOptions(columns);
     this.fieldOptions.columns = columns;
+    if (this.state)
+      this.state.data = {...this.state.data, columns_updated_at: Date.now()};
   }
 
   isReadonly(state) {
@@ -275,7 +285,7 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
       options: this.fieldOptions.amname,
       deferredDepChange: (state, source, topState, actionObj)=>{
         return new Promise((resolve)=>{
-          Notify.confirm(
+          pgAdmin.Browser.notifier.confirm(
             gettext('Change access method?'),
             gettext('Changing access method will clear columns collection'),
             function () {
@@ -342,10 +352,12 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
       group: gettext('Columns'), type: 'collection',
       mode: ['create', 'edit', 'properties'],
       editable: false, schema: this.exColumnSchema,
-      headerSchema: this.exHeaderSchema, headerVisible: (state)=>obj.isNew(state),
-      CustomControl: DataGridViewWithHeaderForm,
+      headerSchema: this.exHeaderSchema,
+      headerFormVisible: (state)=>obj.isNew(state),
+      GridHeader: DataGridFormHeader,
       uniqueCol: ['column'],
-      canAdd: false, canDelete: function(state) {
+      canAdd: (state)=>obj.isNew(state),
+      canDelete: function(state) {
         // We can't update columns of existing
         return obj.isNew(state);
       },
@@ -370,20 +382,21 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
       depChange: (state, source, topState, actionObj)=>{
         /* If in table, sync up value with columns in table */
         if(obj.inTable && !state) {
-          /* the FK is removed by some other dep, this can be a no-op */
+          /* the constraint is removed by some other dep, this can be a no-op */
           return;
         }
+
         let currColumns = state.columns || [];
         if(obj.inTable && source[0] == 'columns') {
           if(actionObj.type == SCHEMA_STATE_ACTIONS.DELETE_ROW) {
-            let oldColumn = _.get(actionObj.oldState, actionObj.path.concat(actionObj.value));
-            currColumns = _.filter(currColumns, (cc)=>cc.local_column != oldColumn.name);
+            let column = _.get(actionObj.oldState, actionObj.path.concat(actionObj.value));
+            currColumns = _.filter(currColumns, (cc)=>cc.column != column.name);
           } else if(actionObj.type == SCHEMA_STATE_ACTIONS.SET_VALUE) {
-            let tabColPath = _.slice(actionObj.path, 0, -1);
-            let oldColName = _.get(actionObj.oldState, tabColPath).name;
-            let idx = _.findIndex(currColumns, (cc)=>cc.local_column == oldColName);
+            let tabColPath =_.slice(actionObj.path, 0, -1);
+            let column = _.get(actionObj.oldState, tabColPath);
+            let idx = _.findIndex(currColumns, (cc)=>cc.column == column.name);
             if(idx > -1) {
-              currColumns[idx].local_column = _.get(topState, tabColPath).name;
+              currColumns[idx].column = _.get(topState, tabColPath).name;
             }
           }
         }
@@ -403,7 +416,7 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
       editable: false,
       canDelete: true, canAdd: true,
       mode: ['properties', 'create', 'edit'], min_version: 110000,
-      deps: ['index'],
+      deps: ['index', 'columns_updated_at'],
       readonly: function() {
         if(!obj.isNew()) {
           return true;
@@ -420,6 +433,9 @@ export default class ExclusionConstraintSchema extends BaseUISchema {
           return {include: []};
         }
       }
+    }, {
+      // Don't include this in the data.
+      id: 'columns_updated_at', exclude: true, type: 'text', visible: false,
     }];
   }
 

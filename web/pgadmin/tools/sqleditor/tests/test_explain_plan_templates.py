@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -58,6 +58,28 @@ class TestExplainPlanTemplates(BaseTestGenerator):
                                       '(FORMAT JSON, TIMING false, '
                                       'BUFFERS false, SUMMARY false, '
                                       'SETTINGS true) '
+                                      'SELECT * FROM places'
+            )
+        ),
+        (
+            'When rendering Postgres 13 template, '
+            'when wal is present,'
+            'it returns the explain plan with wal',
+            dict(
+                template_path='sqleditor/sql/13_plus/explain_plan.sql',
+                input_parameters=dict(
+                    sql='SELECT * FROM places',
+                    format='json',
+                    buffers=False,
+                    timing=False,
+                    summary=False,
+                    wal=True
+                ),
+                sql_statement='SELECT * FROM places',
+                expected_return_value='EXPLAIN '
+                                      '(FORMAT JSON, TIMING false, '
+                                      'BUFFERS false, SUMMARY false, '
+                                      'WAL true) '
                                       'SELECT * FROM places'
             )
         ),

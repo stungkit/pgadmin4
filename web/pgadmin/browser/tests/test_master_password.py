@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -45,6 +45,7 @@ class MasterPasswordTestCase(BaseTestGenerator):
     def setUp(self):
         config.MASTER_PASSWORD_REQUIRED = True
         config.AUTHENTICATION_SOURCES = [INTERNAL]
+        config.USE_OS_SECRET_STORAGE = False
 
     def runTest(self):
         """This function will check change password functionality."""
@@ -80,6 +81,9 @@ class MasterPasswordTestCase(BaseTestGenerator):
                 )
                 self.assertEqual(response.status_code, 200)
 
+                if not config.SERVER_MODE:
+                    self.skipTest(
+                        "This test is skipped on Desktop mode.")
                 if hasattr(self, 'check_if_set'):
                     response = self.tester.get(
                         '/browser/master_password'

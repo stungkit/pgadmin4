@@ -2,12 +2,11 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import $ from 'jquery';
 import _ from 'lodash';
 
 import pgAdmin from 'sources/pgadmin';
@@ -106,7 +105,6 @@ _.extend(pgBrowser, {
         if(self.is_inactivity_timeout()) {
           clearInterval(timeout_daemon_id);
           self.inactivity_timeout_daemon_running = false;
-          $(window).off('beforeunload');
           self.logout_inactivity_user();
         }
       }, MIN_ACTIVITY_TIME_UNIT);

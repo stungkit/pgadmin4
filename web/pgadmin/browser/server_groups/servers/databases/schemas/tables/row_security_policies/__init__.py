@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -60,14 +60,18 @@ class RowSecurityModule(CollectionNodeModule):
         self.min_ver = 90500
         self.max_ver = None
 
-    def get_nodes(self, **kwargs):
+    def get_nodes(self, gid, sid, did, scid, **kwargs):
         """
         Generate the collection node
         """
         assert ('tid' in kwargs or 'vid' in kwargs)
-        yield self.generate_browser_collection_node(
-            kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
-        )
+        if self.has_nodes(
+            sid, did, scid=scid,
+            tid=kwargs.get('tid', kwargs.get('vid', None)),
+                base_template_path=RowSecurityView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(
+                kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
+            )
 
     @property
     def node_inode(self):
@@ -148,6 +152,7 @@ class RowSecurityView(PGChildNodeView):
 
     node_type = blueprint.node_type
     node_label = "RLS Policy"
+    BASE_TEMPLATE_PATH = 'row_security_policies/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -205,7 +210,7 @@ class RowSecurityView(PGChildNodeView):
                 'tables/sql',
                 self.manager.version
             )
-            self.template_path = 'row_security_policies/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version)
 
             return f(*args, **kwargs)
@@ -352,6 +357,17 @@ class RowSecurityView(PGChildNodeView):
         data = request.form if request.form else json.loads(
             request.data
         )
+        for k, v in data.items():
+            try:
+                # comments should be taken as is because if user enters a
+                # json comment it is parsed by loads which should not happen
+                if k in ('description',):
+                    data[k] = v
+                else:
+                    data[k] = json.loads(v)
+            except (ValueError, TypeError, KeyError):
+                data[k] = v
+
         data['schema'] = self.schema
         data['table'] = self.table
         for arg in required_args:
@@ -416,16 +432,22 @@ class RowSecurityView(PGChildNodeView):
             # Most probably this is due to error
             if not isinstance(sql, str):
                 return sql
+
             status, res = self.conn.execute_scalar(sql)
             if not status:
                 return internal_server_error(errormsg=res)
+
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
 
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     plid,
                     tid,
                     name,
-                    icon="icon-row_security_policy"
+                    icon="icon-row_security_policy",
+                    **other_node_info
                 )
             )
 
@@ -520,7 +542,7 @@ class RowSecurityView(PGChildNodeView):
         """
         data = dict(request.args)
 
-        sql, name = row_security_policies_utils.get_sql(
+        sql, _ = row_security_policies_utils.get_sql(
             self.conn, data=data, scid=scid, plid=plid, policy_table_id=tid,
             schema=self.schema, table=self.table)
         if not isinstance(sql, str):
@@ -614,7 +636,7 @@ class RowSecurityView(PGChildNodeView):
         if data:
             data['schema'] = self.schema
             data['table'] = self.table
-            sql, name = row_security_policies_utils.get_sql(
+            sql, _ = row_security_policies_utils.get_sql(
                 self.conn, data=data, scid=scid, plid=oid, policy_table_id=tid,
                 schema=self.schema, table=self.table)
 

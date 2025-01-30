@@ -7,6 +7,7 @@
 *Storage Manager* is a feature that helps you manage your systems storage device. You can use *Storage Manager* to:
 
 * Download, upload, or manage operating system files. To use this feature, *pgAdmin* must be running in *Server Mode* on your client machine.
+* The shared storage option allows users to access the shared storages that are shared by admin users.
 * Download *backup* or *export* files (custom, tar and plain text format) on a client machine.
 * Download *export* dump files of tables.
 
@@ -17,6 +18,12 @@ You can access *Storage Manager* from the *Tools* Menu.
     :align: center
 
 Use icons on the top of the *Storage Manager* window to manage storage:
+
+Use the ``Folder`` icon |Shared Storage| to access shared storage. In order to enable shared storage,
+admins need to add the SHARED_STORAGE variable to the config file. Users can access the shared storage
+with this and share files with one another.
+
+.. |Shared Storage| image:: images/sm_ss.png
 
 Use the ``Home`` icon |home| to return to the home directory.
 
@@ -39,6 +46,22 @@ Use the ``New Folder`` icon |folder| to add a new folder.
 .. |folder| image:: images/sm_new_folder.png
 
 Use the *Format* drop down list to select the format of the files to be displayed; choose from *sql*, *csv*, or *All Files*.
+
+Shared Storage
+*********************
+.. image:: images/shared_storage.png
+    :alt: Other options
+    :align: center
+
+
+In the storage manager, ``My Storage`` is the pgAdmin user’s storage directory, and other listed directories are shared
+storages set by the pgAdmin server administrator. Using these, pgAdmin users can have common storages to share files.
+pgAdmin server administrator can configure the shared storages using the :ref:`config file <config_py>`. Storages can be
+marked as restricted to give read-only access to non-admin pgAdmin users.
+
+
+.. note:: You must ensure the directories specified are writeable by the user that the web server processes will be running as, e.g. apache or www-data.*
+
 
 Other Options
 *********************

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -13,7 +13,7 @@ import { isEmptyString } from 'sources/validators';
 import pgAdmin from 'sources/pgadmin';
 
 class AzureCredSchema extends BaseUISchema {
-  constructor(fieldOptions = {}, initValues = {}, eventBus) {
+  constructor(eventBus, fieldOptions = {}, initValues = {}) {
     super({
       oid: null,
       auth_type: 'interactive_browser_credential',
@@ -67,7 +67,7 @@ class AzureCredSchema extends BaseUISchema {
             value: 'azure_cli_credential',
           },
         ],
-        disabled: pgAdmin.server_mode == 'True' ? true : false,
+        disabled: pgAdmin.server_mode == 'True',
         helpMessage: gettext(
           'Azure CLI will use the currently logged in identity through the Azure CLI on the local machine. Interactive Browser will open a browser window to authenticate a user interactively.'
         ),
@@ -82,9 +82,7 @@ class AzureCredSchema extends BaseUISchema {
           'Enter the Azure tenant ID against which the user is authenticated.'
         ),
         disabled: (state) => {
-          return state.auth_type == 'interactive_browser_credential'
-            ? false
-            : true;
+          return state.auth_type !== 'interactive_browser_credential';
         },
         depChange: (state) => {
           if (state.auth_type == 'azure_cli_credential') {
@@ -103,31 +101,33 @@ class AzureCredSchema extends BaseUISchema {
         helpMessage: gettext(
           'After clicking the button above you will be redirected to the Microsoft Azure authentication page in a new browser tab if the Interactive Browser option is selected.'
         ),
-        depChange: (state, source)=> {
-          if(source == 'auth_type' || source == 'azure_tenant_id'){
-            return {is_authenticated: false, auth_code: ''};
-          }
-          if(source == 'auth_btn') {
-            return {is_authenticating: true};
-          }
-        },
-        deferredDepChange: (state, source)=>{
-          return new Promise((resolve, reject)=>{
-            /* button clicked */
-            if(source == 'auth_btn') {
-              obj.fieldOptions.authenticateAzure(state.auth_type, state.azure_tenant_id)
-                .then(()=>{
-                  resolve(()=>({
-                    is_authenticated: true,
-                    is_authenticating: false,
-                    auth_code: ''
-                  }));
-                })
-                .catch((err)=>{
-                  reject(err);
-                });
-            }
-          });
+        onClick: () => {
+          const schemaState = obj.state;
+          if (!schemaState) return;
+
+          const state = schemaState.data;
+          const setSchemaData = (data) => {
+            schemaState.data = {...schemaState.data, ...data};
+          };
+
+          setTimeout(() => {
+            setSchemaData({is_authenticating: true});
+
+            obj.fieldOptions.authenticateAzure(
+              state.auth_type, state.azure_tenant_id
+            ).then(() => {
+              setSchemaData({
+                is_authenticated: true,
+                is_authenticating: false,
+                auth_code: ''
+              });
+            }).catch((err) => {
+              console.error(
+                err instanceof Error ?
+                  err : Error(gettext('Something went wrong'))
+              );
+            });
+          }, 0);
         },
         disabled: (state)=> {
           if(state.auth_type == 'interactive_browser_credential' && state.azure_tenant_id == ''){
@@ -154,7 +154,7 @@ class AzureCredSchema extends BaseUISchema {
                   });
                 })
                 .catch((err)=>{
-                  reject(err);
+                  reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
                 });
             }
           });
@@ -493,7 +493,7 @@ class AzureDatabaseSchema extends BaseUISchema {
         noEmpty: true,
         helpMessage: gettext(
           'The password must be 8-128 characters long and must contain characters from three of the following categories - English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.), and cannot contain all or part of the login name'
-        ),
+        ), controlProps: { autoComplete: 'new-password' }
       },
       {
         id: 'db_confirm_password',
@@ -719,7 +719,7 @@ class AzureClusterSchema extends BaseUISchema {
   }
 
   validate(data, setErr) {
-    if ( !isEmptyString(data.name) && (!/^[a-z0-9\-]*$/.test(data.name) || data.name.length < 3)) {
+    if ( !isEmptyString(data.name) && (!/^[a-z0-9-]*$/.test(data.name) || data.name.length < 3)) {
       setErr('name',gettext('Name must be more than 2 characters and must only contain lowercase letters, numbers, and hyphens'));
       return true;
     }

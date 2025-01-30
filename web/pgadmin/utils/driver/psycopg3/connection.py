@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -14,7 +14,7 @@ object.
 """
 
 import os
-import random
+import secrets
 import datetime
 import asyncio
 from collections import deque
@@ -22,7 +22,7 @@ import psycopg
 from flask import g, current_app
 from flask_babel import gettext
 from flask_security import current_user
-from pgadmin.utils.crypto import decrypt, encrypt
+from pgadmin.utils.crypto import decrypt
 from psycopg._encodings import py_codecs as encodings
 
 import config
@@ -35,10 +35,11 @@ from .typecast import register_global_typecasters,\
     register_string_typecasters, register_binary_typecasters, \
     register_array_to_string_typecasters, ALL_JSON_TYPES
 from .encoding import get_encoding, configure_driver_encodings
-from pgadmin.utils import csv
+from pgadmin.utils import csv_lib as csv
 from pgadmin.utils.master_password import get_crypt_key
 from io import StringIO
 from pgadmin.utils.locker import ConnectionLocker
+from pgadmin.utils.driver import get_driver
 
 
 # On Windows, Psycopg is not compatible with the default ProactorEventLoop.
@@ -171,6 +172,7 @@ class Connection(BaseConnection):
         self.async_ = async_
         self.__async_cursor = None
         self.__async_query_id = None
+        self.__async_query_error = None
         self.__backend_pid = None
         self.execution_aborted = False
         self.row_count = 0
@@ -183,6 +185,8 @@ class Connection(BaseConnection):
         self.reconnecting = False
         self.use_binary_placeholder = use_binary_placeholder
         self.array_to_string = array_to_string
+        self.qtLiteral = get_driver(config.PG_DEFAULT_DRIVER).qtLiteral
+
         super(Connection, self).__init__()
 
     def as_dict(self):
@@ -229,7 +233,10 @@ class Connection(BaseConnection):
             kwargs.pop('password')
             is_update_password = False
         else:
-            encpass = kwargs['password'] if 'password' in kwargs else None
+            if 'encpass' in kwargs:
+                encpass = kwargs['encpass']
+            else:
+                encpass = kwargs['password'] if 'password' in kwargs else None
 
         return password, encpass, is_update_password
 
@@ -263,12 +270,14 @@ class Connection(BaseConnection):
                 return True, None
 
         manager = self.manager
+
         crypt_key_present, crypt_key = get_crypt_key()
+        if not crypt_key_present:
+            raise CryptKeyMissing()
+        password, encpass, is_update_password = \
+            self._check_user_password(kwargs)
 
-        password, encpass, is_update_password = self._check_user_password(
-            kwargs)
-
-        passfile = manager.get_connection_param_value('passfile')
+        passfile = kwargs['passfile'] if 'passfile' in kwargs else None
         tunnel_password = kwargs['tunnel_password'] if 'tunnel_password' in \
                                                        kwargs else ''
 
@@ -295,8 +304,8 @@ class Connection(BaseConnection):
         if not crypt_key_present:
             raise CryptKeyMissing()
 
-        is_error, errmsg, password = self._decode_password(encpass, manager,
-                                                           password, crypt_key)
+        is_error, errmsg, password = self._decode_password(
+            encpass, manager, password, crypt_key)
         if is_error:
             return False, errmsg
 
@@ -305,7 +314,7 @@ class Connection(BaseConnection):
         # we will check for pgpass file availability from connection manager
         # if it's present then we will use it
         if not password and not encpass and not passfile:
-            passfile = manager.passfile if manager.passfile else None
+            passfile = manager.get_connection_param_value('passfile')
             if manager.passexec:
                 password = manager.passexec.get()
 
@@ -345,12 +354,15 @@ class Connection(BaseConnection):
                         return await psycopg.AsyncConnection.connect(
                             connection_string,
                             cursor_factory=AsyncDictCursor,
-                            autocommit=autocommit)
+                            autocommit=autocommit,
+                            prepare_threshold=manager.prepare_threshold
+                        )
                     pg_conn = asyncio.run(connectdbserver())
                 else:
                     pg_conn = psycopg.Connection.connect(
                         connection_string,
-                        cursor_factory=DictCursor)
+                        cursor_factory=DictCursor,
+                        prepare_threshold=manager.prepare_threshold)
 
         except psycopg.Error as e:
             manager.stop_ssh_tunnel()
@@ -420,6 +432,7 @@ class Connection(BaseConnection):
         """
         is_set_role = False
         role = None
+        status = None
 
         if 'role' in kwargs and kwargs['role']:
             is_set_role = True
@@ -429,7 +442,17 @@ class Connection(BaseConnection):
             role = manager.role
 
         if is_set_role:
-            status = self._execute(cur, "SET ROLE TO {0}".format(role))
+            _query = "SELECT rolname from pg_roles WHERE rolname = {0}" \
+                     "".format(self.qtLiteral(role, self.conn))
+            _status, res = self.execute_scalar(_query)
+
+            if res:
+                status = self._execute(cur, "SET ROLE TO {0}".format(
+                    self.qtLiteral(role, self.conn)))
+            else:
+                # If role is not found then set the status to role
+                # for showing the proper error message
+                status = role
 
             if status is not None:
                 self.conn.close()
@@ -437,7 +460,7 @@ class Connection(BaseConnection):
                 current_app.logger.error(
                     "Connect to the database server (#{server_id}) for "
                     "connection ({conn_id}), but - failed to setup the role "
-                    "with error message as below:{msg}".format(
+                    " {msg}".format(
                         server_id=self.manager.sid,
                         conn_id=conn_id,
                         msg=status
@@ -445,7 +468,7 @@ class Connection(BaseConnection):
                 )
                 return True, \
                     _(
-                        "Failed to setup the role with error message:\n{0}"
+                        "Failed to setup the role \n{0}"
                     ).format(status)
         return False, ''
 
@@ -469,8 +492,6 @@ class Connection(BaseConnection):
 
         register_string_typecasters(self.conn)
 
-        status, cur = self.__cursor()
-
         manager = self.manager
 
         # autocommit flag does not work with asynchronous connections.
@@ -488,6 +509,8 @@ class Connection(BaseConnection):
         postgres_encoding, self.python_encoding = \
             get_encoding(self.conn.info.encoding)
 
+        status, cur = self.__cursor()
+
         # Note that we use 'UPDATE pg_settings' for setting bytea_output as a
         # convenience hack for those running on old, unsupported versions of
         # PostgreSQL 'cos we're nice like that.
@@ -495,7 +518,8 @@ class Connection(BaseConnection):
             cur,
             "SET DateStyle=ISO; "
             "SET client_min_messages=notice; "
-            "SELECT set_config('bytea_output','hex',false) FROM pg_settings"
+            "SELECT set_config('bytea_output','hex',false)"
+            " FROM pg_show_all_settings()"
             " WHERE name = 'bytea_output'; "
             "SET client_encoding='{0}';".format(postgres_encoding)
         )
@@ -647,7 +671,7 @@ WHERE db.datname = current_database()""")
 
     def __cursor(self, server_cursor=False, scrollable=False):
 
-        if not get_crypt_key()[0]:
+        if not get_crypt_key()[0] and config.SERVER_MODE:
             raise CryptKeyMissing()
 
         # Check SSH Tunnel is alive or not. If used by the database
@@ -779,14 +803,12 @@ WHERE db.datname = current_database()""")
         query = query.encode(self.python_encoding)
         cur.execute(query, params)
 
-    def execute_on_server_as_csv(self, formatted_exception_msg=False,
-                                 records=2000):
+    def execute_on_server_as_csv(self, records=2000):
         """
         To fetch query result and generate CSV output
 
         Args:
             params: Additional parameters
-            formatted_exception_msg: For exception
             records: Number of initial records
         Returns:
             Generator response
@@ -806,7 +828,8 @@ WHERE db.datname = current_database()""")
             query = str(cur.query, encoding) \
                 if cur and cur.query is not None else None
         except Exception:
-            current_app.logger.warning('Error encoding query')
+            current_app.logger.warning('Error encoding query with {0}'.format(
+                encoding))
 
         current_app.logger.log(
             25,
@@ -940,7 +963,7 @@ WHERE db.datname = current_database()""")
 
         if not status:
             return False, str(cur)
-        query_id = random.randint(1, 9999999)
+        query_id = str(secrets.choice(range(1, 9999999)))
 
         current_app.logger.log(
             25,
@@ -987,6 +1010,11 @@ WHERE db.datname = current_database()""")
         except Exception:
             print("EXCEPTION.....")
 
+        # If multiple queries are run, make sure to reach
+        # the last query result
+        while cur.nextset():
+            pass  # This loop is empty
+
         self.row_count = cur.get_rowcount()
         if cur.get_rowcount() > 0:
             res = cur.fetchone()
@@ -1008,16 +1036,16 @@ WHERE db.datname = current_database()""")
         """
 
         self.__async_cursor = None
+        self.__async_query_error = None
         status, cur = self.__cursor(scrollable=True)
 
         if not status:
             return False, str(cur)
-        query_id = random.randint(1, 9999999)
+        query_id = str(secrets.choice(range(1, 9999999)))
 
         encoding = self.python_encoding
 
         query = query.encode(encoding)
-
         self.__async_cursor = cur
         self.__async_query_id = query_id
 
@@ -1054,13 +1082,15 @@ WHERE db.datname = current_database()""")
                     query_id=query_id
                 )
             )
+            self.__async_query_error = errmsg
 
-            if self.is_disconnected(pe):
+            if self.conn and self.conn.closed or self.is_disconnected(pe):
                 raise ConnectionLost(
                     self.manager.sid,
                     self.db,
                     None if self.conn_id[0:3] == 'DB:' else self.conn_id[5:]
                 )
+
             return False, errmsg
 
         return True, None
@@ -1079,7 +1109,7 @@ WHERE db.datname = current_database()""")
 
         if not status:
             return False, str(cur)
-        query_id = random.randint(1, 9999999)
+        query_id = str(secrets.choice(range(1, 9999999)))
 
         current_app.logger.log(
             25,
@@ -1166,7 +1196,7 @@ WHERE db.datname = current_database()""")
         if not status:
             return False, str(cur)
 
-        query_id = random.randint(1, 9999999)
+        query_id = str(secrets.choice(range(1, 9999999)))
         current_app.logger.log(
             25,
             "Execute (2darray) by {pga_user} on "
@@ -1223,7 +1253,7 @@ WHERE db.datname = current_database()""")
 
         if not status:
             return False, str(cur)
-        query_id = random.randint(1, 9999999)
+        query_id = str(secrets.choice(range(1, 9999999)))
         current_app.logger.log(
             25,
             "Execute (dict) by {pga_user} on "
@@ -1273,7 +1303,12 @@ WHERE db.datname = current_database()""")
         ] or []
 
         rows = []
-        self.row_count = cur.get_rowcount()
+        self.row_count = cur.rowcount
+
+        # If multiple queries are run, make sure to reach
+        # the last query result
+        while cur.nextset():
+            pass  # This loop is empty
 
         if cur.get_rowcount() > 0:
             rows = cur.fetchall()
@@ -1281,6 +1316,7 @@ WHERE db.datname = current_database()""")
         return True, {'columns': columns, 'rows': rows}
 
     def async_fetchmany_2darray(self, records=2000,
+                                from_rownum=0, to_rownum=0,
                                 formatted_exception_msg=False):
         """
         User should poll and check if status is ASYNC_OK before calling this
@@ -1297,6 +1333,12 @@ WHERE db.datname = current_database()""")
         if not cur:
             return False, self.CURSOR_NOT_FOUND
 
+        if not self.conn:
+            raise ConnectionLost(
+                self.manager.sid,
+                self.db,
+                None if self.conn_id[0:3] == 'DB:' else self.conn_id[5:]
+            )
         if self.conn.pgconn.is_busy():
             return False, gettext(
                 "Asynchronous query execution/operation underway."
@@ -1304,11 +1346,15 @@ WHERE db.datname = current_database()""")
 
         more_results = True
         while more_results:
-            if self.row_count > 0:
+            if cur.get_rowcount() > 0:
                 result = []
                 try:
                     if records == -1:
                         result = cur.fetchall(_tupples=True)
+                    elif records is None:
+                        result = cur.fetchwindow(from_rownum=from_rownum,
+                                                 to_rownum=to_rownum,
+                                                 _tupples=True)
                     else:
                         result = cur.fetchmany(records, _tupples=True)
                 except psycopg.ProgrammingError:
@@ -1394,9 +1440,12 @@ Failed to reset the connection to the server due to following error:
         return True, None
 
     def transaction_status(self):
-        if self.conn:
+        if self.conn and self.conn.info:
             return self.conn.info.transaction_status
         return None
+
+    def async_query_error(self):
+        return self.__async_query_error
 
     def ping(self):
         return self.execute_scalar('SELECT 1')
@@ -1419,16 +1468,20 @@ Failed to reset the connection to the server due to following error:
         asyncio.run(_close_conn(self.conn))
 
     def _wait(self, conn):
-        pass
+        pass  # This function is empty
 
-    def _wait_timeout(self, conn):
-        pass
+    def _wait_timeout(self, conn, time):
+        pass  # This function is empty
 
     def poll(self, formatted_exception_msg=False, no_result=False):
         cur = self.__async_cursor
 
-        if self.conn and self.conn.pgconn.is_busy():
+        if self.conn and self.conn.info.transaction_status == 1:
             status = 3
+        elif self.__async_query_error:
+            return False, self.__async_query_error
+        elif self.conn and self.conn.pgconn.error_message:
+            return False, self.conn.pgconn.error_message
         else:
             status = 1
 
@@ -1447,17 +1500,18 @@ Failed to reset the connection to the server due to following error:
         )
         more_result = True
         while more_result:
-            if not self.conn.pgconn.is_busy():
+            if self.conn:
                 if cur.description is not None:
-                    for desc in cur.ordered_description():
-                        self.column_info = [desc.to_dict() for
-                                            desc in cur.ordered_description()]
+                    self.column_info = [desc.to_dict() for
+                                        desc in cur.ordered_description()]
 
                     pos = 0
-                    for col in self.column_info:
-                        col['pos'] = pos
-                        pos += 1
-
+                    if self.column_info:
+                        for col in self.column_info:
+                            col['pos'] = pos
+                            pos += 1
+                else:
+                    self.column_info = None
                 self.row_count = cur.get_rowcount()
                 if not no_result and cur.get_rowcount() > 0:
                     result = []
@@ -1498,6 +1552,12 @@ Failed to reset the connection to the server due to following error:
 
         return self.row_count
 
+    @property
+    def total_rows(self):
+        if self.__async_cursor is None:
+            return 0
+        return self.__async_cursor.rowcount
+
     def get_column_info(self):
         """
         This function will returns list of columns for last async sql command
@@ -1536,9 +1596,7 @@ Failed to reset the connection to the server due to following error:
                 crypt_key_present, crypt_key = get_crypt_key()
                 if not crypt_key_present:
                     return False, crypt_key
-
-                password = decrypt(password, crypt_key)\
-                    .decode()
+                password = decrypt(password, crypt_key).decode()
 
             try:
                 with ConnectionLocker(self.manager.kerberos_conn):
@@ -1622,8 +1680,8 @@ Failed to reset the connection to the server due to following error:
         elif hasattr(exception_obj, 'diag') and \
             hasattr(exception_obj.diag, 'message_detail') and\
                 exception_obj.diag.message_detail is not None:
-            errmsg = exception_obj.diag.message_detail + \
-                exception_obj.diag.message_primary
+            errmsg = exception_obj.diag.message_primary + '\n' + \
+                exception_obj.diag.message_detail
         else:
             errmsg = str(exception_obj)
 
@@ -1705,7 +1763,7 @@ Failed to reset the connection to the server due to following error:
     # https://github.com/zzzeek/sqlalchemy/blob/master/lib/sqlalchemy/dialects/postgresql/psycopg2.py
     #
     def is_disconnected(self, err):
-        if not self.conn.closed:
+        if self.conn and not self.conn.closed:
             # checks based on strings.  in the case that .closed
             # didn't cut it, fall back onto these.
             str_e = str(err).partition("\n")[0]
@@ -1726,6 +1784,7 @@ Failed to reset the connection to the server due to following error:
                 'connection has been closed unexpectedly',
                 'SSL SYSCALL error: Bad file descriptor',
                 'SSL SYSCALL error: EOF detected',
+                'terminating connection due to administrator command'
             ]:
                 idx = str_e.find(msg)
                 if idx >= 0 and '"' not in str_e[:idx]:
@@ -1808,13 +1867,13 @@ Failed to reset the connection to the server due to following error:
         :param parameters: query parameters / variables
         :return:
         """
-        status, cursor = self.__cursor()
+        status, _ = self.__cursor()
         if not status:
             return None
         else:
 
             if parameters:
-                return psycopg.sql.SQL(query.format(parameters)
-                                       ).as_string(self.conn)
+                with psycopg.ClientCursor(self.conn) as _cur:
+                    return _cur.mogrify(query, parameters)
             else:
                 return query

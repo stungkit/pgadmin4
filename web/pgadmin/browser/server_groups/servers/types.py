@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -11,7 +11,6 @@ import os
 import json
 import config
 import copy
-
 from flask import render_template
 from flask_babel import gettext as _
 from pgadmin.utils.preferences import Preferences
@@ -26,7 +25,7 @@ class ServerType():
 
     Create an instance of this class to define new type of the server support,
     In order to define new type of instance, you may want to override this
-    class with overriden function - instanceOf for type checking for
+    class with overridden function - instanceOf for type checking for
     identification based on the version.
     """
     registry = dict()
@@ -204,7 +203,7 @@ class ServerType():
                     bin_path['binaryPath'].strip() != '':
                 return bin_path['binaryPath']
 
-            if bin_path['isDefault']:
+            if bin_path['isDefault'] and bin_path['binaryPath'] != '':
                 default_path = bin_path['binaryPath']
 
         return default_path
@@ -240,15 +239,22 @@ class ServerType():
         """
         is_default_path_set = ServerType.is_default_binary_path_set(bin_paths)
         for path in config.DEFAULT_BINARY_PATHS:
-            path_value = config.DEFAULT_BINARY_PATHS[path]
+            is_fixed_path = (path in config.FIXED_BINARY_PATHS and
+                             config.FIXED_BINARY_PATHS[path] != '' and
+                             config.FIXED_BINARY_PATHS[path] is not None)
+            path_value = (is_fixed_path and config.FIXED_BINARY_PATHS[path]
+                          ) or config.DEFAULT_BINARY_PATHS[path]
+
             if path_value is not None and path_value != "" and \
                     path.find(server_type) == 0 and len(path.split('-')) > 1:
-                set_binary_path(path_value, bin_paths, server_type,
-                                path.split('-')[1])
+                set_binary_path(
+                    path_value, bin_paths, server_type, path.split('-')[1],
+                    is_fixed_path=is_fixed_path)
             elif path_value is not None and path_value != "" and \
                     path.find(server_type) == 0:
                 set_binary_path(path_value, bin_paths, server_type,
-                                set_as_default=not is_default_path_set)
+                                set_as_default=not is_default_path_set,
+                                is_fixed_path=is_fixed_path)
 
 
 # Default Server Type

@@ -4,7 +4,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 #########################################################################
@@ -21,16 +21,19 @@ if [ ! -d .git ] && [ ! -f .git/config ]; then
 fi
 
 # Get the required package info
-APP_RELEASE=$(grep "^APP_RELEASE" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-APP_REVISION=$(grep "^APP_REVISION" web/config.py | cut -d"=" -f2 | sed 's/ //g')
-APP_NAME=$(grep "^APP_NAME" web/config.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
+APP_RELEASE=$(grep "^APP_RELEASE" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+APP_REVISION=$(grep "^APP_REVISION" web/version.py | cut -d"=" -f2 | sed 's/ //g')
+APP_NAME=$(grep "^APP_NAME" web/branding.py | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
 APP_LONG_VERSION=${APP_RELEASE}.${APP_REVISION}
-APP_SUFFIX=$(grep "^APP_SUFFIX" web/config.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
+APP_SUFFIX=$(grep "^APP_SUFFIX" web/version.py | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
 if [ -n "${APP_SUFFIX}" ]; then
     export APP_LONG_VERSION=${APP_LONG_VERSION}-${APP_SUFFIX}
 fi
 TARBALL_NAME=$(echo "${APP_NAME}-${APP_LONG_VERSION}" | sed 's/ //g' | awk '{print tolower($0)}')
 DOC_TARBALL_NAME=$(echo "${APP_NAME}-${APP_LONG_VERSION}-docs" | sed 's/ //g' | awk '{print tolower($0)}')
+
+# Get the github timestamp
+git log -1 --format='%H %as' > web/commit_hash
 
 # Output basic details to show we're working
 echo "Building tarballs for ${APP_NAME} version ${APP_LONG_VERSION}..."
@@ -69,17 +72,9 @@ do
     tar cf - "${FILE}" | (cd "src-build/${TARBALL_NAME}"; tar xf -)
 done
 
-pushd web > /dev/null || exit
-    yarn install
-    yarn run bundle
-
-    for FILE in pgadmin/static/js/generated/*
-    do
-        echo Adding "${FILE}"
-        # shellcheck disable=SC2164
-        tar cf - "${FILE}" | (cd "../src-build/${TARBALL_NAME}/web"; tar xf -)
-    done
-popd > /dev/null || exit
+# Copy the commit_hash file, it doesn't show up in git ls-files
+echo Adding "web/commit_hash"
+tar cf - "web/commit_hash" | (cd "src-build/${TARBALL_NAME}"; tar xf -)
 
 # Create the tarball
 echo Creating tarball...

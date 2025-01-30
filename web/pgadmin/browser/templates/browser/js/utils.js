@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -20,7 +20,7 @@
   {% endif %}label: "{{ item.label }}", applies: ["{{ key.lower() }}"],
   priority: {{ item.priority }},
   enable: "{{ item.enable }}",
-  {% if item.checked is defined %}checked: {% if (item.checked or item.name == 'mnu_lock_'+current_ui_lock) %}true{% else %}false{% endif %},
+  {% if item.checked is defined %}checked: {% if item.checked %}true{% else %}false{% endif %},
   {% endif %}
   {% if item.below is defined %}below: {% if item.below %}true{% else %}false{% endif %},
   {% endif %}
@@ -38,11 +38,7 @@
 
 define('pgadmin.browser.utils',
   ['sources/pgadmin'], function(pgAdmin) {
-
   let pgBrowser = pgAdmin.Browser = pgAdmin.Browser || {};
-
-  /* Add hooked-in panels by extensions */
-  pgBrowser['panels_items'] = '{{ current_app.panels|tojson }}';
 
   pgBrowser['MainMenus'] = [];
 
@@ -56,12 +52,16 @@ define('pgadmin.browser.utils',
 
   /* GET PSQL Tool related config */
   pgAdmin['enable_psql'] =  '{{enable_psql}}' == 'True';
+  pgAdmin['shared_storage'] = {{shared_storage_list}}
+  pgAdmin['restricted_shared_storage'] = {{restricted_shared_storage_list}}
   pgAdmin['platform'] =  '{{platform}}';
   pgAdmin['qt_default_placeholder'] = '{{qt_default_placeholder}}'
   pgAdmin['vw_edt_default_placeholder'] = '{{vw_edt_default_placeholder}}'
 
   /* GET Binary Path Browse config */
   pgAdmin['enable_binary_path_browsing'] = '{{ current_app.config.get('ENABLE_BINARY_PATH_BROWSING') }}' == 'True';
+
+  pgAdmin['fixed_binary_paths'] = {{ current_app.config.get('FIXED_BINARY_PATHS') }};
 
   /* GET the pgadmin server's locale */
   pgAdmin['pgadmin_server_locale'] =  '{{pgadmin_server_locale}}';
@@ -72,27 +72,35 @@ define('pgadmin.browser.utils',
   /* Minimum password length */
   pgAdmin['password_length_min'] = '{{password_length_min}}';
 
+  /* Enable server password exec command */
+  pgAdmin['enable_server_passexec_cmd'] = '{{enable_server_passexec_cmd}}';
+
   // Define list of nodes on which Query tool option doesn't appears
   let unsupported_nodes = pgAdmin.unsupported_nodes = [
      'server_group', 'server', 'coll-tablespace', 'tablespace',
      'coll-role', 'role', 'coll-resource_group', 'resource_group',
-     'coll-database'
+     'coll-database', 'coll-pga_job', 'coll-pga_schedule', 'coll-pga_jobstep',
+     'pga_job', 'pga_schedule', 'pga_jobstep',
+     'coll-replica_node', 'replica_node'
   ];
 
   pgBrowser.utils = {
-    layout: '{{ layout }}',
+    layout: {{ layout|tojson }},
+    theme: '{{ theme }}',
     pg_help_path: '{{ pg_help_path }}',
     tabSize: '{{ editor_tab_size }}',
     wrapCode: '{{ editor_wrap_code }}' == 'True',
     useSpaces: '{{ editor_use_spaces }}',
     insertPairBrackets: '{{ editor_insert_pair_brackets }}' == 'True',
     braceMatching: '{{ editor_brace_matching }}' == 'True',
+    highlightSelectionMatches: '{{editor_highlight_selection_matches}}' == 'True',
     is_indent_with_tabs: '{{ editor_indent_with_tabs }}' == 'True',
     app_name: '{{ app_name }}',
     app_version_int: '{{ app_version_int}}',
     pg_libpq_version: {{pg_libpq_version|e}},
     support_ssh_tunnel: '{{ support_ssh_tunnel }}' == 'True',
     logout_url: '{{logout_url}}',
+    max_server_tags_allowed: {{max_server_tags_allowed}},
 
     counter: {total: 0, loaded: 0},
     registerScripts: function (ctx) {

@@ -1,30 +1,30 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
 
 class BrowserToolBarLocators():
-    """This will contains element locators for browser tool bar"""
+    """This will contains element locators for browser tree tool bar"""
 
     open_query_tool_button_css = \
-        ".wcFrameButton[aria-label='Query Tool']:not(.disabled)"
+        "button[aria-label='Query Tool']:not(:disabled)"
 
     query_tool_panel_css = \
-        ".wcPanelTab .wcTabIcon.pg-font-icon.icon-query_tool"
+        ".dock-tab .pg-font-icon.icon-query_tool"
 
     view_table_data_button_css = \
-        ".wcFrameButton[aria-label='View Data']:not(.disabled)"
+        "button[aria-label='All Rows']:not(:disabled)"
 
-    view_data_panel_css = ".wcPanelTab .wcTabIcon.pg-font-icon.icon-view_data"
+    view_data_panel_css = ".dock-tab .pg-font-icon.icon-view_data"
 
     filter_data_button_css = \
-        ".wcFrameButton[aria-label='Filtered Rows']:not(.disabled)"
+        "button[aria-label='Filtered Rows...']:not(:disabled)"
 
-    filter_box_css = "//*[@id='0']/div[contains(text(), 'Data Filter')]"
+    filter_box_css = ".dock-fbox div[title^='Data Filter']"
 
 
 class NavMenuLocators:
@@ -40,7 +40,7 @@ class NavMenuLocators:
 
     object_menu_css = "button[data-label='Object']"
 
-    properties_obj_css = "li[data-label='Properties...']"
+    edit_obj_css = "li[data-label='Properties...']"
 
     backup_obj_css = "li[data-label='Backup...']"
 
@@ -51,8 +51,9 @@ class NavMenuLocators:
     show_system_objects_pref_label_xpath = \
         "//label[contains(text(), 'Show system objects?')]"
 
-    maximize_pref_dialogue_css = "//div[text()='Preferences']" \
-                                 "//following::div//span[1]"
+    maximize_pref_dialogue_css = "button[data-label='Maximize']"
+
+    maximize_pref_dialogue_css = "button[data-label='Maximize']"
 
     specified_pref_node_exp_status = \
         "//*[@id='treeContainer']//div//span[text()='{0}']"
@@ -62,8 +63,10 @@ class NavMenuLocators:
 
     specified_sub_node_of_pref_tree_node = \
         "//*[@id='treeContainer']//div//span[text()='{1}']"
+
     insert_bracket_pair_switch_btn = \
-        "//label[text()='Insert bracket pairs?']//following::div[1]//span"
+        ("//div[label[text()='Insert bracket pairs?']]/"
+         "following-sibling::div//input")
 
     copy_sql_to_query_tool_switch_btn = \
         "//label[text()='Copy SQL from main window to query tool?']" \
@@ -73,26 +76,17 @@ class NavMenuLocators:
 
     restore_file_name_txt_box_name = "file"
 
-    backup_btn_xpath = \
-        "//button/span[text()='Backup']"
+    backup_btn = ".dock-fbox button[data-label='Backup']"
 
     bcg_process_status_alertifier_css = \
         ".ajs-message.ajs-bg-bgprocess.ajs-visible"
 
     status_alertifier_more_btn_css = ".pg-bg-more-details"
 
-    process_watcher_alertfier = \
-        "//div[contains(@class,'wcFrameTitleBar')]" \
-        "//div[contains(text(),'Process Watcher')]"
-
     process_watcher_detailed_message_css = \
         "div[data-test='process-details'] div[data-test='process-message']"
     process_watcher_detailed_command_css = \
         "div[data-test='process-details'] div[data-test='process-cmd']"
-
-    process_watcher_close_button_xpath = \
-        "//div[contains(@class,'wcFloating')]//" \
-        "div[@aria-label='Close panel']//div"
 
     restore_file_name_xpath = "//div[contains(text(),'Restore')]" \
                               "//following::input[@name='file']"
@@ -102,8 +96,10 @@ class NavMenuLocators:
 
     maintenance_operation = "//label[text()='Maintenance operation']"
 
+    select_tab = \
+        "div.dock-box div[title*='{}']"
     select_tab_xpath = \
-        "//*[contains(@class,'wcTabTop')]//*[contains(@class,'wcPanelTab') " \
+        "//*[contains(@class,'dock-top')]//*[contains(@class,'dock-tab') " \
         "and contains(.,'{}')]"
 
     rcdock_tab = "div.dock-tab-btn[id$='{0}']"
@@ -165,7 +161,7 @@ class QueryToolLocators:
     query_history_entries = "#id-history li[data-label='history-entry']"
 
     query_history_specific_entry = \
-        "#id-history li[data-label='history-entry']:nth-child({0})"
+        "#id-history li[data-label='history-entry']:nth-of-type({0})"
 
     query_history_detail = "#id-history div[data-label='history-detail']"
 
@@ -220,7 +216,7 @@ class QueryToolLocators:
 
     btn_load_file_css = "button[data-label='Open File']"
 
-    btn_execute_query_css = "button[data-label='Execute/Refresh']"
+    btn_execute_query_css = "button[data-label='Execute script']"
 
     folder_path_css = \
         "div[data-label='file-path'] input"
@@ -234,20 +230,23 @@ class QueryToolLocators:
         "//span[text()='File Format']/following-sibling::div"
 
     select_file_content_css = \
-        "div [role='grid'] div[aria-selected='true'] span"
+        "div [role='grid'] div[role='gridcell'] span"
 
     query_output_canvas_css = "#id-dataoutput .rdg"
+
+    pagination_inputs = "#id-dataoutput .PaginationInputs"
 
     query_output_cells = ".rdg-cell[role='gridcell']"
 
     sql_editor_message = "//div[@id='id-messages'][contains(string(), '{}')]"
 
-    code_mirror_hint_box_xpath = "//ul[@class='CodeMirror-hints default']"
+    code_mirror_hint_box = ".cm-editor .cm-tooltip-autocomplete"
 
     code_mirror_hint_item_xpath = \
-        "//ul[contains(@class, 'CodeMirror-hints') and contains(., '{}')]"
+        ("//div[contains(@class, 'cm-tooltip-autocomplete') "
+         "and contains(., '{}')]")
 
-    code_mirror_data_xpath = "//pre[@class=' CodeMirror-line ']/span"
+    code_mirror_content = "{0} .cm-content"
 
     btn_commit = "button[data-label='Commit']"
 
@@ -282,8 +281,8 @@ class ConnectToServerDiv:
 
 class PropertyDialogueLocators:
     # This will contain xpaths for elements in properties dialogue
-    server_dialogue_title = "//div[text()='Register - Server']"
+    server_dialogue_title = "//span[text()='Register - Server']"
 
-    server_connection_tab = "//button/span[text()='Connection']"
+    server_connection_tab = "//button[text()='Connection']"
 
-    server_tab_save = "//button/span[text()='Save']"
+    server_tab_save = "//button[text()='Save']"

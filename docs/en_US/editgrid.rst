@@ -5,9 +5,9 @@
 `View/Edit Data`:index:
 ***********************
 
-To view or modify data, right click on a table or view name in the *Browser*
-tree control.  When the context menu opens, use the *View/Edit Data* menu to
-specify the number of rows you would like to display in the editor panel.
+To view or modify data, right click on a table or view name in the
+*Object Explorer*. When the context menu opens, use the *View/Edit Data* menu
+to specify the number of rows you would like to display in the editor panel.
 
 .. image:: images/editgrid.png
     :alt: Edit grid window
@@ -212,6 +212,7 @@ To add new column(s) in data sorting grid, click on the [+] icon.
 
 * Use the drop-down *Column* to select the column you want to sort.
 * Use the drop-down *Order* to select the sort order for the column.
+* Use the drop-down *NULLs* to select the NULL values order for the column.
 
 To delete a row from the grid, click the trash icon.
 
@@ -222,3 +223,18 @@ To delete a row from the grid, click the trash icon.
    :maxdepth: 2
 
    viewdata_filter
+
+
+
+Promote View/Edit Data to Query Tool
+************************************
+
+A View/Edit Data tab can be converted to a Query Tool Tab just by editing the query. Once you start editing, it will ask if you really want to move away from View/Edit.
+
+.. image:: images/promote_view_edit_data_warning.png
+    :alt: Promote View/Edit Data tab to Query Tool tab warning
+    :align: center
+
+You can disable the dialog by selecting the "Don't Ask again" checkbox. If you wish to resume the confirmation dialog, you can do it from "Prefrences -> Query Tool -> Editor -> Show View/Edit Data Promotion Warning?"
+
+Once you chose to continue, you won't be able to use the features of View/Edit mode like the filter and sorting options, limit, etc. It is a one-way conversion. It will be a query tool now.

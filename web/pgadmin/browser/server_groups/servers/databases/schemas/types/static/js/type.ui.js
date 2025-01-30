@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -85,11 +85,10 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
         return new Promise((resolve, reject)=>{
           const api = getApiInstance();
 
-          let _url = nodeObj.generate_url.apply(
-            nodeObj, [
-              null, 'get_subopclass', itemNodeData, false,
-              treeNodeInfo,
-            ]);
+          let _url = nodeObj.generate_url(
+            null, 'get_subopclass', itemNodeData, false,
+            treeNodeInfo,
+          );
           let data;
 
           if(!_.isUndefined(typname) && typname != ''){
@@ -101,7 +100,7 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
               data = res.data.data;
               resolve(data);
             }).catch((err)=>{
-              reject(err);
+              reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
             });
           } else {
             resolve(data);
@@ -113,11 +112,10 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
         return new Promise((resolve, reject)=>{
           const api = getApiInstance();
 
-          let _url = nodeObj.generate_url.apply(
-            nodeObj, [
-              null, 'get_canonical', itemNodeData, false,
-              treeNodeInfo,
-            ]);
+          let _url = nodeObj.generate_url(
+            null, 'get_canonical', itemNodeData, false,
+            treeNodeInfo,
+          );
           let data = [];
 
           if(!_.isUndefined(name) && name != '' && name != null){
@@ -129,7 +127,7 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
               data = res.data.data;
               resolve(data);
             }).catch((err)=>{
-              reject(err);
+              reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
             });
           } else {
             resolve(data);
@@ -140,11 +138,10 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
         return new Promise((resolve, reject)=>{
           const api = getApiInstance();
 
-          let _url = nodeObj.generate_url.apply(
-            nodeObj, [
-              null, 'get_stypediff', itemNodeData, false,
-              treeNodeInfo,
-            ]);
+          let _url = nodeObj.generate_url(
+            null, 'get_stypediff', itemNodeData, false,
+            treeNodeInfo,
+          );
           let data;
 
           if(!_.isUndefined(typname) && typname != '' &&
@@ -158,7 +155,7 @@ function getRangeSchema(nodeObj, treeNodeInfo, itemNodeData) {
               data = res.data.data;
               resolve(data);
             }).catch((err)=>{
-              reject(err);
+              reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
             });
           } else {
             resolve(data);
@@ -212,7 +209,7 @@ class EnumerationSchema extends BaseUISchema {
     return [
       {
         id: 'label', label: gettext('Label'),
-        type: 'text', cell: 'text', minWidth: 640,
+        type: 'text', cell: 'text', minWidth: 620,
         editable: (state) => {
           return _.isUndefined(obj.isNew) ? true : obj.isNew(state);
         }
@@ -262,7 +259,7 @@ class RangeSchema extends BaseUISchema {
                   state.subtypes = options;
                 }
                 options.forEach((option) => {
-                  if(option && option.label == '') {
+                  if(option?.label == '') {
                     return;
                   }
                   res.push({ label: option.label, value: option.value });
@@ -348,7 +345,7 @@ class RangeSchema extends BaseUISchema {
           this.options = [];
         }
 
-        return disableCollNameControl ? false : true;
+        return !disableCollNameControl;
       },
       readonly: function(state) {
         return !obj.isNew(state);
@@ -473,7 +470,7 @@ class ExternalSchema extends BaseUISchema {
     let result = [];
     _.each(control, function(item) {
 
-      if(item && item.label == '') {
+      if(item?.label == '') {
         return;
       }
       // if type from selected from combobox matches in options
@@ -608,7 +605,7 @@ class ExternalSchema extends BaseUISchema {
               let res = [];
               if (state && obj.isNew(state)) {
                 _.each(options, function(item) {
-                  if(item && item.label == '') {
+                  if(item?.label == '') {
                     return;
                   }
                   // if type from selected from combobox matches in options
@@ -646,7 +643,7 @@ class ExternalSchema extends BaseUISchema {
               let res = [];
               if (state && obj.isNew(state)) {
                 _.each(options, function(item) {
-                  if(item && item.label == '') {
+                  if(item?.label == '') {
                     return;
                   }
                   // if type from selected from combobox matches in options
@@ -750,7 +747,7 @@ class ExternalSchema extends BaseUISchema {
               let res = [];
               if (state && obj.isNew(state)) {
                 _.each(options, function(item) {
-                  if(item && item.label == '') {
+                  if(item?.label == '') {
                     return;
                   }
                   // if type from selected from combobox matches in options
@@ -972,7 +969,7 @@ class CompositeSchema extends BaseUISchema {
     let self = this,
       errmsg = null;
 
-    if(self.top && self.top.sessData && self.top.sessData.typtype === 'c') {
+    if(self.top?.sessData?.typtype === 'c') {
       if (isEmptyString(state.member_name)) {
         errmsg = gettext('Please specify the value for member name.');
         setError('member_name', errmsg);
@@ -1059,7 +1056,7 @@ class DataTypeSchema extends BaseUISchema {
       }
     },{
       id: 'maxsize',
-      group: gettext('Definition'),
+      group: gettext('Data Type'),
       label: gettext('Size'),
       type: 'int',
       deps: ['typtype'],
@@ -1197,7 +1194,7 @@ export default class TypeSchema extends BaseUISchema {
   }
 
   schemaCheck(state) {
-    if(this.fieldOptions.node_info && this.fieldOptions.node_info?.schema) {
+    if(this.fieldOptions?.node_info?.schema) {
       if(!state)
         return true;
       if (this.isNew(state)) {
@@ -1245,7 +1242,7 @@ export default class TypeSchema extends BaseUISchema {
               if (state && obj.isNew(state)) {
                 options.forEach((option) => {
                   // If schema name start with pg_* then we need to exclude them
-                  if(option && option.label.match(/^pg_/)) {
+                  if(option?.label.match(/^pg_/)) {
                     return;
                   }
                   res.push({ label: option.label, value: option.value, image: 'icon-schema' });
@@ -1304,6 +1301,7 @@ export default class TypeSchema extends BaseUISchema {
     },
     {
       id: 'enum', label: gettext('Enumeration type'),
+      editable: true,
       schema: new EnumerationSchema(),
       type: 'collection',
       group: gettext('Definition'), mode: ['edit', 'create'],
@@ -1311,14 +1309,12 @@ export default class TypeSchema extends BaseUISchema {
         return !obj.isInvalidColumnAdded(state);
       },
       canEdit: false,
-      canDeleteRow: function(state) {
-        // We will disable it if it's in 'edit' mode
-        return obj.isNew(state);
-      },
-      canEditRow: false,
+      canDelete: true,
+      canReorder: (state)=>(this.isNew(state)),
+      canDeleteRow: (state)=>(this.isNew(state)),
+      canEditRow: true,
       disabled: () => obj.inCatalog(),
       deps: ['typtype'],
-      uniqueCol : ['label'],
       visible: (state) => isVisible(state, 'e'),
     }, {
       type: 'nested-fieldset',

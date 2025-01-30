@@ -2,24 +2,23 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import { getNodePartitionTableSchema } from './partition.ui';
-import Notify from '../../../../../../../../../static/js/helpers/Notifier';
 import _ from 'lodash';
 import getApiInstance from '../../../../../../../../../static/js/api_instance';
 
 define([
-  'sources/gettext', 'sources/url_for', 'jquery',
+  'sources/gettext', 'sources/url_for',
   'sources/pgadmin', 'pgadmin.browser',
   'pgadmin.node.schema.dir/schema_child_tree_node', 'sources/utils',
   'pgadmin.browser.collection',
 ],
 function(
-  gettext, url_for, $, pgAdmin, pgBrowser,
+  gettext, url_for, pgAdmin, pgBrowser,
   SchemaChildTreeNode, pgadminUtils
 ) {
 
@@ -91,16 +90,38 @@ function(
         },{
           name: 'reset_table_stats', node: 'partition', module: this,
           applies: ['object', 'context'], callback: 'reset_table_stats',
-          category: 'Reset', priority: 4, label: gettext('Reset Statistics'),
+          priority: 4, label: gettext('Reset Statistics'),
           enable : 'canCreate',
         },{
           name: 'detach_partition', node: 'partition', module: this,
           applies: ['object', 'context'], callback: 'detach_partition',
-          priority: 2, label: gettext('Detach Partition'),
+          category: gettext('Detach Partition'), priority: 2, label: gettext('Detach'),
+        },{
+          name: 'detach_partition_concurrently', node: 'partition', module: this,
+          applies: ['object', 'context'], callback: 'detach_partition_concurrently',
+          category: gettext('Detach Partition'), priority: 2, label: gettext('Concurrently'),
+          enable: function(itemData, item) {
+            let treeData = pgBrowser.tree.getTreeNodeHierarchy(item),
+              server = treeData['server'],
+              partition = treeData['partition'];
+
+            return (server && server.version >= 140000 && !partition.is_detach_pending);
+          }
+        },{
+          name: 'detach_partition_finalize', node: 'partition', module: this,
+          applies: ['object', 'context'], callback: 'detach_partition_finalize',
+          category: gettext('Detach Partition'), priority: 2, label: gettext('Finalize'),
+          enable: function(itemData, item) {
+            let treeData = pgBrowser.tree.getTreeNodeHierarchy(item),
+              server = treeData['server'],
+              partition = treeData['partition'];
+
+            return (server && server.version >= 140000 && partition.is_detach_pending);
+          }
         },{
           name: 'count_table_rows', node: 'partition', module: pgBrowser.Nodes['table'],
           applies: ['object', 'context'], callback: 'count_table_rows',
-          category: 'Count', priority: 2, label: gettext('Count Rows'),
+          priority: 2, label: gettext('Count Rows'),
           enable: true,
         }]);
       },
@@ -129,17 +150,11 @@ function(
       },
       on_done: function(res, data, t, i) {
         if (res.success == 1) {
-          Notify.success(res.info);
+          pgAdmin.Browser.notifier.success(res.info);
           t.removeIcon(i);
           data.icon = 'icon-partition';
           t.addIcon(i, {icon: data.icon});
-          t.unload(i);
-          t.setInode(i);
-          t.deselect(i);
-          // Fetch updated data from server
-          setTimeout(function() {
-            t.select(i);
-          }, 10);
+          t.updateAndReselectNode(i, data);
         }
       },
       canDrop: SchemaChildTreeNode.isTreeItemOfChildOfSchema,
@@ -170,18 +185,13 @@ function(
           getApiInstance().put(obj.generate_url(i, 'set_trigger' , d, true), params)
             .then(({data: res})=>{
               if (res.success == 1) {
-                Notify.success(res.info);
-                t.unload(i);
-                t.setInode(i);
-                t.deselect(i);
-                setTimeout(function() {
-                  t.select(i);
-                }, 10);
+                pgAdmin.Browser.notifier.success(res.info);
+                t.updateAndReselectNode(i, d);
               }
             })
             .catch((error)=>{
-              Notify.pgRespErrorNotify(error);
-              t.unload(i);
+              pgAdmin.Browser.notifier.pgRespErrorNotify(error);
+              t.refresh(i);
             });
         },
         /* Truncate table */
@@ -204,9 +214,9 @@ function(
           if (!d)
             return false;
 
-          Notify.confirm(
+          pgAdmin.Browser.notifier.confirm(
             gettext('Truncate Table'),
-            gettext('Are you sure you want to truncate table %s?', d.label),
+            gettext('Are you sure you want to truncate table <b>%s</b>?', d.label),
             function () {
               let data = d;
               getApiInstance().put(obj.generate_url(i, 'truncate' , d, true), params)
@@ -214,7 +224,7 @@ function(
                   obj.on_done(res, data, t, i);
                 })
                 .catch((error)=>{
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                   t.unload(i);
                 });
             },
@@ -230,7 +240,7 @@ function(
           if (!d)
             return false;
 
-          Notify.confirm(
+          pgAdmin.Browser.notifier.confirm(
             gettext('Reset statistics'),
             gettext('Are you sure you want to reset the statistics for table "%s"?', d._label),
             function () {
@@ -240,14 +250,14 @@ function(
                   obj.on_done(res, data, t, i);
                 })
                 .catch((error)=>{
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                   t.unload(i);
                 });
             },
             function() {/*This is intentional (SonarQube)*/}
           );
         },
-        detach_partition: function(args) {
+        detach: function(args, params) {
           let input = args || {},
             obj = this,
             t = pgBrowser.tree,
@@ -257,14 +267,22 @@ function(
           if (!d)
             return false;
 
-          Notify.confirm(
-            gettext('Detach Partition'),
+          let title = gettext('Detach Partition');
+
+          if (params['mode'] === 'concurrently') {
+            title = gettext('Detach Partition Concurrently');
+          } else if (params['mode'] === 'finalize') {
+            title = gettext('Detach Partition Finalize');
+          }
+
+          pgAdmin.Browser.notifier.confirm(
+            title,
             gettext('Are you sure you want to detach the partition %s?', d._label),
             function () {
-              getApiInstance().put(obj.generate_url(i, 'detach' , d, true))
+              getApiInstance().put(obj.generate_url(i, 'detach' , d, true), params)
                 .then(({data: res})=>{
                   if (res.success == 1) {
-                    Notify.success(res.info);
+                    pgAdmin.Browser.notifier.success(res.info);
                     let n = t.next(i);
                     if (!n) {
                       n = t.prev(i);
@@ -279,11 +297,23 @@ function(
                   }
                 })
                 .catch((error)=>{
-                  Notify.pgRespErrorNotify(error);
+                  pgAdmin.Browser.notifier.pgRespErrorNotify(error);
                 });
             },
             function() {/*This is intentional (SonarQube)*/}
           );
+        },
+        detach_partition: function(args) {
+          let params = {'mode': 'detach' };
+          this.callbacks.detach.apply(this, [args, params]);
+        },
+        detach_partition_concurrently: function(args) {
+          let params = {'mode': 'concurrently' };
+          this.callbacks.detach.apply(this, [args, params]);
+        },
+        detach_partition_finalize: function(args) {
+          let params = {'mode': 'finalize' };
+          this.callbacks.detach.apply(this, [args, params]);
         },
       },
       getSchema: function(treeNodeInfo, itemNodeData) {
@@ -292,14 +322,14 @@ function(
       canCreate: SchemaChildTreeNode.isTreeItemOfChildOfSchema,
       // Check to whether table has disable trigger(s)
       canCreate_with_trigger_enable: function(itemData, item, data) {
-        if(this.canCreate.apply(this, [itemData, item, data])) {
+        if(this.canCreate(itemData, item, data)) {
           // We are here means we can create menu, now let's check condition
           return (itemData.tigger_count > 0);
         }
       },
       // Check to whether table has enable trigger(s)
       canCreate_with_trigger_disable: function(itemData, item, data) {
-        if(this.canCreate.apply(this, [itemData, item, data])) {
+        if(this.canCreate(itemData, item, data)) {
           // We are here means we can create menu, now let's check condition
           return (itemData.tigger_count > 0 && itemData.has_enable_triggers > 0);
         }

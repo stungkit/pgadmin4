@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -34,6 +34,8 @@ from pgadmin.tools.sqleditor.utils.query_history import QueryHistory
 
 from pgadmin.tools.schema_diff.node_registry import SchemaDiffRegistry
 from pgadmin.model import db, Server, Database
+from pgadmin.browser.utils import underscore_escape
+from pgadmin.utils.constants import TWO_PARAM_STRING
 
 
 class DatabaseModule(CollectionNodeModule):
@@ -127,6 +129,9 @@ class DatabaseModule(CollectionNodeModule):
         from .subscriptions import blueprint as module
         self.submodules.append(module)
 
+        from .dbms_job_scheduler import blueprint as module
+        self.submodules.append(module)
+
         super().register(app, options)
 
 
@@ -193,9 +198,19 @@ class DatabaseView(PGChildNodeView):
             {'get': 'get_ctypes'},
             {'get': 'get_ctypes'}
         ],
+        'get_icu_locale': [
+            {'get': 'get_icu_locale'},
+            {'get': 'get_icu_locale'}
+        ],
+        'get_builtin_locale': [
+            {'get': 'get_builtin_locale'},
+            {'get': 'get_builtin_locale'}
+        ],
         'vopts': [
             {}, {'get': 'variable_options'}
-        ]
+        ],
+        'delete': [{'delete': 'delete'},
+                   {'delete': 'delete'}]
     })
 
     def check_precondition(action=None):
@@ -386,7 +401,8 @@ class DatabaseView(PGChildNodeView):
                     canDisconn=can_dis_conn,
                     canDrop=can_drop,
                     isTemplate=row['is_template'],
-                    inode=True if row['datallowconn'] else False
+                    inode=True if row['datallowconn'] else False,
+                    description=row['description']
                 )
             )
 
@@ -575,7 +591,7 @@ class DatabaseView(PGChildNodeView):
                 'icon': 'pg-icon-database',
                 'already_connected': already_connected,
                 'connected': True,
-                'info_prefix': '{0}/{1}'.
+                'info_prefix': TWO_PARAM_STRING.
                 format(Server.query.filter_by(id=sid)[0].name, conn.db)
             }
         )
@@ -598,7 +614,7 @@ class DatabaseView(PGChildNodeView):
                 data={
                     'icon': 'icon-database-not-connected',
                     'connected': False,
-                    'info_prefix': '{0}/{1}'.
+                    'info_prefix': TWO_PARAM_STRING.
                     format(Server.query.filter_by(id=sid)[0].name, conn.db)
                 }
             )
@@ -631,7 +647,7 @@ class DatabaseView(PGChildNodeView):
         """
         This function to return list of available collation/character types
         """
-        res = [{'label': '', 'value': ''}]
+        res = []
         default_list = ['C', 'POSIX']
         for val in default_list:
             res.append(
@@ -647,6 +663,51 @@ class DatabaseView(PGChildNodeView):
         for row in rset['rows']:
             if row['cname'] not in default_list:
                 res.append({'label': row['cname'], 'value': row['cname']})
+
+        return make_json_response(
+            data=res,
+            status=200
+        )
+
+    @check_precondition(action="get_icu_locale")
+    def get_icu_locale(self, gid, sid, did=None):
+        """
+        This function is used to get the list of icu locale
+        """
+        res = []
+        SQL = render_template(
+            "/".join([self.template_path, 'get_icu_locale.sql'])
+        )
+        status, rset = self.conn.execute_dict(SQL)
+        if not status:
+            return internal_server_error(errormsg=rset)
+
+        for row in rset['rows']:
+            res.append(
+                {'label': row['colliculocale'], 'value': row['colliculocale']})
+
+        return make_json_response(
+            data=res,
+            status=200
+        )
+
+    @check_precondition(action="get_builtin_locale")
+    def get_builtin_locale(self, gid, sid, did=None):
+        """
+        This function is used to get the list of builtin locale
+        """
+        res = []
+        SQL = render_template(
+            "/".join([self.template_path, 'get_builtin_locale.sql'])
+        )
+        status, rset = self.conn.execute_dict(SQL)
+        if not status:
+            return internal_server_error(errormsg=rset)
+
+        for row in rset['rows']:
+            res.append(
+                {'label': row['collbuiltinlocale'],
+                 'value': row['collbuiltinlocale']})
 
         return make_json_response(
             data=res,
@@ -1001,7 +1062,8 @@ class DatabaseView(PGChildNodeView):
 
                 sql = render_template(
                     "/".join([self.template_path, self._DELETE_SQL]),
-                    datname=res, conn=self.conn
+                    datname=res, conn=self.conn,
+                    with_force=self.cmd == 'delete'
                 )
 
                 status, msg = default_conn.execute_scalar(sql)
@@ -1011,7 +1073,8 @@ class DatabaseView(PGChildNodeView):
                                                    auto_reconnect=True)
                     status, errmsg = conn.connect()
 
-                    return internal_server_error(errormsg=msg)
+                    return internal_server_error(
+                        errormsg=underscore_escape(msg))
 
         return make_json_response(success=1)
 
@@ -1226,6 +1289,12 @@ class DatabaseView(PGChildNodeView):
             did=did, conn=conn, last_system_oid=0,
             show_system_objects=False,
         )
+
+        # try to connect the db if not connected
+        # don't delete the below code as it is needed for Database RESQL tests.
+        if not conn.connected():
+            conn.connect()
+
         status, res = conn.execute_dict(SQL)
 
         if not status:

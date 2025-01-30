@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -23,44 +23,302 @@ export class VacuumSchema extends BaseUISchema {
     return 'op';
   }
 
-  isDisabled(state) {
-    if(state?.op) {
-      return (state.op != 'VACUUM');
-    } else {
-      return false;
-    }
+  isApplicableForVacuum(state) {
+    return state?.op ? state.op == 'VACUUM' : false;
   }
-
+  isApplicableForReindex(state) {
+    return state?.op ? state.op == 'REINDEX' : false;
+  }
 
   get baseFields() {
     let obj = this;
     return  [{
       id: 'vacuum_full',
-      group: gettext('Vacuum'),
-      disabled: function(state) {
-        return obj.isDisabled(state);
-      },
+      deps: ['op'],
       type: 'switch',
       label: gettext('FULL'),
-      deps: ['op'],
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_full = false;
+          return true;
+        }
+        return false;
+      }
     }, {
       id: 'vacuum_freeze',
       deps: ['op'],
-      disabled: function(state) {
-        return obj.isDisabled(state);
-      },
       type: 'switch',
       label: gettext('FREEZE'),
-      group: gettext('Vacuum'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_freeze = false;
+          return true;
+        }
+        return false;
+      }
     }, {
       id: 'vacuum_analyze',
       deps: ['op'],
       type: 'switch',
-      disabled: function(state) {
-        return obj.isDisabled(state);
-      },
       label: gettext('ANALYZE'),
-      group: gettext('Vacuum'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_analyze = false;
+          return true;
+        }
+        return false;
+      }
+    }, {
+      id: 'vacuum_disable_page_skipping',
+      deps: ['op', 'vacuum_full'],
+      type: 'switch',
+      label: gettext('DISABLE PAGE SKIPPING'),
+      inlineGroup: 'operations',
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state) || state.vacuum_full) {
+          state.vacuum_disable_page_skipping = false;
+          return true;
+        }
+        return false;
+      },
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      }
+    }, {
+      id: 'skip_locked',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('SKIP LOCKED'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return state?.op ? (state.op == 'VACUUM' || state.op == 'ANALYZE') : false;
+      },
+      disabled: function(state) {
+        if (state?.op && state.op != 'VACUUM' && state.op != 'ANALYZE') {
+          state.skip_locked = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 120000,
+    }, {
+      id: 'vacuum_truncate',
+      deps: ['op', 'vacuum_full'],
+      type: 'switch',
+      label: gettext('TRUNCATE'),
+      inlineGroup: 'operations',
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state) || state.vacuum_full) {
+          state.vacuum_truncate = false;
+          return true;
+        }
+        return false;
+      },
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      min_version: 120000,
+    }, {
+      id: 'vacuum_process_toast',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('PROCESS TOAST'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_process_toast = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 140000,
+    }, {
+      id: 'vacuum_process_main',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('PROCESS MAIN'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_process_main = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 160000,
+    }, {
+      id: 'vacuum_skip_database_stats',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('SKIP DATABASE STATS'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_skip_database_stats = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 160000,
+    }, {
+      id: 'vacuum_only_database_stats',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('ONLY DATABASE STATS'),
+      inlineGroup: 'operations',
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state)) {
+          state.vacuum_only_database_stats = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 160000,
+    }, {
+      id: 'vacuum_index_cleanup',
+      deps: ['op', 'vacuum_full'],
+      type: 'select',
+      inlineGroup: 'operations',
+      label: gettext('INDEX CLEANUP'),
+      controlProps: { allowClear: false, width: '100%' },
+      options: function () {
+        let optArray = [{
+          label: gettext('ON'),
+          value: 'ON',
+        },
+        {
+          label: gettext('OFF'),
+          value: 'OFF',
+        }];
+
+        if (obj?.top?.nodeInfo?.server?.version >= 140000) {
+          optArray.push({
+            label: gettext('AUTO'),
+            value: 'AUTO',
+          });
+        }
+
+        return optArray;
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state) || state.vacuum_full) {
+          state.vacuum_index_cleanup = undefined;
+          return true;
+        }
+        return false;
+      },
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      min_version: 120000,
+    }, {
+      id: 'vacuum_parallel',
+      deps: ['op', 'vacuum_full'],
+      type: 'int',
+      label: gettext('PARALLEL'),
+      min:0, max:1024,
+      visible: function(state) {
+        return obj.isApplicableForVacuum(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForVacuum(state) || state.vacuum_full) {
+          state.vacuum_parallel = undefined;
+          return true;
+        }
+        return false;
+      },
+      min_version: 130000,
+    }, {
+      id: 'buffer_usage_limit',
+      deps: ['op', 'vacuum_full', 'vacuum_analyze'],
+      type: 'text',
+      label: gettext('BUFFER USAGE LIMIT'),
+      visible: function(state) {
+        return state?.op ? (state.op == 'VACUUM' || state.op == 'ANALYZE') : false;
+      },
+      disabled: function(state) {
+        if (state?.op && ((state.op != 'VACUUM' && state.op != 'ANALYZE') || (state.op == 'VACUUM' && state.vacuum_full && !state.vacuum_analyze))) {
+          state.buffer_usage_limit = '';
+          return true;
+        }
+        return false;
+      },
+      helpMessage: gettext('Sizes should be specified as a string containing the numerical size followed by any one of the following memory units: kB (kilobytes), MB (megabytes), GB (gigabytes), or TB (terabytes)'),
+      min_version: 160000,
+    }, {
+      id: 'reindex_system',
+      deps: ['op'],
+      type: 'switch',
+      label: gettext('SYSTEM'),
+      visible: function(state) {
+        return obj.isApplicableForReindex(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForReindex(state) || obj?.top?.nodeInfo?.schema) {
+          state.reindex_system = false;
+          return true;
+        }
+        return false;
+      },
+      helpMessage: gettext('This option is enabled only when the database is selected in the object explorer.'),
+    }, {
+      id: 'reindex_concurrently',
+      deps: ['op', 'reindex_system'],
+      type: 'switch',
+      label: gettext('CONCURRENTLY'),
+      visible: function(state) {
+        return obj.isApplicableForReindex(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForReindex(state) || state.reindex_system) {
+          state.reindex_concurrently = false;
+          return true;
+        }
+        return false;
+      },
+      min_version: 120000,
+    }, {
+      id: 'reindex_tablespace',
+      label: gettext('TABLESPACE'),
+      deps: ['op', 'reindex_system'],
+      type: 'select',
+      options: this.fieldOptions.tablespace,
+      controlProps: { allowClear: true },
+      visible: function(state) {
+        return obj.isApplicableForReindex(state);
+      },
+      disabled: function(state) {
+        if (!obj.isApplicableForReindex(state) || state.reindex_system) {
+          state.reindex_tablespace = undefined;
+          return true;
+        }
+        return false;
+      },
+      min_version: 140000,
     }];
   }
 }
@@ -75,11 +333,11 @@ export default class MaintenanceSchema extends BaseUISchema {
 
   constructor(vacuumSchema, fieldOptions = {}) {
     super({
-      op: 'VACUUM',
-      verbose: true,
-      vacuum_full: false,
-      vacuum_freeze: false,
-      vacuum_analyze: false,
+      op: (fieldOptions.nodeInfo?.schema && !fieldOptions.nodeInfo?.table &&
+          !fieldOptions.nodeInfo?.primary_key && !fieldOptions.nodeInfo?.unique_constraint &&
+          !fieldOptions.nodeInfo?.index && !fieldOptions.nodeInfo?.partition &&
+          !fieldOptions.nodeInfo?.mview) ? 'REINDEX' : 'VACUUM',
+      verbose: true
     });
 
     this.fieldOptions = {
@@ -95,6 +353,12 @@ export default class MaintenanceSchema extends BaseUISchema {
     return 'id';
   }
 
+  isSchemaNode() {
+    return this.nodeInfo?.schema && !this.nodeInfo?.table &&
+           !this.nodeInfo?.primary_key && !this.nodeInfo?.unique_constraint &&
+           !this.nodeInfo?.index && !this.nodeInfo?.partition;
+  }
+
   get baseFields() {
     let obj = this;
     return [
@@ -107,20 +371,22 @@ export default class MaintenanceSchema extends BaseUISchema {
           {
             'label': gettext('VACUUM'),
             value: 'VACUUM',
+            disabled: (obj.isSchemaNode() && !obj.nodeInfo?.mview)
           },
           {
             'label': gettext('ANALYZE'),
             value: 'ANALYZE',
+            disabled: (obj.isSchemaNode() && !obj.nodeInfo?.mview)
           },
           {
             'label': gettext('REINDEX'),
             value: 'REINDEX',
-            disabled: obj.nodeInfo?.mview?true:false
+            disabled: obj.nodeInfo?.mview
           },
           {
             'label': gettext('CLUSTER'),
             value: 'CLUSTER',
-            disabled: obj.nodeInfo?.mview?true:false
+            disabled: obj.nodeInfo?.mview || obj.isSchemaNode()
           },
         ],
       },
@@ -129,6 +395,15 @@ export default class MaintenanceSchema extends BaseUISchema {
         label: gettext('Type of objects'),
         schema: obj.getVacuumSchema(),
         group: gettext('Options'),
+        deps: ['op'],
+        visible: function(state) {
+          if (state?.op == 'ANALYZE') {
+            return obj?.nodeInfo?.server?.version >= 120000;
+          } else if (state?.op == 'CLUSTER') {
+            return false;
+          }
+          return true;
+        }
       },
       {
         id: 'verbose',
@@ -136,21 +411,6 @@ export default class MaintenanceSchema extends BaseUISchema {
         deps: ['op'],
         type: 'switch',
         label: gettext('Verbose Messages'),
-        disabled: function(state) {
-          let nodeInfo = this.nodeInfo;
-          if(state?.verbose) {
-            if ('primary_key' in nodeInfo || 'unique_constraint' in nodeInfo ||
-            'index' in nodeInfo) {
-              if (state.op == 'REINDEX') {
-                state.verbose = false;
-                return true;
-              }
-            }
-            return state.op == 'REINDEX';
-          } else {
-            return false;
-          }
-        },
       },
     ];
   }

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -24,11 +24,13 @@ import time
 import unittest
 import asyncio
 
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-if sys.version_info < (3, 4):
-    raise RuntimeError('The test suite must be run under Python 3.4 or later.')
+if sys.version_info < (3, 8):
+    raise RuntimeError('The test suite must be run under Python 3.8 or later.')
 
 import builtins
 
@@ -48,9 +50,8 @@ root = os.path.dirname(CURRENT_PATH)
 if sys.path[0] != root:
     sys.path.insert(0, root)
     os.chdir(root)
-
-from pgadmin import create_app
 import config
+from pgadmin import create_app
 
 if config.SERVER_MODE is True:
     config.SECURITY_RECOVERABLE = True
@@ -59,6 +60,7 @@ if config.SERVER_MODE is True:
 
 # disable master password for test cases
 config.MASTER_PASSWORD_REQUIRED = False
+config.USE_OS_SECRET_STORAGE = False
 
 from regression import test_setup
 from regression.feature_utils.app_starter import AppStarter
@@ -89,9 +91,6 @@ if pgadmin_credentials and \
     os.environ['PGADMIN_SETUP_PASSWORD'] = str(pgadmin_credentials[
         'login_password'])
 
-# Execute the setup file
-exec(open("setup.py").read())
-
 # Get the config database schema version. We store this in pgadmin.model
 # as it turns out that putting it in the config files isn't a great idea
 from pgadmin.model import SCHEMA_VERSION
@@ -109,7 +108,8 @@ from logging import WARNING
 config.CONSOLE_LOG_LEVEL = WARNING
 
 # Create the app
-app = create_app()
+from pgAdmin4 import app
+app.app_context().push()
 
 app.PGADMIN_INT_KEY = ''
 app.config.update({'SESSION_COOKIE_DOMAIN': None})
@@ -283,13 +283,14 @@ def setup_webdriver_specification(arguments):
             'default_browser'].lower()
 
     if default_browser == 'firefox':
+        options = FirefoxOptions()
         cap = DesiredCapabilities.FIREFOX
         cap['requireWindowFocus'] = True
         cap['enablePersistentHover'] = False
         profile = webdriver.FirefoxProfile()
         profile.set_preference("dom.disable_beforeunload", True)
-        driver_local = webdriver.Firefox(capabilities=cap,
-                                         firefox_profile=profile)
+        options.profile = profile
+        driver_local = webdriver.Firefox(options=options)
         driver_local.implicitly_wait(1)
     else:
         options = Options()
@@ -477,6 +478,7 @@ def execute_test(test_module_list_passed, server_passed, driver_passed,
     :param parallel_ui_test: parallel ui tests
     :return:
     """
+    server_information = None
     try:
         print("\n=============Running the test cases for '%s' ============="
               % server_passed['name'], file=sys.stderr)
@@ -495,7 +497,8 @@ def execute_test(test_module_list_passed, server_passed, driver_passed,
             server_passed['db_password'],
             server_passed['host'],
             server_passed['port'],
-            server_passed['sslmode']
+            server_passed['sslmode'],
+            max_connections=100
         )
 
         # Add the server version in server information
@@ -509,8 +512,9 @@ def execute_test(test_module_list_passed, server_passed, driver_passed,
         test_utils.create_database(server_passed, test_db_name)
 
         # Configure preferences for the test cases
-        test_utils.configure_preferences(
-            default_binary_path=server_passed['default_binary_paths'])
+        with app.app_context():
+            test_utils.configure_preferences(
+                default_binary_path=server_passed['default_binary_paths'])
 
         # Create user to run selenoid tests in parallel
         if parallel_ui_test:
@@ -535,7 +539,7 @@ def execute_test(test_module_list_passed, server_passed, driver_passed,
 
         # This is required when some tests are running parallel
         # & some sequential in case of parallel ui tests
-        if threading.current_thread().getName() == "sequential_tests":
+        if threading.current_thread().name == "sequential_tests":
             try:
                 if test_result[server_passed['name']][0] is not None:
                     ran_tests = test_result[server_passed['name']][0] + \
@@ -561,22 +565,24 @@ def execute_test(test_module_list_passed, server_passed, driver_passed,
         if connection:
             test_utils.drop_database(connection, test_db_name)
             connection.close()
-        # Delete test server
-        # test_utils.delete_test_server(test_client)
-        test_utils.delete_server(test_client, server_information)
     except Exception as exc:
         traceback.print_exc(file=sys.stderr)
         print(str(exc))
         print("Exception in {0} {1}".format(
             threading.current_thread().ident,
-            threading.current_thread().getName()))
+            threading.current_thread().name))
         # Mark failure as true
-        global failure
-        failure = True
+        if 'other session using the database.' not in str(exc) and \
+           'other sessions using the database.' not in str(exc):
+            global failure
+            failure = True
     finally:
+        # Delete test server
+        if server_information:
+            test_utils.delete_server(test_client, server_information)
         # Delete web-driver instance
         thread_name = "parallel_tests" + server_passed['name']
-        if threading.current_thread().getName() == thread_name:
+        if threading.current_thread().name == thread_name:
             test_utils.quit_webdriver(driver_passed)
             time.sleep(20)
 

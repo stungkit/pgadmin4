@@ -8,57 +8,53 @@
 #
 ###############################################################################
 
-Flask==2.0.3; python_version <= '3.6'
-Flask==2.1.*; python_version >= '3.7'
-Flask-Gravatar==0.*
+Flask==3.0.*; python_version <= '3.8'
+Flask==3.1.*; python_version >= '3.9'
 Flask-Login==0.*
 Flask-Mail==0.*
 Flask-Migrate==4.*
-dnspython==2.2.1
-greenlet==1.1.2;  python_version <= '3.10'
-Flask-SQLAlchemy==2.5.*
-Flask-WTF==1.0.1
+Flask-SQLAlchemy==3.1.*
+Flask-WTF==1.2.*
 Flask-Compress==1.*
 Flask-Paranoid==0.*
-Flask-Babel==2.*
-Flask-Security-Too==4.1.*
-Flask-SocketIO<=5.2.0
-WTForms==3.*
+Flask-Babel==4.0.*
+Flask-Security-Too==5.5.*; python_version >= '3.10'
+Flask-Security-Too==5.4.*; python_version <= '3.9'
+Flask-SocketIO==5.5.*
+WTForms==3.2.*; python_version >= '3.10'
+WTForms==3.1.*; python_version <= '3.9'
 passlib==1.*
-pytz==2021.*
+pytz==2024.*
 speaklater3==1.*
 sqlparse==0.*
-psutil==5.9.3
-psycopg2==2.9.*; python_version < '3.7'
-psycopg[c]==3.1.*; python_version >= '3.7'
+psutil==6.1.*
+psycopg[c]==3.2.4
 python-dateutil==2.*
-SQLAlchemy==1.4.44; python_version <= '3.6'
-SQLAlchemy==1.4.*; python_version >= '3.7'
-bcrypt==3.*
-cryptography==3.*
+SQLAlchemy==2.*
+bcrypt==4.2.*
+cryptography==44.0.*
 sshtunnel==0.*
 ldap3==2.*
-gssapi==1.7.*; python_version <= '3.6'
-gssapi==1.8.*; python_version >= '3.7'
-eventlet==0.33.0
-httpagentparser==1.9.*
+gssapi==1.9.*
 user-agents==2.2.0
-pywinpty==1.1.*; sys_platform=="win32"
-Authlib==0.15.*; python_version <= '3.6'
-Authlib==1.1.*; python_version >= '3.7'
-requests==2.25.*
+pywinpty==2.0.*; sys_platform=="win32"
+Authlib==1.3.*; python_version <= '3.8'
+Authlib==1.4.*; python_version >= '3.9'
 pyotp==2.*
-qrcode==7.*
-Pillow==8.4.*; python_version <= '3.6'
-Pillow==9.*; python_version >= '3.7'
-boto3==1.23.*; python_version <= '3.6'
-boto3==1.26.*; python_version >= '3.7'
-botocore==1.26.*; python_version <= '3.6'
-botocore==1.29.*; python_version >= '3.7'
+qrcode==7.*; python_version <= '3.8'
+qrcode[pil]==8.*; python_version >= '3.9'
+boto3==1.36.*
 urllib3==1.26.*
-Werkzeug==2.0.3; python_version <= '3.6'
-Werkzeug==2.1.2; python_version >= '3.7'
 azure-mgmt-rdbms==10.1.0
-azure-mgmt-resource==21.0.0
-azure-mgmt-subscription==3.0.0
-azure-identity==1.9.0
+azure-mgmt-resource==23.2.0
+azure-mgmt-subscription==3.1.1
+azure-identity==1.19.0
+google-api-python-client==2.*
+google-auth-oauthlib==1.2.1
+keyring==25.*
+Werkzeug==3.0.*; python_version <= '3.8'
+Werkzeug==3.1.*; python_version >= '3.9'
+typer[all]==0.15.*
+setuptools==75.*; python_version >= '3.12'
+jsonformatter~=0.3.4
+libgravatar==1.0.*

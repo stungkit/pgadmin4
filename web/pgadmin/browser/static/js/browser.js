@@ -2,50 +2,29 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import React from 'react';
-import { generateNodeUrl } from './node_ajax';
 import MainMenuFactory from './MainMenuFactory';
 import _ from 'lodash';
-import Notify, {initializeModalProvider, initializeNotifier} from '../../../static/js/helpers/Notifier';
-import { checkMasterPassword } from '../../../static/js/Dialogs/index';
+import { checkMasterPassword, showQuickSearch } from '../../../static/js/Dialogs/index';
 import { pgHandleItemError } from '../../../static/js/utils';
-import { Search } from './quick_search/trigger_search';
 import { send_heartbeat, stop_heartbeat } from './heartbeat';
 import getApiInstance from '../../../static/js/api_instance';
+import usePreferences, { setupPreferenceBroadcast } from '../../../preferences/static/js/store';
+import checkNodeVisibility from '../../../static/js/check_node_visibility';
 
 define('pgadmin.browser', [
-  'sources/gettext', 'sources/url_for', 'jquery',
-  'sources/pgadmin', 'bundled_codemirror',
-  'sources/check_node_visibility', './toolbar', 'pgadmin.help',
-  'sources/csrf', 'sources/utils', 'sources/window', 'pgadmin.authenticate.kerberos',
-  'sources/tree/tree_init',
-  'pgadmin.browser.utils',
-  'pgadmin.browser.preferences', 'pgadmin.browser.messages',
-  'pgadmin.browser.panel', 'pgadmin.browser.layout',
-  'pgadmin.browser.frame',
+  'sources/gettext', 'sources/url_for', 'sources/pgadmin',
+  'sources/csrf', 'pgadmin.authenticate.kerberos',
+  'pgadmin.browser.utils', 'pgadmin.browser.messages',
   'pgadmin.browser.node', 'pgadmin.browser.collection', 'pgadmin.browser.activity',
-  'sources/codemirror/addon/fold/pgadmin-sqlfoldcode',
   'pgadmin.browser.keyboard', 'sources/tree/pgadmin_tree_save_state',
-  /* wcDocker dependencies */
-  'bootstrap', 'jquery-contextmenu', 'wcdocker',
 ], function(
-  gettext, url_for, $,
-  pgAdmin, codemirror,
-  checkNodeVisibility, toolBar, help, csrfToken, pgadminUtils, pgWindow,
-  Kerberos, InitTree,
+  gettext, url_for, pgAdmin, csrfToken, Kerberos,
 ) {
-  window.jQuery = window.$ = $;
-  // Some scripts do export their object in the window only.
-  // Generally the one, which do no have AMD support.
-  let wcDocker = window.wcDocker;
-  $ = $ || window.jQuery || window.$;
-  let CodeMirror = codemirror.default;
-
   let pgBrowser = pgAdmin.Browser = pgAdmin.Browser || {};
   let select_object_msg = gettext('Please select an object in the tree view.');
 
@@ -53,84 +32,10 @@ define('pgadmin.browser', [
 
   Kerberos.validate_kerberos_ticket();
 
-  let panelEvents = {};
-  panelEvents[wcDocker.EVENT.VISIBILITY_CHANGED] = function() {
-    if (this.isVisible()) {
-      let obj = pgAdmin.Browser,
-        i   = obj.tree ? obj.tree.selected() : undefined,
-        d   = i ? obj.tree.itemData(i) : undefined;
-
-      if (d && obj.Nodes[d._type].callbacks['selected'] &&
-        _.isFunction(obj.Nodes[d._type].callbacks['selected'])) {
-        return obj.Nodes[d._type].callbacks['selected'].apply(
-          obj.Nodes[d._type], [i, d, obj]);
-      }
-    }
-  };
-
-  let initializeBrowserTree = pgAdmin.Browser.initializeBrowserTree =
-    function(b) {
-      InitTree.initBrowserTree(b).then(() => {
-        b.tree.registerDraggableType({
-          'collation domain domain_constraints fts_configuration fts_dictionary fts_parser fts_template synonym table partition type sequence package view mview foreign_table edbvar' : (data, item, treeNodeInfo)=>{
-            let text = pgadminUtils.fully_qualify(b, data, item);
-            return {
-              text: text,
-              objUrl: generateNodeUrl.call(pgBrowser.Nodes[data._type], treeNodeInfo, 'properties', data, true),
-              nodeType: data._type,
-              cur: {
-                from: text.length,
-                to: text.length,
-              },
-            };
-          },
-          'schema column database cast event_trigger extension language foreign_data_wrapper foreign_server user_mapping compound_trigger index index_constraint primary_key unique_constraint check_constraint exclusion_constraint foreign_key rule' : (data)=>{
-            return pgadminUtils.quote_ident(data._label);
-          },
-          'trigger trigger_function' : (data)=>{
-            return data._label;
-          },
-          'edbfunc function edbproc procedure' : (data, item)=>{
-            let newData = {...data},
-              parsedFunc = null,
-              dropVal = '',
-              curPos = {from: 0, to: 0};
-
-            parsedFunc = pgadminUtils.parseFuncParams(newData._label);
-            newData._label = parsedFunc.func_name;
-            dropVal = pgadminUtils.fully_qualify(b, newData, item);
-
-            if(parsedFunc.params.length > 0) {
-              dropVal = dropVal + '(';
-              curPos.from =  dropVal.length;
-              dropVal = dropVal + parsedFunc.params[0][0];
-              curPos.to = dropVal.length;
-
-              for(let i=1; i<parsedFunc.params.length; i++) {
-                dropVal = dropVal + ', ' + parsedFunc.params[i][0];
-              }
-
-              dropVal = dropVal + ')';
-            } else {
-              dropVal = dropVal + '()';
-              curPos.from = curPos.to = dropVal.length + 1;
-            }
-
-            return {
-              text: dropVal,
-              cur: curPos,
-            };
-          },
-        });
-      }, () => {console.warn('Tree Load Error');});
-    };
-
   // Extend the browser class attributes
   _.extend(pgAdmin.Browser, {
     // The base url for browser
     URL: url_for('browser.index'),
-    // We do have docker of type wcDocker to take care of different
-    // containers. (i.e. panels, tabs, frames, etc.)
     docker:null,
     // Reversed Engineer query for the selected database node object goes
     // here
@@ -151,21 +56,18 @@ define('pgadmin.browser', [
       // calc method logic
       calc: (passed_width) => {
         let iw = window.innerWidth;
-        if(iw > passed_width){
+        if(iw > passed_width)
           return passed_width;
-        }else{
-          if (iw > pgAdmin.Browser.stdW.lg)
-            return pgAdmin.Browser.stdW.lg;
-          else if (iw > pgAdmin.Browser.stdW.md)
-            return pgAdmin.Browser.stdW.md;
-          else if (iw > pgAdmin.Browser.stdW.sm)
-            return pgAdmin.Browser.stdW.sm;
-          else
-            // if avilable screen resolution is still
-            // less then return the width value as it
-            return iw;
-        }
-
+        else if (iw > pgAdmin.Browser.stdW.lg)
+          return pgAdmin.Browser.stdW.lg;
+        else if (iw > pgAdmin.Browser.stdW.md)
+          return pgAdmin.Browser.stdW.md;
+        else if (iw > pgAdmin.Browser.stdW.sm)
+          return pgAdmin.Browser.stdW.sm;
+        else
+          // if avilable screen resolution is still
+          // less then return the width value as it
+          return iw;
       },
     },
     stdH: {
@@ -178,117 +80,20 @@ define('pgadmin.browser', [
       calc: (passed_height) => {
         // We are excluding sm as it is too small for dialog
         let ih = window.innerHeight;
-        if (ih > passed_height){
+        if (ih > passed_height)
           return passed_height;
-        } else {
-          if (ih > pgAdmin.Browser.stdH.lg)
-            return pgAdmin.Browser.stdH.lg;
-          else if (ih > pgAdmin.Browser.stdH.md)
-            return pgAdmin.Browser.stdH.md;
-          else
-            // if avilable screen resolution is still
-            // less then return the height value as it
-            return ih;
-        }
+        else if (ih > pgAdmin.Browser.stdH.lg)
+          return pgAdmin.Browser.stdH.lg;
+        else if (ih > pgAdmin.Browser.stdH.md)
+          return pgAdmin.Browser.stdH.md;
+        else
+          // if avilable screen resolution is still
+          // less then return the height value as it
+          return ih;
       },
     },
     // Default panels
-    panels: {
-      // Panel to keep the left hand browser tree
-      'browser': new pgAdmin.Browser.Panel({
-        name: 'browser',
-        title: gettext('Browser'),
-        showTitle: true,
-        isCloseable: false,
-        isPrivate: true,
-        icon: '',
-        limit: 1,
-        content: '<div id="tree" class="browser-tree"></div>',
-        onCreate: function(panel, container) {
-          toolBar.initializeToolbar(panel, wcDocker);
-          container.classList.add('pg-no-overflow');
-        },
-      }),
-      // Properties of the object node
-      'properties': new pgAdmin.Browser.Panel({
-        name: 'properties',
-        title: gettext('Properties'),
-        icon: '',
-        width: 500,
-        isCloseable: false,
-        isPrivate: true,
-        elContainer: true,
-        limit: 1,
-        content: '<div class="obj_properties"><div role="status" class="pg-panel-message">' + select_object_msg + '</div></div>',
-        events: panelEvents,
-        onCreate: function(myPanel, container) {
-          container.classList.add('pg-no-overflow');
-        },
-      }),
-      // Statistics of the object
-      'statistics': new pgAdmin.Browser.Panel({
-        name: 'statistics',
-        title: gettext('Statistics'),
-        icon: '',
-        width: 500,
-        isCloseable: true,
-        isPrivate: false,
-        limit : 1,
-        canHide: true,
-        content: '<div></div>',
-        events: panelEvents,
-      }),
-      // Reversed engineered SQL for the object
-      'sql': new pgAdmin.Browser.Panel({
-        name: 'sql',
-        title: gettext('SQL'),
-        icon: '',
-        width: 500,
-        isCloseable: false,
-        isPrivate: true,
-        limit: 1,
-        content: '<div></div>',
-      }),
-      // Dependencies of the object
-      'dependencies': new pgAdmin.Browser.Panel({
-        name: 'dependencies',
-        title: gettext('Dependencies'),
-        icon: '',
-        width: 500,
-        isCloseable: true,
-        isPrivate: false,
-        canHide: true,
-        limit: 1,
-        content: '<div></div>',
-        events: panelEvents,
-      }),
-      // Dependents of the object
-      'dependents': new pgAdmin.Browser.Panel({
-        name: 'dependents',
-        title: gettext('Dependents'),
-        icon: '',
-        width: 500,
-        isCloseable: true,
-        isPrivate: false,
-        limit: 1,
-        canHide: true,
-        content: '<div></div>',
-        events: panelEvents,
-      }),
-      // Background processes
-      'processes': new pgAdmin.Browser.Panel({
-        name: 'processes',
-        title: gettext('Processes'),
-        icon: '',
-        width: 500,
-        isCloseable: true,
-        isPrivate: false,
-        limit: 1,
-        canHide: true,
-        content: '<div></div>',
-        events: panelEvents,
-      }),
-    },
+    panels: {},
     // We also support showing dashboards, HTML file, external URL
     frames: {},
     /* Menus */
@@ -314,43 +119,10 @@ define('pgadmin.browser', [
     MainMenus: [],
     BrowserContextMenu: [],
 
-    add_panels: function() {
-      /* Add hooked-in panels by extensions */
-      let panels = JSON.parse(pgBrowser.panels_items);
-      _.each(panels, function(panel) {
-        if (panel.isIframe) {
-          pgBrowser.frames[panel.name] = new pgBrowser.Frame({
-            name: panel.name,
-            title: panel.title,
-            icon: panel.icon,
-            width: panel.width,
-            height: panel.height,
-            showTitle: panel.showTitle,
-            isCloseable: panel.isCloseable,
-            isPrivate: panel.isPrivate,
-            url: panel.content,
-          });
-        } else {
-          pgBrowser.panels[panel.name] = new pgBrowser.Panel({
-            name: panel.name,
-            title: panel.title,
-            icon: panel.icon,
-            width: panel.width,
-            height: panel.height,
-            showTitle: panel.showTitle,
-            isCloseable: panel.isCloseable,
-            isPrivate: panel.isPrivate,
-            limit: (panel.limit) ? panel.limit : null,
-            content: (panel.content) ? panel.content : '',
-            events: (panel.events) ? panel.events : '',
-            canHide: (panel.canHide) ? panel.canHide : '',
-          });
-        }
-      });
-    },
     menu_categories: {
       /* name, label (pair) */
       'register': {
+        name: 'register',
         label: gettext('Register'),
         priority: 1,
         /* separator above this menu */
@@ -360,6 +132,7 @@ define('pgadmin.browser', [
         single: true,
       },
       'create': {
+        name: 'create',
         label: gettext('Create'),
         priority: 2,
         /* separator above this menu */
@@ -376,114 +149,9 @@ define('pgadmin.browser', [
       scripts[n].push({'name': m, 'path': p, loaded: false});
     },
     masterpass_callback_queue: [],
-    getMenuList: function(name, item, d, skipDisabled=false) {
-      let obj = this;
-      let category = {
-        'common': []
-      };
-      const nodeTypeMenus = obj.all_menus_cache[name][d._type];
-      for(let key of Object.keys(nodeTypeMenus)) {
-        let menuItem = nodeTypeMenus[key];
-        let menuCategory = menuItem.category ?? 'common';
-        category[menuCategory] = category[menuCategory] ?? [];
-        category[menuCategory].push(menuItem);
-      }
-      let menuItemList = [];
-
-      for(let c in category) {
-        if((c in obj.menu_categories || category[c].length > 1) && c != 'common' ) {
-          let allMenuItemsDisabled = true;
-          category[c].forEach((mi)=> {
-            mi.checkAndSetDisabled(d, item);
-            if(allMenuItemsDisabled) {
-              allMenuItemsDisabled = mi.isDisabled;
-            }
-          });
-
-          const categoryMenuOptions = obj.menu_categories[c];
-          let label = categoryMenuOptions?.label ?? c;
-          let priority = categoryMenuOptions?.priority ?? 10;
-
-          if(categoryMenuOptions?.above) {
-            menuItemList.push(MainMenuFactory.getSeparator(label, priority));
-          }
-          if(!allMenuItemsDisabled && skipDisabled) {
-            let _menuItem = MainMenuFactory.createMenuItem({
-              name: c,
-              label: label,
-              module: c,
-              category: c,
-              menu_items: category[c],
-              priority: priority
-            });
-
-            menuItemList.push(_menuItem);
-          } else if(!skipDisabled){
-            let _menuItem = MainMenuFactory.createMenuItem({
-              name: c,
-              label: label,
-              module:c,
-              category: c,
-              menu_items: category[c],
-              priority: priority
-            });
-
-            menuItemList.push(_menuItem);
-          }
-          if(categoryMenuOptions?.below) {
-            menuItemList.push(MainMenuFactory.getSeparator(label, priority));
-          }
-        } else {
-          category[c].forEach((c)=> {
-            c.checkAndSetDisabled(d, item);
-          });
-
-          category[c].forEach((m)=> {
-            if(!skipDisabled) {
-              menuItemList.push(m);
-            } else if(skipDisabled && !m.isDisabled){
-              menuItemList.push(m);
-            }
-          });
-        }
-      }
-
-      return menuItemList;
-    },
     // Enable/disable menu options
     enable_disable_menus: function(item) {
-      let obj = this;
-      let d = item ? obj.tree.itemData(item) : undefined;
-      toolBar.enable(gettext('View Data'), false);
-      toolBar.enable(gettext('Filtered Rows'), false);
-
-      // All menus (except for the object menus) are already present.
-      // They will just require to check, whether they are
-      // enabled/disabled.
-      pgBrowser.MainMenus.filter((m)=>m.name != 'object').forEach((menu) => {
-        menu.menuItems.forEach((mitem) => {
-          mitem.checkAndSetDisabled(d, item);
-        });
-      });
-
-      // Create the object menu dynamically
-      let objectMenu = pgBrowser.MainMenus.find((menu) => menu.name == 'object');
-      if (item && obj.all_menus_cache['object']?.[d._type]) {
-        let menuItemList = obj.getMenuList('object', item, d);
-        objectMenu && MainMenuFactory.refreshMainMenuItems(objectMenu, menuItemList);
-        let ctxMenuList = obj.getMenuList('context', item, d, true);
-        obj.BrowserContextMenu = MainMenuFactory.getContextMenu(ctxMenuList);
-      } else {
-        objectMenu && MainMenuFactory.refreshMainMenuItems(objectMenu, [
-          MainMenuFactory.createMenuItem({
-            name: '',
-            label: gettext('No object selected'),
-            category: 'create',
-            priority: 1,
-            enable: false,
-          })
-        ]);
-      }
+      MainMenuFactory.enableDisableMenus(item);
     },
     init: function() {
       let obj=this;
@@ -493,64 +161,8 @@ define('pgadmin.browser', [
       obj.initialized = true;
 
       // Cache preferences
-      obj.cache_preferences();
-      obj.add_panels();
-      // Initialize the Docker
-      obj.docker = new wcDocker(
-        '#dockerContainer', {
-          allowContextMenu: true,
-          allowCollapse: false,
-          loadingClass: 'pg-sp-icon',
-          themePath: url_for('static', {
-            'filename': 'css',
-          }),
-          theme: 'webcabin.overrides.css',
-        });
-      if (obj.docker) {
-        // Initialize all the panels
-        _.each(obj.panels, function(panel, name) {
-          obj.panels[name].load(obj.docker);
-        });
-        // Initialize all the frames
-        _.each(obj.frames, function(frame, name) {
-          obj.frames[name].load(obj.docker);
-        });
-
-        // Stored layout in database from the previous session
-        let layout = pgBrowser.utils.layout;
-        obj.restore_layout(obj.docker, layout, obj.buildDefaultLayout.bind(obj), true);
-
-        obj.docker.on(wcDocker.EVENT.LAYOUT_CHANGED, function() {
-          obj.save_current_layout('Browser/Layout', obj.docker);
-        });
-      }
-
-      initializeBrowserTree(obj);
-      initializeModalProvider();
-      initializeNotifier();
-
-      /* Cache may take time to load for the first time
-       * Reflect the changes once cache is available
-       */
-      let cacheIntervalId = setInterval(()=> {
-        let sqlEditPreferences = obj.get_preferences_for_module('sqleditor');
-        let browserPreferences = obj.get_preferences_for_module('browser');
-        if(sqlEditPreferences && browserPreferences) {
-          clearInterval(cacheIntervalId);
-          obj.reflectPreferences('sqleditor');
-          obj.reflectPreferences('browser');
-        }
-      }, 500);
-
-      /* Check for sql editor preference changes */
-      obj.onPreferencesChange('sqleditor', function() {
-        obj.reflectPreferences('sqleditor');
-      });
-
-      /* Check for browser preference changes */
-      obj.onPreferencesChange('browser', function() {
-        obj.reflectPreferences('browser');
-      });
+      usePreferences.getState().cache();
+      setupPreferenceBroadcast();
 
       setTimeout(function() {
         obj?.editor?.setValue('-- ' + select_object_msg);
@@ -579,13 +191,11 @@ define('pgadmin.browser', [
         'pgadmin:server:disconnect', stop_heartbeat.bind(obj)
       );
 
-      obj.set_master_password('');
       obj.check_corrupted_db_file();
       obj.Events.on('pgadmin:browser:tree:add', obj.onAddTreeNode.bind(obj));
       obj.Events.on('pgadmin:browser:tree:update', obj.onUpdateTreeNode.bind(obj));
       obj.Events.on('pgadmin:browser:tree:refresh', obj.onRefreshTreeNodeReact.bind(obj));
       obj.Events.on('pgadmin-browser:tree:loadfail', obj.onLoadFailNode.bind(obj));
-      obj.Events.on('pgadmin-browser:panel-browser:' + wcDocker.EVENT.RESIZE_ENDED, obj.onResizeEnded.bind(obj));
       obj.bind_beforeunload();
 
       /* User UI activity */
@@ -593,8 +203,9 @@ define('pgadmin.browser', [
       obj.register_to_activity_listener(document);
       obj.start_inactivity_timeout_daemon();
     },
-    onResizeEnded: function() {
-      if (this.tree) this.tree.resizeTree();
+    uiloaded: function() {
+      this.set_master_password('');
+      this.check_version_update();
     },
     check_corrupted_db_file: function() {
       getApiInstance().get(
@@ -602,7 +213,7 @@ define('pgadmin.browser', [
       ).then(({data: res})=> {
         if(res.data.length > 0) {
 
-          Notify.alert(
+          pgAdmin.Browser.notifier.alert(
             'Warning',
             'pgAdmin detected unrecoverable corruption in it\'s SQLite configuration database. ' +
             'The database has been backed up and recreated with default settings. '+
@@ -613,7 +224,7 @@ define('pgadmin.browser', [
           );
         }
       }).catch(function(error) {
-        Notify.alert(error);
+        pgAdmin.Browser.notifier.alert(error);
       });
     },
     check_master_password: function(on_resp_callback) {
@@ -628,7 +239,7 @@ define('pgadmin.browser', [
           }
         }
       }).catch(function(error) {
-        Notify.pgRespErrorNotify(error);
+        pgAdmin.Browser.notifier.pgRespErrorNotify(error);
       });
     },
 
@@ -641,7 +252,7 @@ define('pgadmin.browser', [
           self.set_master_password('');
         }
       }).catch(function(error) {
-        Notify.pgRespErrorNotify(error);
+        pgAdmin.Browser.notifier.pgRespErrorNotify(error);
       });
     },
 
@@ -659,13 +270,33 @@ define('pgadmin.browser', [
       checkMasterPassword(data, self.masterpass_callback_queue, cancel_callback);
     },
 
-    bind_beforeunload: function() {
-      $(window).on('beforeunload', function(e) {
-        /* Can open you in new tab */
-        let openerBrowser = pgWindow.default.pgAdmin.Browser;
+    check_version_update: function() {
+      getApiInstance().get(
+        url_for('misc.upgrade_check')
+      ).then((res)=> {
+        const data = res.data.data;
+        if(data.outdated) {
+          pgAdmin.Browser.notifier.warning(
+            `
+            ${gettext('You are currently running version %s of %s, <br/>however the current version is %s.', data.current_version, data.product_name, data.upgrade_version)}
+            <br/><br/>
+            ${gettext('Please click <a href="%s" target="_new" style="color:inherit">here</a> for more information.', data.download_url)}
+            `,
+            null
+          );
+        }
 
-        let tree_save_interval = pgBrowser.get_preference('browser', 'browser_tree_state_save_interval'),
-          confirm_on_refresh_close = openerBrowser.get_preference('browser', 'confirm_on_refresh_close');
+      }).catch(function() {
+        // Suppress any errors
+      });
+    },
+
+    bind_beforeunload: function() {
+      window.addEventListener('beforeunload', function(e) {
+        /* Can open you in new tab */
+        const prefStore = usePreferences.getState();
+        let tree_save_interval = prefStore.getPreferences('browser', 'browser_tree_state_save_interval'),
+          confirm_on_refresh_close = prefStore.getPreferences('browser', 'confirm_on_refresh_close');
 
         if (!_.isUndefined(tree_save_interval) && tree_save_interval.value !== -1)
           pgAdmin.Browser.browserTreeState.save_state();
@@ -673,57 +304,61 @@ define('pgadmin.browser', [
         if(!_.isUndefined(confirm_on_refresh_close) && confirm_on_refresh_close.value) {
           /* This message will not be displayed in Chrome, Firefox, Safari as they have disabled it*/
           let msg = gettext('Are you sure you want to close the %s browser?', pgBrowser.utils.app_name);
-          e.originalEvent.returnValue = msg;
+          if(e.originalEvent?.returnValue) {
+            e.originalEvent.returnValue = msg;
+          }
           return msg;
         }
       });
     },
 
-    add_menu_category: function(
-      id, label, priority, icon, above_separator, below_separator, single
-    ) {
-      this.menu_categories[id] = {
-        label: label,
-        priority: priority,
-        icon: icon,
-        above: (above_separator === true),
-        below: (below_separator === true),
-        single: single,
+    add_menu_category: function({name, ...options}) {
+      this.menu_categories[name] = {
+        name: name,
+        label: '(No Label)',
+        priority: 10,
+        icon: '',
+        above: false,
+        below: false,
+        parent: null,
+        isCategory: true,
+        ...options,
       };
     },
 
     // Add menus of module/extension at appropriate menu
     add_menus: function(menus) {
-      let self = this,
-        pgMenu = this.all_menus_cache;
+      const self = this;
+      let allMenus = this.all_menus_cache;
 
       _.each(menus, function(m) {
         _.each(m.applies, function(a) {
           /* We do support menu type only from this list */
           if(['context', 'file', 'edit', 'object','management', 'tools', 'help'].indexOf(a) > -1){
-            let _menus;
-
             // If current node is not visible in browser tree
             // then return from here
-            if(!checkNodeVisibility(self, m.node)) {
+            if(!checkNodeVisibility(m.node)) {
               return;
             } else if(_.has(m, 'module') && !_.isUndefined(m.module)) {
               // If module to which this menu applies is not visible in
               // browser tree then also we do not display menu
-              if(!checkNodeVisibility(self, m.module.type)) {
+              if(!checkNodeVisibility(m.module.type)) {
                 return;
               }
             }
-
-            pgMenu[a] = pgMenu[a] || {};
-            if (_.isString(m.node)) {
-              _menus = pgMenu[a][m.node] = pgMenu[a][m.node] || {};
-            } else if (_.isString(m.category)) {
-              _menus = pgMenu[a][m.category] = pgMenu[a][m.category] || {};
-            }
-            else {
-              _menus = pgMenu[a];
-            }
+            const getFullPath = (currPath, currMenu)=>{
+              if(currMenu.node) {
+                return currPath.concat([currMenu.node]);
+              } else if((currMenu.category??'common') != 'common') {
+                const currCat = self.menu_categories[currMenu.category];
+                if(currCat?.category) {
+                  return getFullPath(currPath.concat([currMenu.category]), currCat);
+                }
+                return [currMenu.category].concat(currPath);
+              } else {
+                return currPath;
+              }
+            };
 
             let get_menuitem_obj = function(_m) {
               let enable = _m.enable;
@@ -734,18 +369,13 @@ define('pgadmin.browser', [
               }
 
               // This is to handel quick search callback
-              if(gettext(_m.label) == gettext('Quick Search')) {
+              if(_m.name == 'mnu_quick_search_help') {
                 _m.callback = () => {
-                  // Render Search component
-                  Notify.showModal(gettext('Quick Search'), (closeModal) => {
-                    return <Search closeModal={closeModal}/>;
-                  },
-                  { isFullScreen: false, isResizeable: false, showFullScreen: false, isFullWidth: false, showTitle: false}
-                  );
+                  showQuickSearch();
                 };
               }
 
-              return MainMenuFactory.createMenuItem({
+              return {
                 name: _m.name,
                 label: _m.label,
                 module: _m.module,
@@ -756,25 +386,24 @@ define('pgadmin.browser', [
                 url: _m.url || '#',
                 target: _m.target,
                 icon: _m.icon,
-                enable: enable ? enable : true,
+                enable: enable || true,
                 node: _m.node,
                 checked: _m.checked,
                 below: _m.below,
                 applies: _m.applies,
-              });
+              };
             };
 
-            if (!_.has(_menus, m.name)) {
-              _menus[m.name] = get_menuitem_obj(m);
+            const menuPath = [a].concat(getFullPath([], m)).concat([m.name]);
+            const _menus = _.set(allMenus, menuPath, get_menuitem_obj(m));
 
-              if(m.menu_items) {
-                let sub_menu_items = [];
+            if(m.menu_items) {
+              let sub_menu_items = [];
 
-                for(let mnu_val of m.menu_items) {
-                  sub_menu_items.push(get_menuitem_obj(mnu_val));
-                }
-                _menus[m.name]['menu_items'] = sub_menu_items;
+              for(let mnu_val of m.menu_items) {
+                sub_menu_items.push(get_menuitem_obj(mnu_val));
               }
+              _menus[m.name]['menu_items'] = sub_menu_items;
             }
           } else  {
             console.warn(
@@ -807,7 +436,7 @@ define('pgadmin.browser', [
               n = _o.b.Nodes[d._type];
               // Are we looking at the collection node for the given node?
               if (
-                n && n.collection_node && d.nodes &&
+                n?.collection_node && d.nodes &&
                   _.indexOf(d.nodes, _d._type) != -1
               ) {
                 _o.i = i;
@@ -833,7 +462,7 @@ define('pgadmin.browser', [
             onLoad();
           },
           () => {
-            let fail = _o && _o.o && _o.o.fail;
+            let fail = _o?.o?.fail;
             if (fail && typeof(fail) == 'function') {
               fail.apply(_o.t, []);
             }
@@ -904,9 +533,7 @@ define('pgadmin.browser', [
             selectNode = function() {
               this.t.openPath(this.i);
               this.t.select(this.i);
-              if (
-                _ctx.o && _ctx.o.success && typeof(_ctx.o.success) == 'function'
-              ) {
+              if (typeof(_ctx?.o?.success) == 'function') {
                 _ctx.o.success.apply(_ctx.t, [_ctx.i, _data]);
               }
             }.bind(_ctx),
@@ -921,10 +548,8 @@ define('pgadmin.browser', [
                     if (d._type === 'column') {
                       if (pgAdmin.numeric_comparator(d._id, _data._id) == 1)
                         return true;
-                    } else {
-                      if (pgAdmin.natural_sort(d._label, _data._label) == 1)
-                        return true;
-                    }
+                    } else if (pgAdmin.natural_sort(d._label, _data._label) == 1)
+                      return true;
                     s++;
                   }
                   //when the current element is greater than the end element
@@ -948,10 +573,8 @@ define('pgadmin.browser', [
                     if (d._type === 'column') {
                       if (pgAdmin.numeric_comparator(d._id, _data._id) != -1)
                         return true;
-                    } else {
-                      if (pgAdmin.natural_sort(d._label, _data._label) != -1)
-                        return true;
-                    }
+                    } else if (pgAdmin.natural_sort(d._label, _data._label) != -1)
+                      return true;
                     i = items[e];
                     d = __ctx.t.itemData(i);
                     let result;
@@ -994,18 +617,14 @@ define('pgadmin.browser', [
 
               if (binarySearch()) {
                 __ctx.t.before(i, _data).then((_item) => {
-                  if (
-                    __ctx.o && __ctx.o.success && typeof(__ctx.o.success) == 'function'
-                  ) {
+                  if (typeof(__ctx?.o?.success) == 'function') {
                     __ctx.o.success.apply(__ctx.t, [i, _data]);
                   } else {
                     __ctx.t.select(_item);
                   }
                 }, () => {
                   console.warn('Failed to add before...', arguments);
-                  if (
-                    __ctx.o && __ctx.o.fail && typeof(__ctx.o.fail) == 'function'
-                  ) {
+                  if (typeof(__ctx.o?.fail) == 'function') {
                     __ctx.o.fail.apply(__ctx.t, [i, _data]);
                   }
                 });
@@ -1026,30 +645,22 @@ define('pgadmin.browser', [
                       ) {
                         ___ctx.t.open(___ctx.i);
                         ___ctx.t.select(_i);
-                      } else {
-                        if (_parent_data) {
-                          // Unload the parent node so that we'll get
-                          // latest data when we try to expand it
-                          ___ctx.t.unload(___ctx.i).then(
-                            () => {
-                              ___ctx.t.open(___ctx.i);
-                            }
-                          );
-                        }
+                      } else if (_parent_data) {
+                        // Unload the parent node so that we'll get
+                        // latest data when we try to expand it
+                        ___ctx.t.unload(___ctx.i).then(
+                          () => {
+                            ___ctx.t.open(___ctx.i);
+                          }
+                        );
                       }
-                      if (
-                        ___ctx.o && ___ctx.o.success &&
-                          typeof(___ctx.o.success) == 'function'
-                      ) {
+                      if (typeof(___ctx?.o?.success) == 'function') {
                         ___ctx.o.success.apply(___ctx.t, [_i, _data]);
                       }
                     },
                     () => {
                       console.warn('Failed to append...', arguments);
-                      if (
-                        ___ctx.o && ___ctx.o.fail &&
-                          typeof(___ctx.o.fail) == 'function'
-                      ) {
+                      if (typeof(___ctx?.o?.fail) == 'function') {
                         ___ctx.o.fail.apply(___ctx.t, [___ctx.i, _data]);
                       }
                     }
@@ -1077,9 +688,7 @@ define('pgadmin.browser', [
                 selectNode,
                 function() {
                   let o = this && this.o;
-                  if (
-                    o && o.fail && typeof(o.fail) == 'function'
-                  ) {
+                  if (typeof(o?.fail) == 'function') {
                     o.fail.apply(this.t, [this.i, _data]);
                   }
                 }.bind(this)
@@ -1087,9 +696,7 @@ define('pgadmin.browser', [
             },
             () => {
               let o = this && this.o;
-              if (
-                o && o.fail && typeof(o.fail) == 'function'
-              ) {
+              if (typeof(o?.fail) == 'function') {
                 o.fail.apply(this.t, [this.i, _data]);
               }
             });
@@ -1131,7 +738,7 @@ define('pgadmin.browser', [
           op: null,
         },
         errorOut = function() {
-          let fail = this.o && this.o.fail;
+          let fail = this.o?.fail;
           if (fail && typeof(fail) == 'function') {
             fail.apply(this.t, [this.i, _new, _old]);
           }
@@ -1213,7 +820,7 @@ define('pgadmin.browser', [
 
                     this.success = function() {
                       addItemNode();
-                    }.bind(this);
+                    };
                     // We can refresh the collection node, but - let's not bother about
                     // it right now.
                     this.notFound = errorOut;
@@ -1231,7 +838,7 @@ define('pgadmin.browser', [
                           onLoad();
                         },
                         () => {
-                          let fail = self && self.o && self.o.fail;
+                          let fail = self?.o?.fail;
                           if (
                             fail && typeof(fail) == 'function'
                           ) {
@@ -1254,7 +861,7 @@ define('pgadmin.browser', [
 
                     this.success = function() {
                       addItemNode();
-                    }.bind(this);
+                    };
                     // We can refresh the collection node, but - let's not bother about
                     // it right now.
                     this.notFound = errorOut;
@@ -1314,7 +921,7 @@ define('pgadmin.browser', [
             this.load = true;
             this.success = function() {
               addItemNode();
-            }.bind(this);
+            };
 
             if (_d._type == this.old._type) {
               // We were already searching the old object under the parent.
@@ -1348,12 +955,8 @@ define('pgadmin.browser', [
             }
             if (this.new._id == _id) {
               // Found the current
-              _.extend(this.d, {
-                '_id': this.new._id,
-                '_label': this.new._label,
-                'label': this.new.label,
-              });
-              this.t.update(ctx.i, this.new);
+              _.extend(this.d, this.new);
+              this.t.update(ctx.i, this.d);
               this.t.setLabel(ctx.i, {label: this.new.label});
               this.t.addIcon(ctx.i, {icon: this.new.icon});
               this.t.setId(ctx.i, {id: this.new.id});
@@ -1364,7 +967,7 @@ define('pgadmin.browser', [
               self.t.select(self.i);
             }
           }
-          let success = this.o && this.o.success;
+          let success = this.o?.success;
           if (success && typeof(success) == 'function') {
             success.apply(this.t, [this.i, _old, _new]);
           }
@@ -1411,7 +1014,7 @@ define('pgadmin.browser', [
               this.t.openPath(this.i);
               this.t.select(this.i);
               if (
-                _ctx.o && _ctx.o.success && typeof(_ctx.o.success) == 'function'
+                _ctx.o?.success && typeof(_ctx.o?.success) == 'function'
               ) {
                 _ctx.o.success.apply(_ctx.t, [_ctx.i, _new]);
               }
@@ -1427,10 +1030,8 @@ define('pgadmin.browser', [
                     if (d._type === 'column') {
                       if (pgAdmin.numeric_comparator(d._id, _new._id) == 1)
                         return true;
-                    } else {
-                      if (pgAdmin.natural_sort(d._label, _new._label) == 1)
-                        return true;
-                    }
+                    } else if (pgAdmin.natural_sort(d._label, _new._label) == 1)
+                      return true;
                     s++;
                   }
                   if (e != items.length - 1) {
@@ -1447,10 +1048,8 @@ define('pgadmin.browser', [
                     if (d._type === 'column') {
                       if (pgAdmin.numeric_comparator(d._id, _new._id) != -1)
                         return true;
-                    } else {
-                      if (pgAdmin.natural_sort(d._label, _new._label) != -1)
-                        return true;
-                    }
+                    } else if (pgAdmin.natural_sort(d._label, _new._label) != -1)
+                      return true;
                     i = items[e];
                     d = __ctx.t.itemData(i);
                     let result;
@@ -1495,16 +1094,12 @@ define('pgadmin.browser', [
                 __ctx.t.before(i, _new).then((new_item) => {
                   __ctx.t.openPath(new_item);
                   __ctx.t.select(new_item);
-                  if (
-                    __ctx.o && __ctx.o.success && typeof(__ctx.o.success) == 'function'
-                  ) {
+                  if (typeof(__ctx?.o?.success) == 'function') {
                     __ctx.o.success.apply(__ctx.t, [i, _old, _new]);
                   }
                 }, () => {
                   console.warn('Failed to add before..', arguments);
-                  if (
-                    __ctx.o && __ctx.o.fail && typeof(__ctx.o.fail) == 'function'
-                  ) {
+                  if (typeof(__ctx?.o?.fail) == 'function') {
                     __ctx.o.fail.apply(__ctx.t, [i, _old, _new]);
                   }
                 });
@@ -1514,17 +1109,13 @@ define('pgadmin.browser', [
                     (new_item) => {
                       __ctx.t.openPath(new_item);
                       __ctx.t.select(new_item);
-                      if (
-                        __ctx.o && __ctx.o.success && typeof(__ctx.o.success) == 'function'
-                      ) {
+                      if (typeof(__ctx?.o?.success) == 'function') {
                         __ctx.o.success.apply(__ctx.t, [__ctx.i, _old, _new]);
                       }
                     },
                     () => {
                       console.warn('Failed to append...', arguments);
-                      if (
-                        __ctx.o && __ctx.o.fail && typeof(__ctx.o.fail) == 'function'
-                      ) {
+                      if (typeof(__ctx?.o?.fail) == 'function') {
                         __ctx.o.fail.apply(__ctx.t, [__ctx.i, _old, _new]);
                       }
                     },
@@ -1552,9 +1143,7 @@ define('pgadmin.browser', [
                 selectNode,
                 function() {
                   let o = this && this.o;
-                  if (
-                    o && o.fail && typeof(o.fail) == 'function'
-                  ) {
+                  if (typeof(o?.fail) == 'function') {
                     o.fail.apply(this.t, [this.i, _old, _new]);
                   }
                 }
@@ -1562,9 +1151,7 @@ define('pgadmin.browser', [
             },
             () => {
               let o = this && this.o;
-              if (
-                o && o.fail && typeof(o.fail) == 'function'
-              ) {
+              if (typeof(o?.fail) == 'function') {
                 o.fail.apply(this.t, [this.i, _old, _new]);
               }
             }
@@ -1596,11 +1183,8 @@ define('pgadmin.browser', [
       // If server icon/background changes then also we need to re-create it
       if ((
         _old._type == 'server' && _new._type == 'server' && (
-          _old._pid != _new._pid ||
-          _old._label != _new._label ||
-          _old.icon != _new.icon
-        )) || _old._pid != _new._pid || _old._label != _new._label ||
-        _old._id != _new._id
+          _old._pid != _new._pid || _old.icon != _new.icon
+        )) || _old._pid != _new._pid || _old._id != _new._id
       ) {
         ctx.op = 'RECREATE';
         traversePath();
@@ -1612,13 +1196,13 @@ define('pgadmin.browser', [
 
     onRefreshTreeNodeReact: function(_i, _opts) {
       this.tree.refresh(_i).then(() =>{
-        if (_opts && _opts.success) _opts.success();
+        if (_opts?.success) _opts.success();
       });
     },
 
     onRefreshTreeNode: function(_i, _opts) {
       let _d = _i && this.tree.itemData(_i),
-        n = _d && _d._type && this.Nodes[_d._type],
+        n = this.Nodes[_d?._type],
         ctx = {
           b: this, // Browser
           d: _d, // current parent
@@ -1654,13 +1238,12 @@ define('pgadmin.browser', [
       if (!n) {
         ctx.t.destroy({
           success: function() {
-            initializeBrowserTree(ctx.b);
             ctx.t = ctx.b.tree;
             ctx.i = null;
             ctx.b._refreshNode(ctx, ctx.branch);
           },
           error: function() {
-            let fail = (_opts.o && _opts.o.fail) || _opts.fail;
+            let fail = _opts.o?.fail || _opts?.fail;
 
             if (typeof(fail) == 'function') {
               fail();
@@ -1703,7 +1286,7 @@ define('pgadmin.browser', [
             }
           }
           ctx.b._refreshNode(ctx, ctx.branch);
-          let success = (ctx.o && ctx.o.success) || ctx.success;
+          let success = (ctx?.o?.success) || ctx.success;
           if (success && typeof(success) == 'function') {
             success();
           }
@@ -1731,7 +1314,7 @@ define('pgadmin.browser', [
               }
             }
 
-            Notify.pgNotifier('error', error, gettext('Error retrieving details for the node.'), function (msg) {
+            pgAdmin.Browser.notifier.pgNotifier('error', error, gettext('Error retrieving details for the node.'), function (msg) {
               if (msg == 'CRYPTKEY_SET') {
                 fetchNodeInfo(__i, __d, __n);
               } else {
@@ -1740,9 +1323,9 @@ define('pgadmin.browser', [
             });
           }
         });
-      }.bind(this);
+      };
 
-      if (n && n.collection_node) {
+      if (n?.collection_node) {
         let p = ctx.i = this.tree.parent(_i),
           unloadNode = function() {
             this.tree.unload(_i, {
@@ -1896,7 +1479,7 @@ define('pgadmin.browser', [
         node,
         children = _node && tree_local.children(_node);
 
-      if (!children || !children.length)
+      if (!children?.length)
         return null;
 
       for(; idx < children.length; idx++) {
@@ -1945,7 +1528,7 @@ define('pgadmin.browser', [
             }
             fetchNodeInfo(_callback);
           }).catch(function(error) {
-            Notify.pgRespErrorNotify(error);
+            pgAdmin.Browser.notifier.pgRespErrorNotify(error);
             fetchNodeInfo(_callback);
           });
         };
@@ -1967,21 +1550,17 @@ define('pgadmin.browser', [
             );
           });
 
-          if (_callback) {
-            _callback();
-          }
+          _callback?.();
         });
       } else {
-        if (_callback) {
-          _callback();
-        }
+        _callback?.();
       }
     },
 
     _refreshNode: function(_ctx, _d) {
       let traverseNodes = function(__d) {
         let __ctx = this, idx = 0, ctx, d,
-          size = (__d.branch && __d.branch.length) || 0,
+          size = __d?.branch?.length || 0,
           findNode = function(i_findNode, d_findNode, ctx_findNode) {
             setTimeout(
               function() {
@@ -2005,13 +1584,13 @@ define('pgadmin.browser', [
             load: true,
           };
           ctx.success = function() {
-            this.b._refreshNode.call(this.b, this, this.d);
+            this.b._refreshNode(this, this.d);
           }.bind(ctx);
           findNode(__ctx.i, d, ctx);
         }
       }.bind(_ctx, _d);
 
-      if (!_d || !_d.open)
+      if (!_d?.open)
         return;
 
       if (!_ctx.t.isOpen(_ctx.i)) {
@@ -2049,15 +1628,9 @@ define('pgadmin.browser', [
       insert_pair_brackets: pgBrowser.utils.insertPairBrackets,
       brace_matching: pgBrowser.utils.braceMatching,
       indent_with_tabs: pgBrowser.utils.is_indent_with_tabs,
+      highlightSelectionMatches:pgBrowser.utils.highlightSelectionMatches
     },
   });
-
-  /* Remove paste event mapping from CodeMirror's emacsy KeyMap binding
-     * specific to Mac LineNumber:5797 - lib/Codemirror.js
-     * It is preventing default paste event(Cmd-V) from triggering
-     * in runtime.
-     */
-  delete CodeMirror.keyMap.emacsy['Ctrl-V'];
 
   // Use spaces instead of tab
   if (pgBrowser.utils.useSpaces == 'True') {

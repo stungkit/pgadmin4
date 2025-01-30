@@ -15,10 +15,10 @@ allows connections from the host of the client.
 Use the fields in the *General* tab to identify the server:
 
 * Use the *Name* field to add a descriptive name for the server; the name
-  specified will be displayed in the *Browser* tree control.
+  specified will be displayed in the *Object Explorer*.
 
 * Use the drop-down list box in the *Server group* field to select the parent
-  node for the server; the server will be displayed in the *Browser* tree
+  node for the server; the server will be displayed in the *Object Explorer*
   control within the specified group.
 
 * Use the color-picker in the *Background* field to specify the background
@@ -42,7 +42,10 @@ Use the fields in the *General* tab to identify the server:
     * Change of host, port, and maintenance database
 
   Please note that once the server is shared, it's icon is changed in the
-  browser tree.
+  object explorer.
+
+* Use the *Shared Username* field to fill the username of the shared server
+  connection. By default, it will take the username of the server being shared.
 
 * Provide a comment about the server in the *Comments* field.
 
@@ -178,6 +181,10 @@ not be able to connect directly.
   password for future use. Use
   :ref:`Clear SSH Tunnel Password <clear_saved_passwords>` to remove the saved
   password.
+* Use the *Keep alive* field to specify interval in seconds defining the period
+  in which, if no data was sent over the connection, a ‘keepalive’ packet will
+  be sent (and ignored by the remote host). This can be useful to keep
+  connections alive over a NAT. You can set to 0 for disable keepalive.
 
 
 Click the *Advanced* tab to continue.
@@ -198,11 +205,20 @@ Use the fields in the *Advanced* tab to configure a connection:
   command will be used as the SQL password. This may be useful when the password
   should be generated as a transient authorization token instead of providing a
   password when connecting in `PAM authentication <https://www.postgresql.org/docs/current/auth-pam.html>`_ scenarios.
+  You can pass server hostname, port and DB username to the password exec command as variable by providing placeholders
+  like ``%HOST%``, ``%PORT%`` and ``%USERNAME%`` which will be replace with the server connection information.
+  Example: ``/path/to/script --hostnmae %HOST% --port %PORT% --username %USERNAME%``
 * Use the *Password exec expiration* field to specify a maximum age, in seconds,
   of the password generated with a *Password exec command*. If not specified,
   the password will not expire until your pgAdmin session does.
   Zero means the command will be executed for each new connection or reconnection that is made.
   If the generated password is not valid indefinitely, set this value to slightly before it will expire.
+* Use the *Prepare threshold* field to specify the number of times a query is
+  executed before it is prepared. If it is set to 0, every query is prepared
+  the first time it is executed. If it is set to blank, prepared statements are disabled
+  on the connection. This is particularly useful with external connection poolers,
+  such as PgBouncer, which is not compatible with prepared statements. Set this to
+  blank in such cases.
 
 .. note:: The password file option is only supported when pgAdmin is using libpq
     v10.0 or later to connect to the server.
@@ -217,3 +233,18 @@ Use the fields in the *Advanced* tab to configure a connection:
 .. toctree::
 
     clear_saved_passwords
+
+
+Click the *Tags* tab to continue.
+
+.. image:: images/server_tags.png
+    :alt: Server dialog tags tab
+    :align: center
+
+Use the table in the *Tags* tab to add tags. The tags will be shown on the right side of
+a server node label in the object explorer tree.
+
+Click on the *+* button to add a new tag. Some of the parameters are:
+
+* *Text* field to specify the tag name.
+* *Color* field to select the accent color of the tag.

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -67,7 +67,9 @@ class OperatorModule(SchemaChildModule):
         """
         Generate the collection node
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=OperatorView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -117,6 +119,7 @@ class OperatorView(PGChildNodeView):
 
     node_type = blueprint.node_type
     node_label = "Operator"
+    BASE_TEMPLATE_PATH = 'operators/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -164,10 +167,8 @@ class OperatorView(PGChildNodeView):
                     kwargs['did']]['datistemplate']
 
             # Set the template path for the SQL scripts
-            self.template_path = compile_template_path(
-                'operators/sql/',
-                self.manager.version
-            )
+            self.template_path = \
+                self.BASE_TEMPLATE_PATH.format(self.manager.version)
 
             return f(*args, **kwargs)
 
@@ -230,7 +231,8 @@ class OperatorView(PGChildNodeView):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-operator"
+                    icon="icon-operator",
+                    description=row['description']
                 ))
 
         return make_json_response(

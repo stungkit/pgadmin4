@@ -2,74 +2,75 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import PropTypes from 'prop-types';
 
+import { styled } from '@mui/material/styles';
+
 import React, { useEffect, useRef } from 'react';
 
-import DeleteSweepIcon from '@material-ui/icons/DeleteSweep';
-import { Box } from '@material-ui/core';
-import { makeStyles } from '@material-ui/core/styles';
-import BugReportRoundedIcon from '@material-ui/icons/BugReportRounded';
-import CloseSharpIcon from '@material-ui/icons/CloseSharp';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import { Box } from '@mui/material';
+import BugReportRoundedIcon from '@mui/icons-material/BugReportRounded';
+import CloseSharpIcon from '@mui/icons-material/CloseSharp';
 
 import url_for from 'sources/url_for';
 import gettext from 'sources/gettext';
-import * as commonUtils from 'sources/utils';
 import pgAdmin from 'sources/pgadmin';
 import Loader from 'sources/components/Loader';
 
 import SchemaView from '../../../../../static/js/SchemaView';
-import getApiInstance from '../../../../../static/js/api_instance';
+import getApiInstance, { parseApiError } from '../../../../../static/js/api_instance';
 import { DefaultButton, PrimaryButton } from '../../../../../static/js/components/Buttons';
-import { getAppropriateLabel, setDebuggerTitle } from '../debugger_utils';
-import Notify from '../../../../../static/js/helpers/Notifier';
+import { getAppropriateLabel, getDebuggerTitle } from '../debugger_utils';
 import { DebuggerArgumentSchema } from './DebuggerArgs.ui';
 import { DEBUGGER_ARGS } from '../DebuggerConstants';
-import { showRenamePanel } from '../../../../../static/js/Dialogs';
+import { BROWSER_PANELS } from '../../../../../browser/static/js/constants';
+import usePreferences from '../../../../../preferences/static/js/store';
 
 
-const useStyles = makeStyles((theme) =>
-  ({
-    root: {
-      display: 'flex',
-      flexDirection: 'column',
-      flexGrow: 1,
-      height: '100%',
+const StyledBox = styled(Box)(({theme}) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  flexGrow: 1,
+  height: '100%',
+  backgroundColor: theme.palette.background.default,
+  overflow: 'hidden',
+  '& .DebuggerArgument-body': {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    minHeight: 0,
+    '& .DebuggerArgument-schema': {
+      padding: 0 + ' !important',
       backgroundColor: theme.palette.background.default,
-      overflow: 'hidden',
-    },
-    body: {
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-    },
-    actionBtn: {
-      alignItems: 'flex-start',
-    },
-    buttonMargin: {
-      marginLeft: '0.5em'
-    },
-    debugBtn: {
-      fontSize: '1.12rem !important',
-    },
-    footer: {
-      borderTop: `1px solid ${theme.otherVars.inputBorderColor} !important`,
-      padding: '0.5rem',
-      display: 'flex',
-      width: '100%',
-      background: theme.otherVars.headerBg,
     }
-  }),
-);
+  },
+  '& .DebuggerArgument-footer': {
+    borderTop: `1px solid ${theme.otherVars.inputBorderColor} !important`,
+    padding: '0.5rem',
+    display: 'flex',
+    width: '100%',
+    background: theme.otherVars.headerBg,
+    '& .DebuggerArgument-actionBtn': {
+      alignItems: 'flex-start',
+      '& .DebuggerArgument-buttonMargin': {
+        marginLeft: '0.5em'
+      },
+      '& .DebuggerArgument-debugBtn': {
+        fontSize: '1.12rem !important',
+      },
+    },
+  }
+}));
 
 
 export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, isEdbProc, transId, pgTreeInfo, pgData, ...props }) {
-  const classes = useStyles();
+
   const debuggerArgsSchema = useRef(new DebuggerArgumentSchema());
   const api = getApiInstance();
   const debuggerArgsData = useRef([]);
@@ -78,7 +79,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
   const [loaderText, setLoaderText] = React.useState('');
   const debuggerFinalArgs = useRef([]);
   const InputArgIds = useRef([]);
-  const wcDocker = window.wcDocker;
+  const browserPreferences = usePreferences().getPreferencesForModule('browser');
 
   function getURL() {
     let _Url = null;
@@ -267,10 +268,10 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
       funcObj.push({
         'name': argName[index],
         'type': argType[index],
-        'is_null': argData['is_null'] ? true : false,
-        'expr': argData['is_expression'] ? true : false,
+        'is_null': argData['is_null'],
+        'expr': argData['is_expression'],
         'value': values,
-        'use_default': argData['use_default'] ? true : false,
+        'use_default': argData['use_default'],
         'default_value': defValList[index],
         'disable_use_default': isUnnamedParam ? defValList[index] == DEBUGGER_ARGS.NO_DEFAULT_VALUE : defValList[index] == DEBUGGER_ARGS.NO_DEFAULT,
       });
@@ -318,7 +319,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
     let myObj = [];
     for (let i = 0; i < argType.length; i++) {
       let useDefValue = checkIsDefault(defValList[i]);
-      if (debuggerInfo['proargmodes'] == null) {
+      if (debuggerInfo['proargmodes'] == null || (argMode?.[i] == 'i' || argMode?.[i] == 'b' || (isEdbProc && argMode?.[i] == 'o'))) {
         myObj.push({
           'name': myargname[i],
           'type': argType[i],
@@ -326,17 +327,6 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
           'default_value': defValList[i],
           'disable_use_default': defValList[i] == DEBUGGER_ARGS.NO_DEFAULT_VALUE,
         });
-      } else {
-        if (argMode && (argMode[i] == 'i' || argMode[i] == 'b' ||
-          (isEdbProc && argMode[i] == 'o'))) {
-          myObj.push({
-            'name': myargname[i],
-            'type': argType[i],
-            'use_default': useDefValue,
-            'default_value': defValList[i],
-            'disable_use_default': defValList[i] == DEBUGGER_ARGS.NO_DEFAULT_VALUE,
-          });
-        }
       }
     }
     return myObj;
@@ -352,13 +342,23 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
   }
 
   function setDebuggerArgs(funcArgsData, funcObj, myObj) {
+    // Ensure unchecked boolean checkboxes are set to false.
+    const setBooleanDefaults = (dataArray) => {
+      dataArray.forEach(data => {
+        if (data.type === 'boolean' && (data.value === undefined || data.value === '' || data.value === '0' )) {
+          data.value = false;
+        }
+      });
+    };
     // Check if the arguments already available in the sqlite database
     // then we should use the existing arguments
     let initVal = { 'aregsCollection': [] };
     if (funcArgsData.length == 0) {
+      setBooleanDefaults(myObj);
       initVal = { 'aregsCollection': myObj };
       debuggerArgsData.current = initVal;
     } else {
+      setBooleanDefaults(funcObj);
       initVal = { 'aregsCollection': funcObj };
       debuggerArgsData.current = initVal;
     }
@@ -428,7 +428,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         setLoadArgs(crypto.getRandomValues(new Uint16Array(1)));
       })
       .catch(() => {
-        Notify.alert(
+        pgAdmin.Browser.notifier.alert(
           gettext('Debugger Error'),
           gettext('Unable to fetch the arguments from server')
         );
@@ -443,7 +443,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
     try {
       resolve(debuggerArgsData.current);
     } catch (error) {
-      reject(error);
+      reject(error instanceof Error ? error : Error(gettext('Something went wrong')));
     }
   });
 
@@ -489,7 +489,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
       }, 100);
     }).catch(function (er) {
       setLoaderText('');
-      Notify.alert(
+      pgAdmin.Browser.notifier.alert(
         gettext('Clear failed'),
         er.responseJSON.errormsg
       );
@@ -528,21 +528,19 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         'type': arg.type,
         'value': 'NULL',
       });
-    } else {
+    } else if (arg.use_default) {
       // Check if default value to be used or not
-      if (arg.use_default) {
-        argsValueList.push({
-          'name': arg.name,
-          'type': arg.type,
-          'value': arg.default_value,
-        });
-      } else {
-        argsValueList.push({
-          'name': arg.name,
-          'type': arg.type,
-          'value': arg.value,
-        });
-      }
+      argsValueList.push({
+        'name': arg.name,
+        'type': arg.type,
+        'value': arg.default_value,
+      });
+    } else {
+      argsValueList.push({
+        'name': arg.name,
+        'type': arg.type,
+        'value': arg.value,
+      });
     }
   }
   function getFunctionID(d, treeInfo) {
@@ -596,7 +594,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
 
   function checkTypeAndGetUrl(d, treeInfo) {
     let baseUrl;
-    if (d && d._type == 'function') {
+    if (d?._type == 'function') {
       baseUrl = url_for('debugger.initialize_target_for_function', {
         'debug_type': 'direct',
         'trans_id': transId,
@@ -605,7 +603,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         'scid': treeInfo.schema._id,
         'func_id': treeInfo.function._id,
       });
-    } else if (d && d._type == 'procedure') {
+    } else if (d?._type == 'procedure') {
       baseUrl = url_for('debugger.initialize_target_for_function', {
         'debug_type': 'direct',
         'trans_id': transId,
@@ -614,7 +612,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         'scid': treeInfo.schema._id,
         'func_id': treeInfo.procedure._id,
       });
-    } else if (d && d._type == 'edbfunc') {
+    } else if (d?._type == 'edbfunc') {
       baseUrl = url_for('debugger.initialize_target_for_function', {
         'debug_type': 'direct',
         'trans_id': transId,
@@ -623,7 +621,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         'scid': treeInfo.schema._id,
         'func_id': treeInfo.edbfunc._id,
       });
-    } else if (d && d._type == 'edbproc') {
+    } else if (d?._type == 'edbproc') {
       baseUrl = url_for('debugger.initialize_target_for_function', {
         'debug_type': 'direct',
         'trans_id': transId,
@@ -675,7 +673,7 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
   }
 
   function startDebugging() {
-    setLoaderText('Starting debugger.');
+    setLoaderText('Starting debugger...');
     try {
       /* Initialize the target once the debug button is clicked and create asynchronous connection
         and unique transaction ID If the debugging is started again then treeInfo is already stored. */
@@ -716,49 +714,18 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
               }
             );
 
-            let browserPreferences = pgAdmin.Browser.get_preferences_for_module('browser');
             let open_new_tab = browserPreferences.new_browser_tab_open;
-            if (open_new_tab && open_new_tab.includes('debugger')) {
-              window.open(url, '_blank');
-              // Send the signal to runtime, so that proper zoom level will be set.
-              setTimeout(function () {
-                pgAdmin.Browser.Events.trigger('pgadmin:nw-set-new-window-open-size');
-              }, 500);
-            } else {
-              pgAdmin.Browser.Events.once(
-                'pgadmin-browser:frame:urlloaded:frm_debugger',
-                function (frame) {
-                  frame.openURL(url);
-                });
+            let label = getAppropriateLabel(treeInfo);
 
-              // Create the debugger panel as per the data received from user input dialog.
-              let propertiesPanel = pgAdmin.Browser.docker.findPanels('properties');
-              let panel = pgAdmin.Browser.docker.addPanel(
-                'frm_debugger', wcDocker.DOCK.STACKED, propertiesPanel[0]
-              );
-              let browser_pref = pgAdmin.Browser.get_preferences_for_module('browser');
-              let label = getAppropriateLabel(treeInfo);
-              setDebuggerTitle(panel, browser_pref, label, treeInfo.schema.label, treeInfo.database.label, null, pgAdmin.Browser);
-              panel.focus();
-
-              // Panel Closed event
-              panel.on(wcDocker.EVENT.CLOSED, function () {
-                let closeUrl = url_for('debugger.close', {
-                  'trans_id': res_post.data.data.debuggerTransId,
-                });
-                api({
-                  url: closeUrl,
-                  method: 'DELETE',
-                });
-              });
-              /* TO-DO check how to add this is new lib for wc-docker */
-              commonUtils.registerDetachEvent(panel);
-
-              // Panel Rename event
-              panel.on(wcDocker.EVENT.RENAME, function (panel_data) {
-                panelRenameEvent(panel_data, panel, treeInfo);
-              });
-            }
+            pgAdmin.Browser.Events.trigger(
+              'pgadmin:tool:show',
+              `${BROWSER_PANELS.DEBUGGER_TOOL}_${res_post.data.data.debuggerTransId}`,
+              url,
+              null,
+              {title: getDebuggerTitle(browserPreferences, label, treeInfo.schema.label, treeInfo.database.label, null, pgAdmin.Browser),
+                icon: 'fa fa-bug', manualClose: false, renamable: true},
+              Boolean(open_new_tab?.includes('debugger'))
+            );
 
             let _url = getSetArgsUrl(pgData, treeInfo);
 
@@ -770,9 +737,9 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
               .then(function () {/*This is intentional (SonarQube)*/ })
               .catch((error) => {
                 setLoaderText('');
-                Notify.alert(
-                  gettext('Error occured: '),
-                  gettext(error.response.data)
+                pgAdmin.Browser.notifier.alert(
+                  gettext('Error occurred: '),
+                  parseApiError(error)
                 );
               });
             /* Close the debugger modal dialog */
@@ -781,9 +748,9 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
           })
           .catch(function (error) {
             setLoaderText('');
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Debugger Target Initialization Error'),
-              gettext(error.response.data)
+              parseApiError(error)
             );
           });
 
@@ -800,15 +767,11 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
           method: 'POST',
           data: JSON.stringify(argsValueList),
         })
-          .then(function () {
-            /* Close the debugger modal dialog */
-            props.closeModal();
-          })
           .catch(function (error) {
             props.closeModal();
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Debugger Listener Startup Error'),
-              gettext(error.response.data)
+              parseApiError(error)
             );
           });
         setLoaderText('');
@@ -826,18 +789,19 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
         })
           .then(function () {
             /*This is intentional (SonarQube)*/
+            props.closeModal();
           })
           .catch(function (error) {
             setLoaderText('');
-            Notify.alert(
+            pgAdmin.Browser.notifier.alert(
               gettext('Debugger Listener Startup Set Arguments Error'),
-              gettext(error.response.data)
+              parseApiError(error)
             );
           });
       }
     } catch (err) {
       setLoaderText('');
-      Notify.alert(
+      pgAdmin.Browser.notifier.alert(
         gettext('Debugger Error'),
         gettext(err.message)
       );
@@ -845,20 +809,9 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
 
   }
 
-  function panelRenameEvent(panel_data, panel, treeInfo) {
-    let name = getAppropriateLabel(treeInfo);
-    let preferences = pgAdmin.Browser.get_preferences_for_module('browser');
-    let data = {
-      function_name: name,
-      schema_name: treeInfo.schema.label,
-      database_name: treeInfo.database.label
-    };
-    showRenamePanel(panel_data.$titleText[0].textContent, preferences, panel, 'debugger', data);
-  }
-
   return (
-    <Box className={classes.root}>
-      <Box className={classes.body}>
+    <StyledBox>
+      <Box className='DebuggerArgument-body'>
         {
           loadArgs > 0 &&
           <>
@@ -870,12 +823,14 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
               schema={debuggerArgsSchema.current}
               showFooter={false}
               isTabView={false}
+              Notifier={pgAdmin.Browser.notifier}
+              formClassName='DebuggerArgument-schema'
               onDataChange={(isChanged, changedData) => {
                 let isValid = false;
                 let skipStep = false;
-                if ('_sessData' in debuggerArgsSchema.current) {
+                if ('sessData' in debuggerArgsSchema.current) {
                   isValid = true;
-                  debuggerArgsSchema.current._sessData.aregsCollection.forEach((data) => {
+                  debuggerArgsSchema.current.sessData.aregsCollection.forEach((data) => {
 
                     if (skipStep) { return; }
 
@@ -900,25 +855,24 @@ export default function DebuggerArgumentComponent({ debuggerInfo, restartDebug, 
           </>
         }
       </Box>
-      <Box className={classes.footer}>
+      <Box className='DebuggerArgument-footer'>
         <Box>
-          <DefaultButton className={classes.buttonMargin} onClick={() => { clearArgs(); }} startIcon={<DeleteSweepIcon onClick={() => { clearArgs(); }} />}>
+          <DefaultButton className='DebuggerArgument-buttonMargin' onClick={() => { clearArgs(); }} startIcon={<DeleteSweepIcon onClick={() => { clearArgs(); }} />}>
             {gettext('Clear All')}
           </DefaultButton>
         </Box>
-        <Box className={classes.actionBtn} marginLeft="auto">
-          <DefaultButton className={classes.buttonMargin} onClick={() => { props.closeModal(); }} startIcon={<CloseSharpIcon onClick={() => { props.closeModal(); }} />}>
+        <Box className='DebuggerArgument-actionBtn' marginLeft="auto">
+          <DefaultButton className='DebuggerArgument-buttonMargin' onClick={() => { props.closeModal(); }} startIcon={<CloseSharpIcon onClick={() => { props.closeModal(); }} />}>
             {gettext('Cancel')}
           </DefaultButton>
-          <PrimaryButton className={classes.buttonMargin} startIcon={<BugReportRoundedIcon className={classes.debugBtn} />}
+          <PrimaryButton className='DebuggerArgument-buttonMargin' startIcon={<BugReportRoundedIcon className='DebuggerArgument-debugBtn' />}
             disabled={isDisableDebug}
             onClick={() => { startDebugging(); }}>
             {gettext('Debug')}
           </PrimaryButton>
         </Box>
       </Box>
-    </Box>
-
+    </StyledBox>
   );
 }
 
@@ -931,4 +885,3 @@ DebuggerArgumentComponent.propTypes = {
   pgTreeInfo: PropTypes.object,
   pgData: PropTypes.object,
 };
-

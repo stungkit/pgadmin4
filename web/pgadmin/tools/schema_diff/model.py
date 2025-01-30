@@ -2,25 +2,16 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
-from flask_babel import gettext
 
-
-class SchemaDiffModel():
+class SchemaDiffModel:
     """
     SchemaDiffModel
     """
-
-    COMPARISON_STATUS = {
-        'source_only': 'Source Only',
-        'target_only': 'Target Only',
-        'different': 'Different',
-        'identical': 'Identical'
-    }
 
     def __init__(self, **kwargs):
         """
@@ -41,7 +32,7 @@ class SchemaDiffModel():
 
     def set_result(self, node_name, compare_result):
         """
-        This method set the result of the comparision based on nodes.
+        This method set the result of the Comparison based on nodes.
         """
         self._comparison_result[node_name] = compare_result
 

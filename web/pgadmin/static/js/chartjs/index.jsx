@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,23 +11,11 @@ import { Chart, registerables } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import PropTypes from 'prop-types';
 import _ from 'lodash';
+import { useTheme } from '@mui/material';
 
 export const DATA_POINT_STYLE = ['circle', 'cross', 'crossRot', 'rect',
   'rectRounded', 'rectRot', 'star', 'triangle'];
 export const DATA_POINT_SIZE = 3;
-export const CHART_THEME_COLORS_LENGTH = 20;
-export const CHART_THEME_COLORS = {
-  'standard':['#1F77B4', '#FF7F0E', '#2CA02C', '#D62728', '#9467BD', '#8C564B',
-    '#E377C2', '#7F7F7F', '#BCBD22', '#17BECF', '#3366CC', '#DC3912', '#FF9900',
-    '#109618', '#990099', '#0099C6','#DD4477', '#66AA00', '#B82E2E', '#316395'],
-  'dark': ['#4878D0', '#EE854A', '#6ACC64', '#D65F5F', '#956CB4', '#8C613C',
-    '#DC7EC0', '#797979', '#D5BB67', '#82C6E2', '#7371FC', '#3A86FF', '#979DAC',
-    '#D4A276', '#2A9D8F', '#FFEE32', '#70E000', '#FF477E', '#7DC9F1', '#52B788'],
-  'high_contrast': ['#023EFF', '#FF7C00', '#1AC938', '#E8000B', '#8B2BE2',
-    '#9F4800', '#F14CC1', '#A3A3A3', '#FFC400', '#00D7FF', '#FF6C49', '#00B4D8',
-    '#45D48A', '#FFFB69', '#B388EB', '#D4A276', '#2EC4B6', '#7DC9F1', '#50B0F0',
-    '#52B788']
-};
 
 const defaultOptions = {
   responsive: true,
@@ -59,7 +47,6 @@ const defaultOptions = {
       },
       ticks: {
         display: false,
-        color: getComputedStyle(document.documentElement).getPropertyValue('--color-fg'),
       },
     },
     y: {
@@ -69,12 +56,9 @@ const defaultOptions = {
             return label;
           }
         },
-        color: getComputedStyle(document.documentElement).getPropertyValue('--color-fg'),
       },
       grid: {
         drawBorder: false,
-        zeroLineColor: getComputedStyle(document.documentElement).getPropertyValue('--border-color'),
-        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color'),
       },
     },
   },
@@ -101,6 +85,7 @@ const defaultOptions = {
 export default function BaseChart({type='line', id, options, data, redraw=false, plugins={}, ...props}) {
   const chartRef = React.useRef();
   const chartObj = React.useRef();
+  const theme = useTheme();
 
   const initChart = function() {
     Chart.register(...registerables);
@@ -113,18 +98,46 @@ export default function BaseChart({type='line', id, options, data, redraw=false,
       plugins: [plugins],
       options: options,
     });
-    props.onInit && props.onInit(chartObj.current);
+    props.onInit?.(chartObj.current);
   };
 
   const destroyChart = function() {
     chartObj.current?.resetZoom?.();
-    chartObj.current && chartObj.current.destroy();
+    chartObj.current?.destroy();
   };
 
   useEffect(()=>{
     initChart();
     return destroyChart;
   }, []);
+
+  useEffect(()=>{
+    let scaleColors = {
+      scales: {
+        x: {
+          ticks: {
+            color: theme.palette.text.primary,
+          },
+        },
+        y: {
+          ticks: {
+            color: theme.palette.text.primary,
+          },
+          grid: {
+            zeroLineColor: theme.otherVars.borderColor,
+            color: theme.otherVars.borderColor
+          },
+        },
+      },
+    };
+    let merged = options;
+    // Override only if scales are actually defined.
+    if(options.scales && Object.keys(options.scales).length > 0) {
+      merged = _.merge(options, scaleColors);
+    }
+    chartObj.current.options = merged;
+    chartObj.current.update(props.updateOptions || {});
+  },[theme]);
 
   useEffect(()=>{
     if(typeof(chartObj.current) != 'undefined') {
@@ -137,7 +150,7 @@ export default function BaseChart({type='line', id, options, data, redraw=false,
       }
       chartObj.current.options = options;
       chartObj.current.update(props.updateOptions || {});
-      props.onUpdate && props.onUpdate(chartObj.current);
+      props.onUpdate?.(chartObj.current);
     }
   }, [data, options]);
 
@@ -204,7 +217,7 @@ export function PieChart({options, ...props}) {
   let optionsMerged = _.merge({
     responsive: true,
     maintainAspectRatio: false,
-    normalized: true
+    normalized: true,
   }, options);
   return (
     <BaseChart {...props} options={optionsMerged} type='pie'/>

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -42,6 +42,7 @@ export class RestoreSectionSchema extends BaseUISchema {
       label: gettext('Pre-data'),
       type: 'switch',
       group: gettext('Sections'),
+      inlineGroup: 'sections',
       deps: ['only_data', 'only_schema'],
       disabled: function(state) {
         return obj.isDisabled(state);
@@ -51,6 +52,7 @@ export class RestoreSectionSchema extends BaseUISchema {
       label: gettext('Data'),
       type: 'switch',
       group: gettext('Sections'),
+      inlineGroup: 'sections',
       deps: ['only_data', 'only_schema'],
       disabled: function(state) {
         return obj.isDisabled(state);
@@ -60,6 +62,7 @@ export class RestoreSectionSchema extends BaseUISchema {
       label: gettext('Post-data'),
       type: 'switch',
       group: gettext('Sections'),
+      inlineGroup: 'sections',
       deps: ['only_data', 'only_schema'],
       disabled: function(state) {
         return obj.isDisabled(state);
@@ -95,6 +98,7 @@ export class RestoreTypeObjSchema extends BaseUISchema {
       label: gettext('Only data'),
       type: 'switch',
       group: gettext('Type of objects'),
+      inlineGroup: 'types_of_data',
       deps: ['pre_data', 'data', 'post_data', 'only_schema'],
       disabled: function(state) {
         if(obj.selectedNodeType == 'table') {
@@ -112,6 +116,7 @@ export class RestoreTypeObjSchema extends BaseUISchema {
       label: gettext('Only schema'),
       type: 'switch',
       group: gettext('Type of objects'),
+      inlineGroup: 'types_of_data',
       deps: ['pre_data', 'data', 'post_data', 'only_data'],
       disabled: function(state) {
         if(obj.selectedNodeType == 'index' || obj.selectedNodeType == 'function') {
@@ -151,94 +156,73 @@ export class RestoreSaveOptSchema extends BaseUISchema {
 
 
   get baseFields() {
-    let obj = this;
     return [{
       id: 'dns_owner',
       label: gettext('Owner'),
       type: 'switch',
       disabled: false,
+      inlineGroup: 'save_options',
       group: gettext('Do not save'),
     }, {
       id: 'dns_privilege',
-      label: gettext('Privilege'),
+      label: gettext('Privileges'),
       type: 'switch',
       disabled: false,
+      inlineGroup: 'save_options',
       group: gettext('Do not save'),
     }, {
       id: 'dns_tablespace',
-      label: gettext('Tablespace'),
+      label: gettext('Tablespaces'),
       type: 'switch',
       disabled: false,
+      inlineGroup: 'save_options',
       group: gettext('Do not save'),
     }, {
-      id: 'no_comments',
+      id: 'dns_comments',
       label: gettext('Comments'),
       type: 'switch',
       disabled: false,
+      inlineGroup: 'save_options',
       group: gettext('Do not save'),
-      visible: function() {
-        let serverInfo = obj.fieldOptions.nodeInfo.server;
-        return !_.isUndefined(serverInfo) && serverInfo.version >= 110000 ? true : false;
-      },
+      min_version: 110000
+    }, {
+      id: 'dns_publications',
+      label: gettext('Publications'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'save_options',
+      min_version: 110000
+    }, {
+      id: 'dns_subscriptions',
+      label: gettext('Subscriptions'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'save_options',
+      min_version: 110000
+    }, {
+      id: 'dns_security_labels',
+      label: gettext('Security labels'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'save_options',
+      min_version: 110000
+    }, {
+      id: 'dns_table_access_method',
+      label: gettext('Table access methods'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Do not save'),
+      inlineGroup: 'save_options',
+      min_version: 150000
     }];
   }
 }
 
 export function getRestoreSaveOptSchema(fieldOptions) {
   return new RestoreSaveOptSchema(fieldOptions);
-}
-
-export class RestoreQueryOptionSchema extends BaseUISchema {
-  constructor(fieldOptions={}, initValues={}) {
-    super({
-      id: null,
-      ...initValues,
-    });
-
-    this.fieldOptions = {
-      nodeInfo: null,
-      backupType: null,
-      ...fieldOptions,
-    };
-
-    this.selectedNodeType = this.fieldOptions.selectedNodeType;
-  }
-
-  get idAttribute() {
-    return 'id';
-  }
-
-  get baseFields() {
-    let obj = this;
-    return [{
-      id: 'include_create_database',
-      label: gettext('Include CREATE DATABASE statement'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries')
-    }, {
-      id: 'clean',
-      label: gettext('Clean before restore'),
-      type: 'switch',
-      group: gettext('Queries'),
-      disabled: function(state) {
-        if(obj.selectedNodeType === 'function' || obj.selectedNodeType === 'trigger_function') {
-          state.clean = true;
-          return true;
-        }
-      },
-    }, {
-      id: 'single_transaction',
-      label: gettext('Single transaction'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Queries'),
-    }];
-  }
-}
-
-export function getRestoreQueryOptionSchema(fieldOptions) {
-  return new RestoreQueryOptionSchema(fieldOptions);
 }
 
 export class RestoreDisableOptionSchema extends BaseUISchema {
@@ -262,16 +246,10 @@ export class RestoreDisableOptionSchema extends BaseUISchema {
   get baseFields() {
     return [{
       id: 'disable_trigger',
-      label: gettext('Trigger'),
+      label: gettext('Triggers'),
       type: 'switch',
       disable: false,
       group: gettext('Disable')
-    }, {
-      id: 'no_data_fail_table',
-      label: gettext('No data for Failed Tables'),
-      type: 'switch',
-      disabled: false,
-      group: gettext('Disable'),
     }];
   }
 }
@@ -317,6 +295,12 @@ export class RestoreMiscellaneousSchema extends BaseUISchema {
       type: 'switch',
       disabled: false,
       group: gettext('Miscellaneous / Behavior'),
+    }, {
+      id: 'exclude_schema',
+      label: gettext('Exclude schema'),
+      type: 'text',
+      disabled: false,
+      group: gettext('Miscellaneous / Behavior')
     }];
   }
 }
@@ -328,7 +312,7 @@ export function getRestoreMiscellaneousSchema(fieldOptions) {
 //Restore Schema
 export default class RestoreSchema extends BaseUISchema {
 
-  constructor(restoreSectionSchema, restoreTypeObjSchema, restoreSaveOptSchema, restoreQueryOptionSchema, restoreDisableOptionSchema, restoreMiscellaneousSchema, fieldOptions = {}, treeNodeInfo={}, pgBrowser=null) {
+  constructor(restoreSectionSchema, restoreTypeObjSchema, restoreSaveOptSchema, restoreDisableOptionSchema, restoreMiscellaneousSchema, fieldOptions = {}, treeNodeInfo={}, pgBrowser=null) {
     super({
       custom: false,
       file: undefined,
@@ -355,7 +339,6 @@ export default class RestoreSchema extends BaseUISchema {
     this.getSectionSchema = restoreSectionSchema;
     this.getRestoreTypeObjSchema = restoreTypeObjSchema;
     this.getRestoreSaveOptSchema = restoreSaveOptSchema;
-    this.getRestoreQueryOptionSchema = restoreQueryOptionSchema;
     this.getRestoreDisableOptionSchema = restoreDisableOptionSchema;
     this.getRestoreMiscellaneousSchema = restoreMiscellaneousSchema;
     this.treeNodeInfo = treeNodeInfo;
@@ -412,27 +395,71 @@ export default class RestoreSchema extends BaseUISchema {
     }, {
       type: 'nested-fieldset',
       label: gettext('Sections'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema:obj.getSectionSchema(),
       visible: true
     }, {
       type: 'nested-fieldset',
       label: gettext('Type of objects'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema:obj.getRestoreTypeObjSchema(),
       visible: true
     }, {
       type: 'nested-fieldset',
       label: gettext('Do not save'),
-      group: gettext('Data/Objects'),
+      group: gettext('Data Options'),
       schema:obj.getRestoreSaveOptSchema(),
       visible: true
     }, {
-      type: 'nested-fieldset',
-      label: gettext('Queries'),
-      group: gettext('Options'),
-      schema:obj.getRestoreQueryOptionSchema(),
-      visible: true
+      id: 'include_create_database',
+      label: gettext('Include CREATE DATABASE statement'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Query Options')
+    }, {
+      id: 'clean',
+      label: gettext('Clean before restore'),
+      type: 'switch',
+      group: gettext('Query Options'),
+      inlineGroup: 'clean',
+      disabled: function(state) {
+        if(obj.selectedNodeType === 'function' || obj.selectedNodeType === 'trigger_function') {
+          state.clean = true;
+          return true;
+        }
+      },
+    }, {
+      id: 'if_exists',
+      label: gettext('Include IF EXISTS clause'),
+      type: 'switch',
+      group: gettext('Query Options'),
+      inlineGroup: 'clean',
+      deps: ['clean'],
+      disabled: function(state) {
+        if (state.clean) {
+          return false;
+        }
+        state.if_exists = false;
+        return true;
+      },
+    }, {
+      id: 'single_transaction',
+      label: gettext('Single transaction'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Query Options'),
+    }, {
+      id: 'enable_row_security',
+      label: gettext('Enable row security'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Table Options'),
+    }, {
+      id: 'no_data_fail_table',
+      label: gettext('No data for failed tables'),
+      type: 'switch',
+      disabled: false,
+      group: gettext('Table Options'),
     }, {
       type: 'nested-fieldset',
       label: gettext('Disable'),

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -33,10 +33,14 @@ export default class CastSchema extends BaseUISchema {
     let srctype = state.srctyp;
     let trgtype = state.trgtyp;
     if(srctype != undefined && srctype != '' &&
-          trgtype != undefined && trgtype != '')
-      return state.name = srctype+'->'+trgtype;
-    else
-      return state.name = '';
+          trgtype != undefined && trgtype != '') {
+      state.name = srctype+'->'+trgtype;
+      return state.name;
+    }  
+    else {
+      state.name = '';
+      return state.name;
+    }
   }
 
   get baseFields() {

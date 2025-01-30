@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##############################################################
@@ -14,7 +14,7 @@ from importlib import import_module
 
 from werkzeug.utils import find_modules
 from pgadmin.utils import server_utils
-from pgadmin.utils.constants import PSYCOPG2, PSYCOPG3
+from pgadmin.utils.constants import PSYCOPG3
 from .. import socketio
 
 import unittest
@@ -68,13 +68,8 @@ class TestsGeneratorRegistry(ABCMeta):
         all_modules = []
 
         try:
-            for module_name in find_modules(pkg_root, True, True):
-                if module_name.find(PSYCOPG2) != -1:
-                    print("Skipping ", module_name)
-                    continue
+            for module_name in find_modules(pkg_root, False, True):
                 all_modules.append(module_name)
-            TestsGeneratorRegistry._exclude_packages(all_modules,
-                                                     exclude_pkgs)
         except Exception:
             pass
 
@@ -105,6 +100,9 @@ class TestsGeneratorRegistry(ABCMeta):
         # if yes then import only that module
         if is_resql_only:
             BaseTestGenerator.setForModules(for_modules)
+            # In case of RESQL only clear the registry of modules, as
+            # RESQL test cases should be run.
+            cls.registry = dict()
             try:
                 import_module('regression.re_sql.tests.test_resql')
             except ImportError:

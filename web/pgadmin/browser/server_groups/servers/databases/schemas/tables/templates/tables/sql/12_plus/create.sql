@@ -38,7 +38,13 @@ CREATE {% if data.relpersistence %}UNLOGGED {% endif %}TABLE{% if add_not_exists
 
         INCLUDING STORAGE{% endif %}{% if data.like_comments %}
 
-        INCLUDING COMMENTS{% endif %}{% if data.columns|length > 0 %},
+        INCLUDING COMMENTS{% endif %}{% if data.like_generated %}
+
+        INCLUDING GENERATED{% endif %}{% if data.like_identity %}
+
+        INCLUDING IDENTITY{% endif %}{% if data.like_statistics %}
+
+        INCLUDING STATISTICS{% endif %}{% if data.columns|length > 0 %},
 {% endif %}
 
 {% endif %}
@@ -75,11 +81,17 @@ CACHE {{c.seqcache|int}} {% endif %}
 {% if data.like_relation or data.coll_inherits or data.columns|length > 0 or data.primary_key|length > 0 or data.unique_constraint|length > 0 or data.foreign_key|length > 0 or data.check_constraint|length > 0 or data.exclude_constraint|length > 0 %}
 
 ){% endif %}{% if data.relkind is defined and data.relkind == 'p' %} PARTITION BY {{ data.partition_scheme }}{% endif %}
-{% if not data.coll_inherits and not data.spcname and not with_clause %};{% endif %}
+{% if not data.coll_inherits and not data.spcname and not with_clause and not data.amname %};{% endif %}
 
 {### If we are inheriting it from another table(s) ###}
 {% if data.coll_inherits %}
-    INHERITS ({% for val in data.coll_inherits %}{% if loop.index != 1 %}, {% endif %}{{val}}{% endfor %}){% if not data.spcname and not with_clause %};{% endif %}
+    INHERITS ({% for val in data.coll_inherits %}{% if loop.index != 1 %}, {% endif %}{{val}}{% endfor %}){% if not data.spcname and not with_clause and not data.amname %};{% endif %}
+{% endif %}
+
+{% if data.default_amname and data.default_amname != data.amname and data.amname is not none %}
+USING {{data.amname}}
+{% elif not data.default_amname and data.amname %}
+USING {{data.amname}}{% if not data.spcname and not with_clause %};{% endif %}
 {% endif %}
 
 {% if with_clause %}
@@ -185,7 +197,7 @@ ALTER TABLE IF EXISTS {{conn|qtIdent(data.schema, data.name)}}
 
 {% endif %}
 {###  Alter column statistics value ###}
-{% if c.attstattarget is defined and c.attstattarget > -1 %}
+{% if c.attstattarget is defined and c.attstattarget is not none and c.attstattarget > -1 %}
 ALTER TABLE IF EXISTS {{conn|qtIdent(data.schema, data.name)}}
     ALTER COLUMN {{conn|qtTypeIdent(c.name)}} SET STATISTICS {{c.attstattarget}};
 

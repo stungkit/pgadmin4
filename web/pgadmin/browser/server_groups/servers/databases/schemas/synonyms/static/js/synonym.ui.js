@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -97,10 +97,7 @@ export default class SynonymSchema extends BaseUISchema {
           };
         },
         readonly: function() {
-          if(!obj.inCatalog()) {
-            return false;
-          }
-          return true;
+          return obj.inCatalog();
         }
       }, {
         id: 'is_sys_obj', label: gettext('System synonym?'),

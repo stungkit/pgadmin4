@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -12,7 +12,7 @@ A blueprint module providing utility functions for the notify the user about
 the long running background-processes.
 """
 from flask import url_for
-from flask_security import login_required
+from pgadmin.user_login_check import pga_login_required
 from pgadmin.utils import PgAdminModule
 from pgadmin.utils.ajax import make_response, gone, success_return,\
     make_json_response
@@ -23,13 +23,6 @@ MODULE_NAME = 'bgprocess'
 
 
 class BGProcessModule(PgAdminModule):
-    def get_own_stylesheets(self):
-        """
-        Returns:
-            list: the stylesheets used by this module.
-        """
-        stylesheets = []
-        return stylesheets
 
     def get_exposed_url_endpoints(self):
         """
@@ -50,7 +43,7 @@ blueprint = BGProcessModule(
 
 
 @blueprint.route('/', methods=['GET'], endpoint='list')
-@login_required
+@pga_login_required
 def index():
     return make_response(response=BatchProcess.list())
 
@@ -59,7 +52,7 @@ def index():
 @blueprint.route(
     '/<pid>/<int:out>/<int:err>/', methods=['GET'], endpoint='detailed_status'
 )
-@login_required
+@pga_login_required
 def status(pid, out=-1, err=-1):
     """
     Check the status of the process running in background.
@@ -83,7 +76,7 @@ def status(pid, out=-1, err=-1):
 
 
 @blueprint.route('/<pid>', methods=['PUT'], endpoint='acknowledge')
-@login_required
+@pga_login_required
 def acknowledge(pid):
     """
     User has acknowledge the process
@@ -103,7 +96,7 @@ def acknowledge(pid):
 
 @blueprint.route('/update_cloud_details/<pid>', methods=['PUT'],
                  endpoint='update_cloud_details')
-@login_required
+@pga_login_required
 def update_cloud_details(pid):
     """
     Update the cloud details and get instance details
@@ -140,7 +133,7 @@ def update_cloud_details(pid):
 
 
 @blueprint.route('/stop/<pid>', methods=['PUT'], endpoint='stop_process')
-@login_required
+@pga_login_required
 def stop_process(pid):
     """
     User has stopped the process

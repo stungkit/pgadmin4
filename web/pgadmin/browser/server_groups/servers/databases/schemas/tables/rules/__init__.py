@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -80,9 +80,12 @@ class RuleModule(CollectionNodeModule):
         Generate the collection node
         """
         assert ('tid' in kwargs or 'vid' in kwargs)
-        yield self.generate_browser_collection_node(
-            kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
-        )
+        if self.has_nodes(sid, did, scid=scid,
+                          tid=kwargs.get('tid', kwargs.get('vid', None)),
+                          base_template_path=RuleView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(
+                kwargs['tid'] if 'tid' in kwargs else kwargs['vid']
+            )
 
     @property
     def node_inode(self):
@@ -150,6 +153,7 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
     """
     node_type = blueprint.node_type
     node_label = "Rule"
+    BASE_TEMPLATE_PATH = 'rules/sql'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -197,7 +201,7 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
             self.manager = get_driver(
                 PG_DEFAULT_DRIVER).connection_manager(kwargs['sid'])
             self.conn = self.manager.connection(did=kwargs['did'])
-            self.template_path = 'rules/sql'
+            self.template_path = self.BASE_TEMPLATE_PATH
             self.table_template_path = compile_template_path(
                 'tables/sql',
                 self.manager.version
@@ -274,7 +278,8 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['name'],
                     icon="icon-rule-bad"
                     if 'is_enable_rule' in row and
-                       row['is_enable_rule'] == 'D' else "icon-rule"
+                       row['is_enable_rule'] == 'D' else "icon-rule",
+                    description=row['comment']
                 ))
 
         return make_json_response(
@@ -381,6 +386,11 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
             status, res = self.conn.execute_scalar(SQL)
             if not status:
                 return internal_server_error(errormsg=res)
+
+            other_node_info = {}
+            if 'comment' in data:
+                other_node_info['description'] = data['comment']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     rid,
@@ -389,7 +399,8 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
                     icon="icon-%s-bad" % self.node_type
                     if 'is_enable_rule' in data and
                        data['is_enable_rule'] == 'D'
-                    else "icon-%s" % self.node_type
+                    else "icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -461,7 +472,7 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
         This function returns modified SQL
         """
         data = request.args
-        sql, name = self.getSQL(gid, sid, data, tid, rid)
+        sql, _ = self.getSQL(gid, sid, data, tid, rid)
         if not isinstance(sql, str):
             return sql
         sql = sql.strip('\n').strip(' ')
@@ -569,7 +580,7 @@ class RuleView(PGChildNodeView, SchemaDiffObjectCompare):
 
         return sql
 
-    @ staticmethod
+    @staticmethod
     def _check_schema_diff(target_schema, res_data):
         """
         Check for schema diff, if yes then replace source schema with target

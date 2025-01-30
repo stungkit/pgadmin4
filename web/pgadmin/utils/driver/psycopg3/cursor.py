@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2022, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -16,12 +16,11 @@ result.
 import asyncio
 from collections import OrderedDict
 import psycopg
+from flask import g, current_app
 from psycopg import Cursor as _cursor, AsyncCursor as _async_cursor
 from typing import Any, Sequence
 from psycopg.rows import dict_row, tuple_row
 from psycopg._encodings import py_codecs as encodings
-
-
 from .encoding import configure_driver_encodings
 
 configure_driver_encodings(encodings)
@@ -278,7 +277,10 @@ class AsyncDictCursor(_async_cursor):
         """
         Execute function
         """
-        return asyncio.run(self._execute(query, params))
+        try:
+            return asyncio.run(self._execute(query, params))
+        except RuntimeError as e:
+            current_app.logger.exception(e)
 
     async def _execute(self, query, params=None):
         """
@@ -314,11 +316,12 @@ class AsyncDictCursor(_async_cursor):
         Fetch many tuples as ordered dictionary list.
         """
         self._odt_desc = None
-        if _tupples:
-            self.row_factory = tuple_row
+        self.row_factory = tuple_row
         res = asyncio.run(self._fetchmany(size))
-        if _tupples:
-            self.row_factory = dict_row
+        if not _tupples and res is not None:
+            res = [self._dict_tuple(t) for t in res]
+
+        self.row_factory = dict_row
         return res
 
     async def _fetchmany(self, size=None):
@@ -338,11 +341,12 @@ class AsyncDictCursor(_async_cursor):
         Fetch all tuples as ordered dictionary list.
         """
         self._odt_desc = None
-        if _tupples:
-            self.row_factory = tuple_row
+        self.row_factory = tuple_row
         res = asyncio.run(self._fetchall())
-        if _tupples:
-            self.row_factory = dict_row
+        if not _tupples and res is not None:
+            res = [self._dict_tuple(t) for t in res]
+
+        self.row_factory = dict_row
         return res
 
     async def _fetchone(self):
@@ -357,6 +361,20 @@ class AsyncDictCursor(_async_cursor):
         """
         self.row_factory = tuple_row
         res = asyncio.run(self._fetchone())
+        self.row_factory = dict_row
+        return res
+
+    def fetchwindow(self, from_rownum=0, to_rownum=0, _tupples=False):
+        """
+        Fetch many tuples as ordered dictionary list.
+        """
+        self._odt_desc = None
+        self.row_factory = tuple_row
+        asyncio.run(self._scrollcur(from_rownum, "absolute"))
+        res = asyncio.run(self._fetchmany(to_rownum - from_rownum + 1))
+        if not _tupples and res is not None:
+            res = [self._dict_tuple(t) for t in res]
+
         self.row_factory = dict_row
         return res
 

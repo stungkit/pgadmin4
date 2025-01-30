@@ -53,7 +53,8 @@
         "tunnel_port": 22,
         "tunnel_username": "user",
         "tunnel_authentication": 1,
-        "tunnel_identity_file": "pkey_rsa"
+        "tunnel_identity_file": "pkey_rsa",
+        "tunnel_keep_alive": 5
       },
       "mocking_required": false,
       "mock_data": {},
@@ -74,7 +75,8 @@
         "tunnel_port": 22,
         "tunnel_username": "user",
         "tunnel_authentication": 1,
-        "tunnel_identity_file": "pkey_rsa"
+        "tunnel_identity_file": "pkey_rsa",
+        "tunnel_keep_alive": 0
       },
       "mocking_required": false,
       "mock_data": {},
@@ -95,7 +97,8 @@
         "tunnel_port": 22,
         "tunnel_username": "user",
         "tunnel_authentication": 0,
-        "tunnel_password": "123456"
+        "tunnel_password": "123456",
+        "tunnel_keep_alive": 0
       },
       "mocking_required": false,
       "mock_data": {},
@@ -117,7 +120,8 @@
         "tunnel_username": "user",
         "tunnel_authentication": 1,
         "tunnel_identity_file": "pkey_rsa",
-        "tunnel_password": "123456"
+        "tunnel_password": "123456",
+        "tunnel_keep_alive": 0
       },
       "mocking_required": false,
       "mock_data": {},
@@ -215,6 +219,21 @@
       "test_data": {
         "fgcolor":"#FF9900",
         "bgcolor": "#00FF00"
+      },
+      "mocking_required": false,
+      "mock_data": {},
+      "expected_data": {
+        "status_code": 200
+      }
+    },
+    {
+      "name": "Add server with tags",
+      "url": "/browser/server/obj/",
+      "is_positive_test": true,
+      "test_data": {
+        "tags": [
+          {"text":  "tag1", "color":  "#000"}
+        ]
       },
       "mocking_required": false,
       "mock_data": {},
@@ -574,6 +593,7 @@
         "tunnel_authentication": 1,
         "tunnel_password": "user123",
         "tunnel_identity_file": "pkey_rsa",
+        "tunnel_keep_alive": 0,
         "service": null,
         "server_info": {
           "id": 1,
@@ -589,7 +609,7 @@
         "manager": {
           "server_type": "pg",
           "password": "my_postgres",
-          "sversion": 100000,
+          "sversion": 150000,
           "connection_connect_return_value": "psycopg.OperationalError()"
         }
       },
@@ -615,6 +635,7 @@
         "tunnel_authentication": 1,
         "tunnel_password": "",
         "tunnel_identity_file": "pkey_rsa",
+        "tunnel_keep_alive": 0,
         "service": null,
         "server_info": {
           "id": 1,
@@ -630,7 +651,7 @@
         "manager": {
           "server_type": "pg",
           "password": "my_postgres",
-          "sversion": 100000,
+          "sversion": 150000,
           "connection_connect_return_value": "OperationalError()"
         }
       },
@@ -1118,7 +1139,7 @@
         "manager": {
           "server_type": "pg",
           "password": "my_postgres",
-          "sversion": 100000,
+          "sversion": 150000,
           "connection_execute_scalar_return_value": "(True, {'rows': []})"
         }
       },

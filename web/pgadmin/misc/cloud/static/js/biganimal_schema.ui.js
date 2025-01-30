@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2022, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -17,6 +17,7 @@ class BigAnimalClusterTypeSchema extends BaseUISchema {
   constructor(fieldOptions = {}, initValues = {}) {
     super({
       oid: undefined,
+      project: '',
       cluster_type: '',
       replicas: 0,
       provider: '',
@@ -43,6 +44,18 @@ class BigAnimalClusterTypeSchema extends BaseUISchema {
 
   get baseFields() {
     return [
+      { id: 'project',
+        label: gettext('Project'),
+        mode: ['create'],
+        noEmpty: true,
+        type: () => {
+          return {
+            type: 'select',
+            options: this.fieldOptions.projects
+          };
+        },
+
+      },
       {
         id: 'cluster_type', label: gettext('Cluster type'),  noEmpty: true,
         type: () => {
@@ -68,8 +81,17 @@ class BigAnimalClusterTypeSchema extends BaseUISchema {
           return state.cluster_type != 'ha';
         }
       }, { id: 'provider', label: gettext('Cluster provider'),  noEmpty: true,
-        type: 'toggle', className: this.initValues.classes.providerHeight,
-        options: this.initValues.bigAnimalProviders,
+        deps:['project'],
+        type: (state) => {
+          return {
+            type: 'select',
+            options: state.project
+              ? () => this.fieldOptions.providers(state.project)
+              : [],
+            optionsReloadBasis: state.project,
+            allowClear: false,
+          };
+        }
       },
     ];
   }
@@ -192,6 +214,7 @@ class BigAnimalVolumeSchema extends BaseUISchema {
       volume_properties: '',
       volume_size: 4,
       volume_IOPS: '',
+      disk_throughput: 125,
       ...initValues
     });
 
@@ -207,34 +230,41 @@ class BigAnimalVolumeSchema extends BaseUISchema {
   }
 
   validate(data, setErrMsg) {
-    if (data.provider != CLOUD_PROVIDERS.AWS && isEmptyString(data.volume_properties)) {
-      setErrMsg('replicas', gettext('Please select volume properties.'));
+    if (!data.provider.includes(CLOUD_PROVIDERS.AWS) && isEmptyString(data.volume_properties)) {
+      setErrMsg('volume_properties', gettext('Please select volume properties.'));
       return true;
     }
-    if (data.provider == CLOUD_PROVIDERS.AWS) {
+    if (data.provider.includes(CLOUD_PROVIDERS.AWS)) {
+      if (!isEmptyString(data.volume_size)) {
+        if( data.volume_type != 'io2' && (data.volume_size < 1 ||  data.volume_size > 16384)) {
+          setErrMsg('volume_size', gettext('Please enter the volume size in the range between 1 to 16384.'));
+          return true;
+        }
+        if (data.volume_type == 'io2' && (data.volume_size < 4 ||  data.volume_size > 16384)) {
+          setErrMsg('volume_size', gettext('Please enter the volume size in the range between 4 to 16384.'));
+          return true;
+        }
+      }
       if (isEmptyString(data.volume_IOPS)) {
-        setErrMsg('replicas', gettext('Please select volume IOPS.'));
+        setErrMsg('volume_IOPS', gettext('Please enter volume IOPS.'));
         return true;
       }
-      if (!isEmptyString(data.volume_size)) {
-        if( data.volume_IOPS != 'io2' && (data.volume_size < 1 ||  data.volume_size > 16384)) {
-          setErrMsg('replicas', gettext('Please enter the volume size in the range between 1 tp 16384.'));
+      else if (!isEmptyString(data.volume_IOPS)) {
+        if(data.volume_type == 'io2' && (data.volume_IOPS < 100 || data.volume_IOPS > Math.min(data.volume_size*500, 64000))) {
+          let errMsg = 'Please enter the volume IOPS in the range between 100 to ' + Math.min(data.volume_size*500, 64000) + '.';
+          setErrMsg('volume_IOPS', gettext(errMsg));
           return true;
         }
-        if (data.volume_IOPS == 'io2' && (data.volume_size < 4 ||  data.volume_size > 16384)) {
-          setErrMsg('replicas', gettext('Please enter the volume size in the range between 4 tp 16384.'));
+        if(data.volume_type == 'gp3' && (data.volume_IOPS < 3000 || data.volume_IOPS > Math.min(Math.max(data.volume_size*500, 3000), 16000))) {
+          let errMsg = 'Please enter the volume IOPS in the range between 3000 to ' + Math.min(Math.max(data.volume_size*500, 3000), 16000) + '.';
+          setErrMsg('volume_IOPS', gettext(errMsg));
           return true;
         }
       }
-      if (!isEmptyString(data.volume_IOPS)) {
-        if(data.volume_IOPS != 'io2' && data.volume_IOPS != 3000) {
-          setErrMsg('replicas', gettext('Please enter the volume IOPS 3000.'));
-          return true;
-        }
-        if(data.volume_IOPS == 'io2' && (data.volume_IOPS < 100 ||  data.volume_IOPS > 2000)) {
-          setErrMsg('replicas', gettext('Please enter the volume IOPS in the range between 100 tp 2000.'));
-          return true;
-        }
+      if ( data.volume_type === 'gp3' && !isEmptyString(data.disk_throughput) && (data.disk_throughput < 125 ||  data.disk_throughput > Math.min( ((data.volume_IOPS - 3000)/100*25 + 750) , 1000))) {
+        let errMsg = 'Please enter the Disk throughput in the range between 125 to ' + Math.min( ((data.volume_IOPS - 3000)/100*25+750) , 1000) + '.';
+        setErrMsg('disk_throughput', gettext(errMsg));
+        return true;
       }
     }
     return false;
@@ -273,7 +303,7 @@ class BigAnimalVolumeSchema extends BaseUISchema {
           };
         },
         visible: (state) => {
-          return state.provider !== CLOUD_PROVIDERS.AWS;
+          return state.provider === CLOUD_PROVIDERS.AZURE;
         },
       }, {
         id: 'volume_size', label: gettext('Size'), type: 'text',
@@ -281,7 +311,7 @@ class BigAnimalVolumeSchema extends BaseUISchema {
         depChange: (state, source)=> {
           obj.volumeType = state.volume_type;
           if (source[0] !== 'volume_size') {
-            if(state.volume_type == 'io2' || state.provider === CLOUD_PROVIDERS.AZURE) {
+            if(state.volume_type == 'io2') {
               return {volume_size: 4};
             } else {
               return {volume_size: 1};
@@ -289,20 +319,19 @@ class BigAnimalVolumeSchema extends BaseUISchema {
           }
         },
         visible: (state) => {
-          return state.provider === CLOUD_PROVIDERS.AWS;
+          return state.provider?.includes(CLOUD_PROVIDERS.AWS);
         },
         helpMessage: obj.volumeType == 'io2' ? gettext('Size (4-16,384 GiB)') : gettext('Size (1-16,384 GiB)')
       }, {
         id: 'volume_IOPS', label: gettext('IOPS'), type: 'text',
         mode: ['create'],
-        helpMessage: obj.volumeType == 'io2' ? gettext('IOPS (100-2,000)') : gettext('IOPS (3,000-3,000)'),
         visible: (state) => {
-          return state.provider === CLOUD_PROVIDERS.AWS;
+          return state.provider?.includes(CLOUD_PROVIDERS.AWS);
         }, deps: ['volume_type'],
         depChange: (state, source) => {
           obj.volumeType = state.volume_type;
           if (source[0] !== 'volume_IOPS') {
-            if (state.provider === CLOUD_PROVIDERS.AWS) {
+            if (state.provider.includes(CLOUD_PROVIDERS.AWS)) {
               if(state.volume_type === 'io2') {
                 return {volume_IOPS: 100};
               } else {
@@ -313,7 +342,14 @@ class BigAnimalVolumeSchema extends BaseUISchema {
             }
           }
         },
-      },
+      },{
+        id: 'disk_throughput', label: gettext('Disk throughput'), type: 'text',
+        mode: ['create'],
+        deps : ['volume_type'],
+        visible: (state) => {
+          return state.provider?.includes(CLOUD_PROVIDERS.AWS) && state.volume_type === 'gp3';
+        }
+      }
     ];
   }
 }
@@ -379,13 +415,13 @@ class BigAnimalDatabaseSchema extends BaseUISchema {
         type: (state) => {
           return {
             type: 'select',
-            options: ()=>this.fieldOptions.db_versions(this.initValues.cluster_typ, state.database_type),
+            options: ()=>this.fieldOptions.db_versions(this.initValues.cluster_type, state.database_type),
             optionsReloadBasis: state.database_type,
           };
         },
       },{
         id: 'password', label: gettext('Database password'), type: 'password',
-        mode: ['create'], noEmpty: true,
+        mode: ['create'], noEmpty: true, controlProps: { autoComplete: 'new-password' }
       },{
         id: 'confirm_password', label: gettext('Confirm password'), type: 'password',
         mode: ['create'], noEmpty: true,
@@ -404,6 +440,7 @@ class BigAnimalClusterSchema extends BaseUISchema {
       region: '',
       cloud_type: 'public',
       biganimal_public_ip: initValues.hostIP,
+      disk_throughput: 125,
       ...initValues
     });
 
@@ -439,8 +476,7 @@ class BigAnimalClusterSchema extends BaseUISchema {
         type: () => {
           return {
             type: 'select',
-            options: ()=>this.fieldOptions.regions(this.initValues.provider),
-            optionsReloadBasis: this.initValues.provider,
+            options: ()=>this.fieldOptions.regions()
           };
         },
       },{

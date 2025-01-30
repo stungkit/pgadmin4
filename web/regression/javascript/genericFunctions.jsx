@@ -2,22 +2,37 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import jasmineEnzyme from 'jasmine-enzyme';
 import React from 'react';
 import pgAdmin from 'sources/pgadmin';
 import SchemaView from '../../pgadmin/static/js/SchemaView';
 import pgWindow from 'sources/window';
 import fakePgAdmin from './fake_pgadmin';
-import Theme from 'sources/Theme';
+import Theme from '../../pgadmin/static/js/Theme';
+import { act, render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { PgAdminProvider } from '../../pgadmin/static/js/PgAdminProvider';
 
-export let getEditView = (schemaObj, getInitData)=> {
-  return <Theme>
-    <SchemaView
+export function withBrowser(WrappedComp) {
+  /* eslint-disable react/display-name */
+  return (props)=>{
+    return <Theme>
+      <PgAdminProvider value={fakePgAdmin}>
+        <WrappedComp {...props}/>
+      </PgAdminProvider>
+    </Theme>;
+  };
+}
+
+const SchemaViewWithBrowser = withBrowser(SchemaView);
+
+export const getEditView = async (schemaObj, getInitData)=> {
+  await act(async ()=>{
+    return render(<SchemaViewWithBrowser
       formType='dialog'
       schema={schemaObj}
       getInitData={getInitData}
@@ -33,13 +48,15 @@ export let getEditView = (schemaObj, getInitData)=> {
       hasSQL={false}
       disableSqlHelp={false}
       disableDialogHelp={false}
-    />
-  </Theme>;
+    />);
+  });
 };
 
-export let getCreateView = (schemaObj)=> {
-  return <Theme>
-    <SchemaView
+export const getCreateView = async (schemaObj)=> {
+  let ctrl;
+  const user = userEvent.setup();
+  await act(async ()=>{
+    ctrl = render(<SchemaViewWithBrowser
       formType='dialog'
       schema={schemaObj}
       viewHelperProps={{
@@ -54,13 +71,14 @@ export let getCreateView = (schemaObj)=> {
       hasSQL={false}
       disableSqlHelp={false}
       disableDialogHelp={false}
-    />
-  </Theme>;
+    />);
+  });
+  return {ctrl, user};
 };
 
-export let getPropertiesView = (schemaObj, getInitData)=> {
-  return <Theme>
-    <SchemaView
+export const getPropertiesView = async (schemaObj, getInitData)=> {
+  await act(async ()=>{
+    return render(<SchemaViewWithBrowser
       formType='tab'
       schema={schemaObj}
       getInitData={getInitData}
@@ -69,16 +87,14 @@ export let getPropertiesView = (schemaObj, getInitData)=> {
       }}
       onHelp={()=>{/*This is intentional (SonarQube)*/}}
       onEdit={()=>{/*This is intentional (SonarQube)*/}}
-    />
-  </Theme>;
+    />);
+  });
 };
 
-export let genericBeforeEach = ()=> {
-  jasmineEnzyme();
-  /* messages used by validators */
-  pgAdmin.Browser = {
-    ...pgAdmin.Browser,
-    ...fakePgAdmin.Browser
-  };
+export const addNewDatagridRow = async (user, ctrl)=>{
+  await user.click(ctrl.container.querySelector('[data-test="add-row"] button'));
+};
+
+export const genericBeforeEach = ()=> {
   pgWindow.pgAdmin = pgAdmin;
 };

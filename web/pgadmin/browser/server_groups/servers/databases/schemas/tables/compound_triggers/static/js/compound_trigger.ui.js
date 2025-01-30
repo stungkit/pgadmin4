@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -128,10 +128,7 @@ export default class CompoundTriggerSchema extends BaseUISchema {
           }
           // Enable column only if update event is set true
           let isUpdate = state.evnt_update;
-          if(!_.isUndefined(isUpdate) && isUpdate) {
-            return false;
-          }
-          return true;
+          return !(!_.isUndefined(isUpdate) && isUpdate);
         },
         readonly: function(state) { return !obj.isNew(state); },
       },{

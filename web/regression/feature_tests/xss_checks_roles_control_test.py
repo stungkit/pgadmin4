@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -30,11 +30,6 @@ class CheckRoleMembershipControlFeatureTest(BaseFeatureTest):
     xss_test_role = "<h1>test</h1>"
 
     def before(self):
-        with test_utils.Database(self.server) as (connection, _):
-            if connection.server_version < 90100:
-                self.skipTest(
-                    "Membership is not present in Postgres below PG v9.1")
-
         # create role
         self.role = "test_role" + str(secrets.choice(range(10000, 65535)))
 
@@ -59,7 +54,7 @@ class CheckRoleMembershipControlFeatureTest(BaseFeatureTest):
         test_utils.drop_role(self.server, "postgres", self.xss_test_role)
 
     def _role_node_expandable(self, role):
-        retry = 3
+        retry = 2
         while retry > 0:
             if self.page.expand_server_child_node(
                     "Server", self.server['name'], self.server['db_password'],
@@ -75,16 +70,17 @@ class CheckRoleMembershipControlFeatureTest(BaseFeatureTest):
     def _check_role_membership_control(self):
         self.page.driver.find_element(
             By.CSS_SELECTOR, NavMenuLocators.object_menu_css).click()
-        property_object = self.wait.until(EC.visibility_of_element_located(
-            (By.CSS_SELECTOR, NavMenuLocators.properties_obj_css)))
-        property_object.click()
-        membership_tab = WebDriverWait(self.page.driver, 4).until(
+        edit_object = self.wait.until(EC.visibility_of_element_located(
+            (By.CSS_SELECTOR, NavMenuLocators.edit_obj_css)))
+        edit_object.click()
+        membership_tab = WebDriverWait(self.page.driver, 2).until(
             EC.presence_of_element_located((
-                By.XPATH, "//span[normalize-space(text())='Membership']")))
+                By.XPATH, "//button[normalize-space(text())='Membership']")))
         membership_tab.click()
 
         # Fetch the source code for our custom control
         source_code = self.page.find_by_xpath(
+            "//div[contains(@class, 'pgrd-row-cell')]"
             "//span[contains(@class,'icon-')]/following-sibling::span"
         ).get_attribute('innerHTML')
 
@@ -93,7 +89,7 @@ class CheckRoleMembershipControlFeatureTest(BaseFeatureTest):
             '&lt;h1&gt;test&lt;/h1&gt;',
             'Role Membership Control'
         )
-        self.page.find_by_xpath("//button/span[text()='Close']").click()
+        self.page.find_by_xpath("//button[text()='Close']").click()
 
     def _check_escaped_characters(self, source_code, string_to_find, source):
         # For XSS we need to search against element's html code

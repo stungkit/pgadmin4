@@ -2,20 +2,19 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////////////////
 
 import {generateTitle} from '../../../sqleditor/static/js/sqleditor_title';
-import {_set_dynamic_tab} from '../../../sqleditor/static/js/show_query_tool';
 
 function getFunctionId(treeInfoObject) {
   let objectId;
   if(treeInfoObject) {
-    if (treeInfoObject.function && treeInfoObject.function._id) {
+    if (treeInfoObject.function?._id) {
       objectId = treeInfoObject.function._id;
-    } else if (treeInfoObject.edbfunc && treeInfoObject.edbfunc._id) {
+    } else if (treeInfoObject.edbfunc?._id) {
       objectId = treeInfoObject.edbfunc._id;
     }
   }
@@ -25,16 +24,16 @@ function getFunctionId(treeInfoObject) {
 function getProcedureId(treeInfoObject) {
   let objectId;
   if(treeInfoObject) {
-    if (treeInfoObject.procedure && treeInfoObject.procedure._id) {
+    if (treeInfoObject.procedure?._id) {
       objectId = treeInfoObject.procedure._id;
-    } else if (treeInfoObject.edbproc && treeInfoObject.edbproc._id) {
+    } else if (treeInfoObject.edbproc?._id) {
       objectId = treeInfoObject.edbproc._id;
     }
   }
   return objectId;
 }
 
-function setDebuggerTitle(panel, preferences, function_name, schema_name, database_name, custom_title=null, pgBrowser=null) {
+function getDebuggerTitle(preferences, function_name, schema_name, database_name, custom_title=null) {
   let debugger_title_placeholder = '';
   if(custom_title) {
     debugger_title_placeholder = custom_title;
@@ -59,8 +58,7 @@ function setDebuggerTitle(panel, preferences, function_name, schema_name, databa
     'type': 'debugger',
   };
   let title = generateTitle(debugger_title_placeholder, title_data);
-  _set_dynamic_tab(pgBrowser, preferences['dynamic_tabs']);
-  panel.title('<span>'+ title +'</span>');
+  return title;
 }
 
 function get_function_name(function_name) {
@@ -96,6 +94,7 @@ function getAppropriateLabel(treeInfo) {
 module.exports = {
   getFunctionId: getFunctionId,
   getProcedureId: getProcedureId,
-  setDebuggerTitle: setDebuggerTitle,
+  setDebuggerTitle: getDebuggerTitle,
+  getDebuggerTitle: getDebuggerTitle,
   getAppropriateLabel: getAppropriateLabel,
 };

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -79,7 +79,7 @@ class PGUtilitiesMaintenanceFeatureTest(BaseFeatureTest):
 
     def runTest(self):
         self._open_maintenance_dialogue()
-        self.page.click_modal('OK')
+        self.page.click_modal('OK', docker=True)
         self.page.wait_for_element_to_disappear(
             lambda driver: driver.find_element(
                 By.XPATH, NavMenuLocators.maintenance_operation), 10)
@@ -100,7 +100,7 @@ class PGUtilitiesMaintenanceFeatureTest(BaseFeatureTest):
             status = False
             if table_node:
                 status = True
-            self.assertTrue(status, "Table name {} is not visible/selected".
+            self.assertTrue(status, "Table name {0} is not visible/selected".
                             format(self.table_name))
             table_node.click()
 
@@ -112,9 +112,14 @@ class PGUtilitiesMaintenanceFeatureTest(BaseFeatureTest):
             (By.CSS_SELECTOR,
              NavMenuLocators.tools_menu_css),
             (By.CSS_SELECTOR, NavMenuLocators.maintenance_obj_css))
-        maintenance_obj = self.wait.until(EC.visibility_of_element_located(
+        self.wait.until(EC.visibility_of_element_located(
             (By.CSS_SELECTOR, NavMenuLocators.maintenance_obj_css)))
-        maintenance_obj.click()
+        self.page.retry_click(
+            (By.CSS_SELECTOR, NavMenuLocators.maintenance_obj_css),
+            (By.XPATH, NavMenuLocators.maintenance_operation))
+
+        self.assertFalse(self.page.check_utility_error(),
+                         'Binary path is not configured.')
 
         self.page.check_if_element_exist_by_xpath(
             NavMenuLocators.maintenance_operation, 10)
@@ -127,13 +132,15 @@ class PGUtilitiesMaintenanceFeatureTest(BaseFeatureTest):
         command = self.page.find_by_css_selector(
             NavMenuLocators.process_watcher_detailed_command_css).text
 
-        vacuum_details = \
-            "VACUUM (VERBOSE) on database '{0}' of server " \
-            "{1} ({2}:{3})".format(self.database_name, self.server['name'],
-                                   self.server['host'], self.server['port'])
         if self.test_level == 'database':
+            vacuum_details = \
+                "VACUUM on database '{0}' of server " \
+                "{1} ({2}:{3})".format(self.database_name,
+                                       self.server['name'],
+                                       self.server['host'],
+                                       self.server['port'])
             self.assertEqual(message, vacuum_details)
-            self.assertEqual(command, "VACUUM VERBOSE;")
+            self.assertEqual(command, "VACUUM (VERBOSE);")
         elif self.is_xss_check and self.test_level == 'table':
             # Check for XSS in the dialog
             source_code = self.page.find_by_css_selector(
@@ -145,8 +152,15 @@ class PGUtilitiesMaintenanceFeatureTest(BaseFeatureTest):
                 'Maintenance detailed window'
             )
         else:
+            vacuum_details = \
+                "VACUUM on table '{0}/public/{1}' of server " \
+                "{2} ({3}:{4})".format(self.database_name,
+                                       self.table_name,
+                                       self.server['name'],
+                                       self.server['host'],
+                                       self.server['port'])
             self.assertEqual(message, vacuum_details)
-            self.assertEqual(command, "VACUUM VERBOSE"
+            self.assertEqual(command, "VACUUM (VERBOSE)"
                                       " public." + self.table_name + ";")
 
         test_gui_helper.close_process_watcher(self)

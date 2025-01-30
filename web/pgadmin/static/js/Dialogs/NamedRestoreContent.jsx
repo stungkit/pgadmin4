@@ -2,24 +2,23 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import React, { useState, useRef, useEffect } from 'react';
 import gettext from 'sources/gettext';
-import { Box } from '@material-ui/core';
+import { Box } from '@mui/material';
 import { DefaultButton, PrimaryButton } from '../components/Buttons';
-import CloseIcon from '@material-ui/icons/CloseRounded';
-import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
+import CloseIcon from '@mui/icons-material/CloseRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import PropTypes from 'prop-types';
-import { useModalStyles } from '../helpers/ModalProvider';
+import { ModalContent, ModalFooter } from '../../../static/js/components/ModalContent';
 import { InputText } from '../components/FormComponents';
 import { isEmptyString } from '../../../static/js/validators';
 
 export default function NamedRestoreContent({closeModal, onOK, setHeight}) {
-  const classes = useModalStyles();
   const containerRef = useRef();
   const firstEleRef = useRef();
   const okBtnRef = useRef();
@@ -29,7 +28,7 @@ export default function NamedRestoreContent({closeModal, onOK, setHeight}) {
 
   const onTextChange = (e, id) => {
     let val = e;
-    if(e && e.target) {
+    if(e?.target) {
       val = e.target.value;
     }
     setFormData((prev)=>({...prev, [id]: val}));
@@ -44,7 +43,7 @@ export default function NamedRestoreContent({closeModal, onOK, setHeight}) {
 
   useEffect(()=>{
     setTimeout(()=>{
-      firstEleRef.current && firstEleRef.current.focus();
+      firstEleRef.current?.focus();
     }, 275);
   }, []);
 
@@ -55,7 +54,7 @@ export default function NamedRestoreContent({closeModal, onOK, setHeight}) {
   const isOKDisabled = isEmptyString(formData.namedRestorePoint);
 
   return (
-    <Box display="flex" flexDirection="column" className={classes.container} ref={containerRef}>
+    <ModalContent ref={containerRef}>
       <Box flexGrow="1" p={2}>
         <Box>
           <span style={{fontWeight: 'bold'}}>
@@ -67,24 +66,23 @@ export default function NamedRestoreContent({closeModal, onOK, setHeight}) {
             onChange={(e)=>onTextChange(e, 'namedRestorePoint')} onKeyDown={(e)=>onKeyDown(e)}/>
         </Box>
       </Box>
-      <Box className={classes.footer}>
+      <ModalFooter>
         <DefaultButton data-test="close" startIcon={<CloseIcon />} onClick={()=>{
           closeModal();
         }} >{gettext('Cancel')}</DefaultButton>
-        <PrimaryButton ref={okBtnRef} data-test="save" disabled={isOKDisabled} className={classes.margin} startIcon={<CheckRoundedIcon />} onClick={()=>{
+        <PrimaryButton ref={okBtnRef} data-test="save" disabled={isOKDisabled} startIcon={<CheckRoundedIcon />} onClick={()=>{
           let postFormData = new FormData();
           postFormData.append('value', formData.namedRestorePoint);
           onOK?.(postFormData);
           closeModal();
         }} >{gettext('OK')}</PrimaryButton>
-      </Box>
-    </Box>
+      </ModalFooter>
+    </ModalContent>
   );
 }
 
 NamedRestoreContent.propTypes = {
   closeModal: PropTypes.func,
-  data: PropTypes.object,
   onOK: PropTypes.func,
   setHeight: PropTypes.func
 };

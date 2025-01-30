@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -60,6 +60,8 @@ class DBPasswordChange(BaseTestGenerator):
             def __init__(self, name, sid, password, passfile):
                 self.name = name
                 self.sid = sid
+                self.id = sid
+                self.save_password = False
                 self.password = password
                 self.passfile = passfile
 

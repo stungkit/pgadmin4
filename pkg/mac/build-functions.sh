@@ -2,16 +2,17 @@
 
 _setup_env() {
     FUNCS_DIR=$(cd "$(dirname "$0")" && pwd)/../..
-    APP_RELEASE=$(grep "^APP_RELEASE" "${FUNCS_DIR}/web/config.py" | cut -d"=" -f2 | sed 's/ //g')
-    APP_REVISION=$(grep "^APP_REVISION" "${FUNCS_DIR}/web/config.py" | cut -d"=" -f2 | sed 's/ //g')
-    APP_NAME=$(grep "^APP_NAME" "${FUNCS_DIR}/web/config.py" | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
+    APP_RELEASE=$(grep "^APP_RELEASE" "${FUNCS_DIR}/web/version.py" | cut -d"=" -f2 | sed 's/ //g')
+    APP_REVISION=$(grep "^APP_REVISION" "${FUNCS_DIR}/web/version.py" | cut -d"=" -f2 | sed 's/ //g')
+    APP_NAME=$(grep "^APP_NAME" "${FUNCS_DIR}/web/branding.py" | cut -d"=" -f2 | sed "s/'//g" | sed 's/^ //')
     APP_LONG_VERSION=${APP_RELEASE}.${APP_REVISION}
-    APP_SUFFIX=$(grep "^APP_SUFFIX" "${FUNCS_DIR}/web/config.py" | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
+    APP_SUFFIX=$(grep "^APP_SUFFIX" "${FUNCS_DIR}/web/version.py" | cut -d"=" -f2 | sed 's/ //g' | sed "s/'//g")
     if [ -n "${APP_SUFFIX}" ]; then
         APP_LONG_VERSION=${APP_LONG_VERSION}-${APP_SUFFIX}
     fi
     BUNDLE_DIR="${BUILD_ROOT}/${APP_NAME}.app"
-    DMG_NAME="${DIST_ROOT}"/$(echo "${APP_NAME}" | sed 's/ //g' | awk '{print tolower($0)}')-"${APP_LONG_VERSION}.dmg"
+    DMG_NAME="${DIST_ROOT}"/$(echo "${APP_NAME}" | sed 's/ //g' | awk '{print tolower($0)}')-"${APP_LONG_VERSION}-$(uname -m).dmg"
+    PYTHON_OS_VERSION="11"
 }
 
 _cleanup() {
@@ -23,46 +24,47 @@ _cleanup() {
 
 _build_runtime() {
     echo "Assembling the runtime environment..."
+
     test -d "${BUILD_ROOT}" || mkdir "${BUILD_ROOT}"
+    # Get a fresh copy of electron
+    # uname -m returns "x86_64" on Intel, but we need "x64"
+    ELECTRON_ARCH="x64"
+    if [ "$(uname -m)" == "arm64" ]; then
+      ELECTRON_ARCH="arm64"
+    fi
 
-    # Get a fresh copy of nwjs.
-    # NOTE: The nw download servers seem to be very unreliable, so at the moment we're using wget
-    #       in a retry loop as Yarn/Npm don't seem to like that.
-
-    # YARN:
-    # yarn add --cwd "${BUILDROOT}" nw
-    # YARN END
-
-    # WGET:
-    NW_VERSION=$(yarn info nw | grep latest | awk -F "'" '{ print $2}')
+    ELECTRON_VERSION="$(npm info electron version)"
 
     pushd "${BUILD_ROOT}" > /dev/null || exit
         while true;do
-            wget "https://dl.nwjs.io/v${NW_VERSION}/nwjs-v${NW_VERSION}-osx-x64.zip" && break
-            rm "nwjs-v${NW_VERSION}-osx-x64.zip"
+            wget "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/electron-v${ELECTRON_VERSION}-darwin-${ELECTRON_ARCH}.zip" && break
+            rm "electron-v${ELECTRON_VERSION}-darwin-${ELECTRON_ARCH}.zip"
         done
-        unzip "nwjs-v${NW_VERSION}-osx-x64.zip"
+        unzip "electron-v${ELECTRON_VERSION}-darwin-${ELECTRON_ARCH}.zip"
     popd > /dev/null || exit
     # WGET END
 
-    # YARN:
-    # cp -R "${BUILD_ROOT}/node_modules/nw/nwjs/nwjs.app" "${BUILD_ROOT}/"
-    # YARN END
 
-    # WGET:
-    cp -R "${BUILD_ROOT}/nwjs-v${NW_VERSION}-osx-x64"/nwjs.app "${BUILD_ROOT}/"
-    # WGET END
-
-    mv "${BUILD_ROOT}/nwjs.app" "${BUNDLE_DIR}"
+    mv "${BUILD_ROOT}/Electron.app" "${BUNDLE_DIR}"
+    find "${BUNDLE_DIR}" -exec touch {} \;
 
     # Copy in the runtime code
-    mkdir "${BUNDLE_DIR}/Contents/Resources/app.nw/"
-    cp -R "${SOURCE_DIR}/runtime/assets" "${BUNDLE_DIR}/Contents/Resources/app.nw/"
-    cp -R "${SOURCE_DIR}/runtime/src" "${BUNDLE_DIR}/Contents/Resources/app.nw/"
-    cp "${SOURCE_DIR}/runtime/package.json" "${BUNDLE_DIR}/Contents/Resources/app.nw/"
+    mkdir "${BUNDLE_DIR}/Contents/Resources/app/"
+    cp -R "${SOURCE_DIR}/runtime/assets" "${BUNDLE_DIR}/Contents/Resources/app/"
+    cp -R "${SOURCE_DIR}/runtime/src" "${BUNDLE_DIR}/Contents/Resources/app/"
+    cp "${SOURCE_DIR}/runtime/package.json" "${BUNDLE_DIR}/Contents/Resources/app/"
+    cp "${SOURCE_DIR}/runtime/.yarnrc.yml" "${BUNDLE_DIR}/Contents/Resources/app/"
 
     # Install the runtime node_modules, then replace the package.json
-    yarn --cwd "${BUNDLE_DIR}/Contents/Resources/app.nw/" install --production=true
+    pushd "${BUNDLE_DIR}/Contents/Resources/app/" > /dev/null || exit
+        yarn set version berry
+        yarn set version 3
+        yarn plugin import workspace-tools
+        yarn workspaces focus --production
+
+        # remove the yarn cache
+        rm -rf .yarn .yarn*
+    popd > /dev/null || exit
 }
 
 _create_python_env() {
@@ -79,12 +81,14 @@ _create_python_env() {
     fi
 
     git clone https://github.com/gregneagle/relocatable-python.git "${BUILD_ROOT}/relocatable_python"
-    PATH=$PATH:/usr/local/pgsql/bin "${SYSTEM_PYTHON_EXE}" \
+    "${SYSTEM_PYTHON_EXE}" \
         "${BUILD_ROOT}/relocatable_python/make_relocatable_python_framework.py" \
-        --upgrade-pip \
         --python-version "${PGADMIN_PYTHON_VERSION}" \
-        --pip-requirements "${SOURCE_DIR}/requirements.txt" \
+        --os-version "${PYTHON_OS_VERSION}" \
         --destination "${BUNDLE_DIR}/Contents/Frameworks/"
+
+    "${BUNDLE_DIR}/Contents/Frameworks/Python.framework/Versions/Current/bin/python3" -m ensurepip --upgrade || exit 1
+    "${BUNDLE_DIR}/Contents/Frameworks/Python.framework/Versions/Current/bin/pip3" install -r "${SOURCE_DIR}/requirements.txt" || exit 1
 
     # Make sure all the .so's in the Python env have the executable bit set
     # so they get properly signed later
@@ -133,7 +137,8 @@ _build_docs() {
     source "${BUILD_ROOT}/venv/bin/activate"
     pip3 install --upgrade pip
     pip3 install -r "${SOURCE_DIR}/requirements.txt"
-    pip3 install sphinx
+    # Due to issue https://github.com/sphinx-doc/sphinx/issues/11739, we have pinned the Sphinx version to 6.1.3.
+    pip3 install sphinx==6.1.3
     pip3 install sphinxcontrib-youtube
 
     cd "${SOURCE_DIR}" || exit
@@ -157,7 +162,6 @@ _fixup_imports() {
     # Find all the files that may need tweaks
     TODO=$(find . -perm +0111 -type f -exec file "{}" \; | \
         grep -v "Frameworks/Python.framework" | \
-        grep -v "Frameworks/nwjs" | \
         grep -E "Mach-O 64-bit" | \
         awk -F ':| ' '{ORS=" "; print $1}' | \
         uniq)
@@ -252,10 +256,19 @@ _complete_bundle() {
     sed -i '' "s/%APPNAME%/${APP_NAME}/g" "${BUNDLE_DIR}/Contents/Info.plist"
     sed -i '' "s/%APPVER%/${APP_LONG_VERSION}/g" "${BUNDLE_DIR}/Contents/Info.plist"
     sed -i '' "s/%APPID%/org.pgadmin.pgadmin4/g" "${BUNDLE_DIR}/Contents/Info.plist"
-    for FILE in "${BUNDLE_DIR}"/Contents/Resources/*.lproj/InfoPlist.strings; do
-        sed -i '' 's/CFBundleGetInfoString =.*/CFBundleGetInfoString = "Copyright (C) 2013 - 2023, The pgAdmin Development Team";/g' "${FILE}"
-        sed -i '' 's/NSHumanReadableCopyright =.*/NSHumanReadableCopyright = "Copyright (C) 2013 - 2023, The pgAdmin Development Team";/g' "${FILE}"
-        echo CFBundleDisplayName = \""${APP_NAME}"\"\; >> "${FILE}"
+
+    # Rename helper execs and Update the plist
+    for helper_exec in "Electron Helper" "Electron Helper (Renderer)" "Electron Helper (Plugin)" "Electron Helper (GPU)"
+    do
+        pgadmin_exec=${helper_exec//Electron/pgAdmin 4}
+        mv "${BUNDLE_DIR}/Contents/Frameworks/${helper_exec}.app/Contents/MacOS/${helper_exec}" "${BUNDLE_DIR}/Contents/Frameworks/${helper_exec}.app/Contents/MacOS/${pgadmin_exec}"
+        mv "${BUNDLE_DIR}/Contents/Frameworks/${helper_exec}.app" "${BUNDLE_DIR}/Contents/Frameworks/${pgadmin_exec}.app"
+
+        info_plist="${BUNDLE_DIR}/Contents/Frameworks/${pgadmin_exec}.app/Contents/Info.plist"
+        cp Info.plist-helper.in "${info_plist}"
+        sed -i '' "s/%APPNAME%/${pgadmin_exec}/g" "${info_plist}"
+        sed -i '' "s/%APPVER%/${APP_LONG_VERSION}/g" "${info_plist}"
+        sed -i '' "s/%APPID%/org.pgadmin.pgadmin4.helper/g" "${info_plist}"
     done
 
     # PkgInfo
@@ -265,16 +278,18 @@ _complete_bundle() {
     cp pgAdmin4.icns "${BUNDLE_DIR}/Contents/Resources/app.icns"
 
     # Rename the executable
-    mv "${BUNDLE_DIR}/Contents/MacOS/nwjs" "${BUNDLE_DIR}/Contents/MacOS/${APP_NAME}"
+    mv "${BUNDLE_DIR}/Contents/MacOS/Electron" "${BUNDLE_DIR}/Contents/MacOS/${APP_NAME}"
 
     # Rename the app in package.json so the menu looks as it should
-    sed -i '' "s/\"name\": \"pgadmin4\"/\"name\": \"${APP_NAME}\"/g" "${BUNDLE_DIR}/Contents/Resources/app.nw/package.json"
+    sed -i '' "s/\"name\": \"pgadmin4\"/\"name\": \"${APP_NAME}\"/g" "${BUNDLE_DIR}/Contents/Resources/app/package.json"
 
     # Import the dependencies, and rewrite any library references
         _fixup_imports "${BUNDLE_DIR}"
 
     # Build node modules
     pushd "${SOURCE_DIR}/web" > /dev/null || exit
+        yarn set version berry
+        yarn set version 3
         yarn install
         yarn run bundle
 
@@ -285,9 +300,10 @@ _complete_bundle() {
     cp -r "${SOURCE_DIR}/web" "${BUNDLE_DIR}/Contents/Resources/"
     cd "${BUNDLE_DIR}/Contents/Resources/web" || exit
     rm -f pgadmin4.db config_local.*
-    rm -rf karma.conf.js package.json node_modules/ regression/ tools/ pgadmin/static/js/generated/.cache
+    rm -rf jest.config.js babel.* package.json .yarn* yarn* .editorconfig .eslint* node_modules/ regression/ tools/ pgadmin/static/js/generated/.cache
     find . -name "tests" -type d -print0 | xargs -0 rm -rf
     find . -name "feature_tests" -type d -print0 | xargs -0 rm -rf
+    find . -name "__pycache__" -type d -print0 | xargs -0 rm -rf
     find . -name ".DS_Store" -print0 | xargs -0 rm -f
 
     {
@@ -309,6 +325,11 @@ _complete_bundle() {
     # Update permissions to make sure all users can access installed pgadmin.
     chmod -R og=u "${BUNDLE_DIR}"
     chmod -R og-w "${BUNDLE_DIR}"
+}
+
+_generate_sbom() {
+   echo "Generating SBOM..."
+   syft "${BUNDLE_DIR}/Contents/" -o cyclonedx-json > "${BUNDLE_DIR}/Contents/sbom.json"
 }
 
 _codesign_binaries() {
@@ -413,59 +434,32 @@ _notarize_pkg() {
         return
     fi
 
-    # Notarize the package. Try three times, to allow for upload issues
-    for i in {1..3}; do
-        echo "Uploading DMG for notarisation (attempt ${i} of 3)..."
-        STATUS=$(xcrun altool --notarize-app \
-                              -f "${DMG_NAME}" \
-                              --asc-provider "${DEVELOPER_NAME}" \
-                              --primary-bundle-id org.pgadmin.pgadmin4 \
-                              -u "${DEVELOPER_USER}" \
-                              -p "${DEVELOPER_ASP}" 2>&1)
-        RETVAL=$?
+    echo "Uploading DMG for Notarization ..."
+    STATUS=$(xcrun notarytool submit "${DMG_NAME}" \
+                              --team-id "${DEVELOPER_TEAM_ID}" \
+                              --apple-id "${DEVELOPER_USER}" \
+                              --password "${DEVELOPER_ASP}" 2>&1)
 
-        if [ ${RETVAL} != 0 ]; then
-            echo "Attempt ${i} failure: ${STATUS}"
-        else
-            # Success!
-            break;
-        fi
-    done
+    # Get the submission ID
+    SUBMISSION_ID=$(echo "${STATUS}" | awk -F ': ' '/id:/ { print $2; exit; }')
+    echo "Notarization submission ID: ${SUBMISSION_ID}"
 
-    # print error if above command fails
-    if [ ${RETVAL} != 0 ]; then
-        echo "Notarization failed."
-        exit 1
-    fi
-
-    # Get the request ID
-    REQUEST_UUID=$(echo "${STATUS}" | awk '/RequestUUID/ { print $NF; }')
-    echo "Notarization request ID: ${REQUEST_UUID}"
-
-    # Now we need to wait for the results. Try 60 times.
-    for i in {1..60}; do
-        echo "Waiting 30 seconds..."
-        sleep 30
-
-        echo "Requesting notarisation result (attempt ${i} of 60)..."
-        REQUEST_STATUS=$(xcrun altool --notarization-info "${REQUEST_UUID}" \
-                                      --username "${DEVELOPER_USER}" \
-                                      --password "${DEVELOPER_ASP}" 2>&1 | \
-                         awk -F ': ' '/Status:/ { print $2; }' )
-
-        if [[ "${REQUEST_STATUS}" == "success" ]]; then
-            break
-        fi
-    done
-
-    # Print status information
-    xcrun altool --notarization-info "${REQUEST_UUID}" \
-                 --username "${DEVELOPER_USER}" \
+    echo "Waiting for Notarization to be completed ..."
+    xcrun notarytool wait "${SUBMISSION_ID}" \
+                 --team-id "${DEVELOPER_TEAM_ID}" \
+                 --apple-id "${DEVELOPER_USER}" \
                  --password "${DEVELOPER_ASP}"
 
-    if [[ "${REQUEST_STATUS}" != "success" ]]; then
-          echo "Notarization failed."
-          exit 1
+    # Print status information
+    REQUEST_STATUS=$(xcrun notarytool info "${SUBMISSION_ID}" \
+                 --team-id "${DEVELOPER_TEAM_ID}" \
+                 --apple-id "${DEVELOPER_USER}" \
+                 --password "${DEVELOPER_ASP}" 2>&1 | \
+            awk -F ': ' '/status:/ { print $2; }')
+
+    if [[ "${REQUEST_STATUS}" != "Accepted" ]]; then
+        echo "Notarization failed."
+        exit 1
     fi
 
     # Staple the notarization

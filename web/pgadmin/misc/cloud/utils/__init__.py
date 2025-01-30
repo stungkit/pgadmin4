@@ -2,7 +2,7 @@
 # #
 # # pgAdmin 4 - PostgreSQL Tools
 # #
-# # Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# # Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # # This software is released under the PostgreSQL Licence
 # #
 # ##########################################################################
@@ -14,6 +14,7 @@ from pgadmin.misc.bgprocess.processes import IProcessDesc
 from pgadmin.model import db, Server
 from flask_babel import gettext
 from pgadmin.utils import get_server
+from pgadmin.utils.constants import IP_ADDRESS_STRING
 
 
 def get_my_ip():
@@ -28,16 +29,16 @@ def get_my_ip():
         except Exception:
             external_ip = '127.0.0.1'
 
-    if type(external_ip) == bytes:
+    if isinstance(external_ip, bytes):
         external_ip = external_ip.decode('utf-8')
 
     ip = ipaddress.ip_address(external_ip)
     if isinstance(ip, ipaddress.IPv4Address):
-        return '{}/{}'.format(external_ip, 32)
+        return IP_ADDRESS_STRING.format(external_ip, 32)
     elif isinstance(ip, ipaddress.IPv6Address):
-        return '{}/{}'.format(external_ip, 128)
+        return IP_ADDRESS_STRING.format(external_ip, 128)
 
-    return '{}/{}'.format(external_ip, 32)
+    return IP_ADDRESS_STRING.format(external_ip, 32)
 
 
 def _create_server(data):
@@ -66,12 +67,14 @@ class CloudProcessDesc(IProcessDesc):
         self.instance_name = _instance_name
         self.provider = 'Amazon RDS'
 
-        if _provider == 'rds':
+        if _provider == 'aws':
             self.provider = 'Amazon RDS'
         elif _provider == 'azure':
-            self.provider = 'Azure PostgreSQL'
+            self.provider = 'Azure Database'
+        elif _provider == 'google':
+            self.provider = 'Google Cloud SQL'
         else:
-            self.provider = 'EDB Big Animal'
+            self.provider = 'EDB BigAnimal'
 
     @property
     def message(self):

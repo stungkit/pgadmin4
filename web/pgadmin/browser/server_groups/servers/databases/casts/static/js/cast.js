@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -76,11 +76,10 @@ define('pgadmin.node.cast', [
             return new Promise((resolve, reject)=>{
               const api = getApiInstance();
 
-              let _url = pgBrowser.Nodes['cast'].generate_url.apply(
-                pgBrowser.Nodes['cast'], [
-                  null, 'get_functions', itemNodeData, false,
-                  treeNodeInfo,
-                ]);
+              let _url = pgBrowser.Nodes['cast'].generate_url(
+                null, 'get_functions', itemNodeData, false,
+                treeNodeInfo,
+              );
               let data = {'srctyp' : srcTyp, 'trgtyp' : trgtyp};
 
               if(srcTyp != undefined && srcTyp != '' &&
@@ -92,7 +91,7 @@ define('pgadmin.node.cast', [
                     resolve(data);
                   })
                   .catch((err)=>{
-                    reject(err);
+                    reject(err instanceof Error ? err : Error(gettext('Something went wrong')));
                   });
               } else {
                 data = [];

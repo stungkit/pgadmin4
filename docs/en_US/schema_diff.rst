@@ -44,6 +44,18 @@ Use the :ref:`Preferences <preferences>` dialog to specify following:
  * *Schema Diff* should ignore the whitespaces while comparing string objects. Set *Ignore whitespaces* option to true.
  * *Schema Diff* should ignore the owner while comparing objects. Set *Ignore owner* option to true.
 
+Schema Diff in Workspace Layout
+*******************************
+
+The workspace layout offers a distraction-free, dedicated area for the Schema Diff.
+By default, the Schema Diff workspace button remains disabled until at least one Schema Diff tab is opened.
+
+**Note**: In the Workspace layout, all Schema Diff tabs open within the Schema Diff workspace.
+
+.. image:: images/schema_diff_workspace.png
+    :alt: schema diff workspace
+    :align: center
+
 
 The *Schema Diff* panel is divided into two panels; an Object Comparison panel
 and a DDL Comparison panel.
@@ -54,7 +66,7 @@ The Schema Diff Object Comparison Panel
 
 In the object comparison panel, you can select the source and target servers
 of the same major version, and databases to be compared. You can
-select any server listed under the browser tree whether it is connected or
+select any server listed under the object explorer whether it is connected or
 disconnected. If you select a server that is not connected then it will
 prompt you for the password before using the server.
 
@@ -65,11 +77,15 @@ same or different (and within the same server or from different servers).
     :alt: Schema diff compare button
     :align: center
 
-Use the drop-down near to *Compare* button to ignore owner and ignore whitespace.
+Use the drop-down near to *Compare* button to ignore owner, whitespace, tablespace and grants.
 
- * Ignore owner – Select to ignores the owner while comparing the objects.
+ * Ignore Owner – Select to ignores the owner while comparing the objects.
 
- * Ignore whitespace – Select to ignores the whitespace while comparing the string objects. Whitespace includes space, tabs, and CRLF.
+ * Ignore Whitespace – Select to ignores the whitespace while comparing the string objects. Whitespace includes space, tabs, and CRLF.
+
+ * Ignore Tablespace – Select to ignores the tablespace while comparing the objects.
+
+ * Ignore Grant/Revoke – Select to ignores the grant and revoke command while comparing the objects.
 
 After you select servers, and databases, click on the
 *Compare* button to obtain the *Comparison Result*.

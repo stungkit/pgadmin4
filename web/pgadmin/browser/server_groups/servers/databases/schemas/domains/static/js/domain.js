@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -75,8 +75,7 @@ define('pgadmin.node.domain', [
           {
             role: ()=>getNodeListByName('role', treeNodeInfo, itemNodeData),
             schema: ()=>getNodeListByName('schema', treeNodeInfo, itemNodeData, {
-              cacheLevel: 'database',
-              cacheNode: 'database'
+              cacheLevel: 'database'
             }),
             basetype: ()=>getNodeAjaxOptions('get_types', this, treeNodeInfo, itemNodeData, {
               cacheNode: 'type'

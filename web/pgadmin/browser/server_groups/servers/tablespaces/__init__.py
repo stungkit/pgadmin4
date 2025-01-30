@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -196,7 +196,8 @@ class TablespaceView(PGChildNodeView):
                     row['oid'],
                     sid,
                     row['name'],
-                    icon="icon-tablespace"
+                    icon="icon-tablespace",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -357,12 +358,17 @@ class TablespaceView(PGChildNodeView):
                         )
                     )
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     tsid,
                     sid,
                     data['name'],
-                    icon="icon-tablespace"
+                    icon="icon-tablespace",
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -389,12 +395,17 @@ class TablespaceView(PGChildNodeView):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     tsid,
                     sid,
                     name,
-                    icon="icon-%s" % self.node_type
+                    icon="icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -474,7 +485,7 @@ class TablespaceView(PGChildNodeView):
                 current_app.logger.exception(ve)
                 data[k] = v
 
-        sql, name = self.get_sql(gid, sid, data, tsid)
+        sql, _ = self.get_sql(gid, sid, data, tsid)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -505,7 +516,7 @@ class TablespaceView(PGChildNodeView):
 
     def get_sql(self, gid, sid, data, tsid=None):
         """
-        This function will genrate sql from model/properties data
+        This function will generate sql from model/properties data
         """
         required_args = [
             'name'

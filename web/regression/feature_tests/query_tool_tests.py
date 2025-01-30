@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -15,11 +15,13 @@ from selenium.common.exceptions import StaleElementReferenceException, \
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from regression.python_test_utils import test_utils
 from regression.feature_utils.base_feature_test import BaseFeatureTest
 import config
 from regression.feature_utils.locators import \
     QueryToolLocators
+
+DATA_OUTPUT_STR = "Data Output"
+CREATE_TABLE_STR = 'CREATE TABLE'
 
 
 class QueryToolFeatureTest(BaseFeatureTest):
@@ -45,32 +47,25 @@ class QueryToolFeatureTest(BaseFeatureTest):
 
     def runTest(self):
         self._reset_options()
-        skip_warning = "Skipped."
-        # on demand result set on scrolling.
-        print("\nOn demand query result... ",
+        # pagination result on page change.
+        print("\nPagination query result... ",
               file=sys.stderr, end="")
-        self._on_demand_result()
+        self._pagination_result()
         self.page.clear_query_tool()
 
         # explain query with verbose and cost
         print("Explain query with verbose and cost... ",
               file=sys.stderr, end="")
-        if self._supported_server_version():
-            self._query_tool_explain_with_verbose_and_cost()
-            print("OK.", file=sys.stderr)
-            self.page.clear_query_tool()
-        else:
-            print(skip_warning, file=sys.stderr)
+        self._query_tool_explain_with_verbose_and_cost()
+        print("OK.", file=sys.stderr)
+        self.page.clear_query_tool()
 
         # explain analyze query with buffers and timing
         print("Explain analyze query with buffers and timing... ",
               file=sys.stderr, end="")
-        if self._supported_server_version():
-            self._query_tool_explain_analyze_with_buffers_and_timing()
-            print("OK.", file=sys.stderr)
-            self.page.clear_query_tool()
-        else:
-            print(skip_warning, file=sys.stderr)
+        self._query_tool_explain_analyze_with_buffers_and_timing()
+        print("OK.", file=sys.stderr)
+        self.page.clear_query_tool()
 
         # auto commit disabled.
         print("Auto commit disabled... ", file=sys.stderr, end="")
@@ -102,6 +97,7 @@ class QueryToolFeatureTest(BaseFeatureTest):
         self.page.clear_query_tool()
 
     def after(self):
+        self.page.close_query_tool(False)
         self.page.remove_server(self.server)
 
     def _reset_options(self):
@@ -133,18 +129,12 @@ class QueryToolFeatureTest(BaseFeatureTest):
         # close menu
         query_op.click()
 
-    def _on_demand_result(self):
-        ON_DEMAND_CHUNKS = 2
-        row_id_to_find = config.ON_DEMAND_RECORD_COUNT * ON_DEMAND_CHUNKS
-
-        query = """-- On demand query result on scroll
--- Grid select all
--- Column select all
+    def _pagination_result(self):
+        query = """-- Pagination result
 SELECT generate_series(1, {}) as id1, 'dummy' as id2""".format(
-            config.ON_DEMAND_RECORD_COUNT * ON_DEMAND_CHUNKS)
+            config.DATA_RESULT_ROWS_PER_PAGE * 2.5)
 
-        print("\nOn demand result set on scrolling... ",
-              file=sys.stderr, end="")
+        print("\nPagination result... ", file=sys.stderr, end="")
         self.page.execute_query(query)
 
         # wait for header of the table to be visible
@@ -155,94 +145,34 @@ SELECT generate_series(1, {}) as id1, 'dummy' as id2""".format(
             (By.CSS_SELECTOR,
              QueryToolLocators.query_output_cells)))
 
-        self.page.find_by_css_selector(
-            QueryToolLocators.query_output_canvas_css)
+        for i, page in enumerate([
+            {'page_info': '1 to 1000', 'cell_rownum': '1'},
+            {'page_info': '1001 to 2000', 'cell_rownum': '1001'},
+            {'page_info': '2001 to 2500', 'cell_rownum': '2001'}
+        ]):
+            page_info = self.page.find_by_css_selector(
+                QueryToolLocators.pagination_inputs +
+                f' span:nth-of-type(1)')
 
-        self._check_ondemand_result(row_id_to_find)
-        print("OK.", file=sys.stderr)
+            self.assertEqual(page_info.text,
+                             f"Showing rows: {page['page_info']}")
 
-        print("On demand result set on grid select all... ",
-              file=sys.stderr, end="")
-        self.page.click_execute_query_button()
+            page_info = self.page.find_by_css_selector(
+                QueryToolLocators.pagination_inputs + ' span:nth-of-type(3)')
 
-        # wait for header of the table to be visible
-        self.page.find_by_css_selector(
-            QueryToolLocators.query_output_canvas_css)
+            self.assertEqual(page_info.text, "of 3")
 
-        # wait for the rows in the table to be displayed
-        self.wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR,
-             QueryToolLocators.query_output_cells))
-        )
+            cell_rownum = self.page.find_by_css_selector(
+                QueryToolLocators.query_output_cells + ':nth-of-type(1)')
 
-        # Select all rows in a table
-        multiple_check = True
-        while multiple_check:
-            try:
-                select_all = self.wait.until(EC.element_to_be_clickable(
-                    (By.XPATH, QueryToolLocators.select_all_column)))
-                select_all.click()
-                multiple_check = False
-            except (StaleElementReferenceException,
-                    ElementClickInterceptedException):
-                pass
+            self.assertEqual(cell_rownum.text, page['cell_rownum'])
 
-        self._check_ondemand_result(row_id_to_find)
-        print("OK.", file=sys.stderr)
-
-        print("On demand result set on column select all... ",
-              file=sys.stderr, end="")
-        self.page.click_execute_query_button()
-
-        self.page.wait_for_query_tool_loading_indicator_to_disappear()
-
-        # wait for header of the table to be visible
-        self.wait.until(EC.visibility_of_element_located(
-            (By.CSS_SELECTOR, QueryToolLocators.query_output_canvas_css)))
-
-        # wait for the rows in the table to be displayed
-        self.wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR,
-             QueryToolLocators.query_output_cells))
-        )
-
-        self.wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, QueryToolLocators.query_output_canvas_css)))
-
-        self._check_ondemand_result(row_id_to_find)
-        print("OK.", file=sys.stderr)
-
-    def _check_ondemand_result(self, row_id_to_find):
-        # scroll to bottom to bring last row of next chunk in viewport.
-        scroll = 10
-        status = False
-        while scroll:
-            # click on first data column to select all column.
-            column_1 = \
+            if i < 2:
                 self.page.find_by_css_selector(
-                    QueryToolLocators.output_column_header_css.format('id1'))
-            column_1.click()
-            grid = self.page.find_by_css_selector('.rdg')
-            scrolling_height = grid.size['height']
-            self.driver.execute_script(
-                "document.querySelector('.rdg').scrollTop="
-                "document.querySelector('.rdg').scrollHeight"
-            )
-            # Table height takes some time to update, for which their is no
-            # particular way
-            time.sleep(2)
-            if grid.size['height'] == scrolling_height and \
-                self.page.check_if_element_exist_by_xpath(
-                    QueryToolLocators.output_column_data_xpath.format(
-                        row_id_to_find)):
-                status = True
-                break
-            else:
-                scroll -= 1
+                    QueryToolLocators.pagination_inputs +
+                    ' button[aria-label="Next Page"]').click()
 
-        self.assertTrue(
-            status, "Element is not loaded to the rows id: "
-                    "{}".format(row_id_to_find))
+            self.page.wait_for_query_tool_loading_indicator_to_disappear()
 
     def _query_tool_explain_with_verbose_and_cost(self):
         query = """-- Explain query with verbose and cost
@@ -263,7 +193,7 @@ SELECT generate_series(1, 1000) as id order by id desc"""
 
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
 
-        self.page.click_tab(self.data_output_tab_id, rc_dock=True)
+        self.page.click_tab(DATA_OUTPUT_STR)
 
         canvas = self.wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, QueryToolLocators.query_output_canvas_css))
@@ -298,7 +228,7 @@ SELECT generate_series(1, 1000) as id order by id desc"""
 
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
 
-        self.page.click_tab(self.data_output_tab_id, rc_dock=True)
+        self.page.click_tab(DATA_OUTPUT_STR)
 
         self.wait.until(EC.presence_of_element_located(
             (By.XPATH, QueryToolLocators.output_cell_xpath.format(2, 2)))
@@ -335,10 +265,10 @@ CREATE TABLE public.{}();""".format(table_name)
         self.page.click_execute_query_button()
 
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
 
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
-            QueryToolLocators.sql_editor_message.format('CREATE TABLE')),
+            QueryToolLocators.sql_editor_message.format(CREATE_TABLE_STR)),
             self.table_creation_fail_error)
 
         # do the ROLLBACK and check if the table is present or not
@@ -349,7 +279,7 @@ CREATE TABLE public.{}();""".format(table_name)
 -- 4. Check if table is *NOT* created.
 ROLLBACK;"""
         self.page.execute_query(query)
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
             QueryToolLocators.sql_editor_message.format('ROLLBACK')),
             "ROLLBACK message does not displayed")
@@ -363,7 +293,7 @@ SELECT relname FROM pg_catalog.pg_class
     WHERE relkind IN ('r','s','t') and relnamespace = 2200::oid;"""
 
         self.page.execute_query(query)
-        self.page.click_tab(self.data_output_tab_id, rc_dock=True)
+        self.page.click_tab(DATA_OUTPUT_STR)
         canvas = self.wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, QueryToolLocators.query_output_canvas_css)))
 
@@ -417,9 +347,9 @@ CREATE TABLE public.{}();""".format(table_name)
 
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
-            QueryToolLocators.sql_editor_message.format('CREATE TABLE')),
+            QueryToolLocators.sql_editor_message.format(CREATE_TABLE_STR)),
             self.table_creation_fail_error)
 
         self.page.clear_query_tool()
@@ -432,7 +362,7 @@ ROLLBACK;"""
 
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
             QueryToolLocators.sql_editor_message.format('ROLLBACK')),
             "ROLLBACK message does not displayed")
@@ -447,7 +377,7 @@ SELECT relname FROM pg_catalog.pg_class
     WHERE relkind IN ('r','s','t') and relnamespace = 2200::oid;"""
 
         self.page.execute_query(query)
-        self.page.click_tab(self.data_output_tab_id, rc_dock=True)
+        self.page.click_tab(DATA_OUTPUT_STR)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
 
         canvas = self.wait.until(EC.presence_of_element_located(
@@ -496,9 +426,9 @@ END;"""
 CREATE TABLE public.{}();""".format(table_name)
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
-            QueryToolLocators.sql_editor_message.format('CREATE TABLE')),
+            QueryToolLocators.sql_editor_message.format(CREATE_TABLE_STR)),
             self.table_creation_fail_error)
         self.page.clear_query_tool()
 
@@ -511,7 +441,7 @@ CREATE TABLE public.{}();""".format(table_name)
 SELECT 1/0;"""
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
             QueryToolLocators.sql_editor_message.format('division by zero')),
             "division by zero message does not displayed")
@@ -526,7 +456,7 @@ SELECT 1/0;"""
 END;"""
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
             QueryToolLocators.sql_editor_message.
             format('Query returned successfully')),
@@ -543,7 +473,7 @@ SELECT relname FROM pg_catalog.pg_class
     WHERE relkind IN ('r','s','t') and relnamespace = 2200::oid;"""
         self.page.execute_query(query)
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab(self.data_output_tab_id, rc_dock=True)
+        self.page.click_tab(DATA_OUTPUT_STR)
         canvas = self.wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, QueryToolLocators.query_output_canvas_css)))
 
@@ -569,7 +499,7 @@ SELECT 1, pg_sleep(300)"""
             QueryToolLocators.btn_commit)
         if not commit_button.get_attribute('disabled'):
             commit_button.click()
-            time.sleep(0.5)
+            time.sleep(2)
 
         # enable auto-commit and disable auto-rollback
         self.page.check_execute_option('auto_commit')
@@ -586,7 +516,7 @@ SELECT 1, pg_sleep(300)"""
         self.page.find_by_css_selector(
             QueryToolLocators.btn_cancel_query).click()
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
         self.assertTrue(
             self.page.check_if_element_exist_by_xpath(
                 QueryToolLocators.sql_editor_message
@@ -596,21 +526,10 @@ SELECT 1, pg_sleep(300)"""
                 .format('Execution Cancelled!'))
         )
 
-    def _supported_server_version(self):
-        connection = test_utils.get_db_connection(
-            self.server['db'],
-            self.server['username'],
-            self.server['db_password'],
-            self.server['host'],
-            self.server['port'],
-            self.server['sslmode']
-        )
-        return connection.server_version > 90100
-
     def _query_tool_notify_statements(self):
         print("\n\tListen on an event... ", file=sys.stderr, end="")
         self.page.execute_query("LISTEN foo;")
-        self.page.click_tab('id-messages', rc_dock=True)
+        self.page.click_tab('Messages')
 
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
             QueryToolLocators.sql_editor_message.format('LISTEN')),
@@ -620,22 +539,19 @@ SELECT 1, pg_sleep(300)"""
 
         print("\tNotify event without data... ", file=sys.stderr, end="")
         self.page.execute_query("NOTIFY foo;")
-        self.page.click_tab('id-notifications', rc_dock=True)
+        self.page.click_tab('Notifications')
         self.wait.until(EC.text_to_be_present_in_element(
             (By.CSS_SELECTOR, "td[data-label='channel']"), "foo")
         )
         print("OK.", file=sys.stderr)
 
         print("\tNotify event with data... ", file=sys.stderr, end="")
-        if self._supported_server_version():
-            self.page.clear_query_tool()
-            self.page.execute_query("SELECT pg_notify('foo', 'Hello')")
-            self.page.click_tab('id-notifications', rc_dock=True)
-            self.wait.until(WaitForAnyElementWithText(
-                (By.CSS_SELECTOR, "td[data-label='payload']"), "Hello"))
-            print("OK.", file=sys.stderr)
-        else:
-            print("Skipped.", file=sys.stderr)
+        self.page.clear_query_tool()
+        self.page.execute_query("SELECT pg_notify('foo', 'Hello')")
+        self.page.click_tab('Notifications')
+        self.wait.until(WaitForAnyElementWithText(
+            (By.CSS_SELECTOR, "td[data-label='payload']"), "Hello"))
+        print("OK.", file=sys.stderr)
 
 
 class WaitForAnyElementWithText():

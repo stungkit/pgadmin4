@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -53,8 +53,8 @@ class BatchProcessTest(BaseTestGenerator):
                  },
                  cmd="VACUUM VERBOSE;\n"
              ),
-             expected_msg="VACUUM (VERBOSE) on database "
-                          "'postgres' of server " + SERVER_NAME,
+             expected_msg="VACUUM on database 'postgres' of server " +
+                          SERVER_NAME,
              expected_details_cmd='VACUUM VERBOSE;'
          ))
     ]

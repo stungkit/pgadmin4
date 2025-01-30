@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -117,7 +117,9 @@ class SchemaDiffTestCase(BaseSocketTestGenerator):
             'target_sid': self.server_id,
             'target_did': self.tar_db_id,
             'ignore_owner': 0,
-            'ignore_whitespaces': 0
+            'ignore_whitespaces': 0,
+            'ignore_tablespace': 0,
+            'ignore_grants': 0
         }
         self.socket_client.emit('compare_database', data,
                                 namespace=self.SOCKET_NAMESPACE)
@@ -130,10 +132,10 @@ class SchemaDiffTestCase(BaseSocketTestGenerator):
     def runTest(self):
         """ This function will test the schema diff."""
         self.assertEqual(True, self.restored_backup)
-        response = self.tester.get("schema_diff/initialize")
+        self.trans_id = str(secrets.choice(range(1, 99999)))
+        init_url = 'schema_diff/initialize/{}'.format(self.trans_id)
+        response = self.tester.get(init_url)
         self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.data.decode('utf-8'))
-        self.trans_id = response_data['data']['schemaDiffTransId']
 
         received = self.socket_client.get_received(self.SOCKET_NAMESPACE)
         assert received[0]['name'] == 'connected'

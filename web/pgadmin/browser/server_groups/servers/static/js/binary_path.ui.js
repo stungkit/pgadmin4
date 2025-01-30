@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -12,7 +12,6 @@ import _ from 'lodash';
 import url_for from 'sources/url_for';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import getApiInstance from '../../../../../static/js/api_instance';
-import Notify from '../../../../../static/js/helpers/Notifier';
 import pgAdmin from 'sources/pgadmin';
 
 export function getBinaryPathSchema() {
@@ -36,7 +35,7 @@ export default class BinaryPathSchema extends BaseUISchema {
         width: 32,
         radioType: true,
         disabled: function (state) {
-          return state?.binaryPath && state?.binaryPath.length > 0 ? false : true;
+          return !(state?.binaryPath && state?.binaryPath.length > 0);
         },
         cell: 'radio',
         deps: ['binaryPath'],
@@ -50,6 +49,10 @@ export default class BinaryPathSchema extends BaseUISchema {
       {
         id: 'binaryPath', label: gettext('Binary Path'), cell: 'file', type: 'file',
         isvalidate: true,
+        disabled: function (state) {
+          // If Fixed path is assigned, user will not able to edit it.
+          return state?.isFixed ? state.isFixed : false;
+        },
         controlProps: {
           dialogType: 'select_folder',
           supportedTypes: ['*', 'sql', 'backup'],
@@ -60,15 +63,15 @@ export default class BinaryPathSchema extends BaseUISchema {
         validate: (data) => {
           const api = getApiInstance();
           if (_.isNull(data) || data.trim() === '') {
-            Notify.alert(gettext('Validate Path'), gettext('Path should not be empty.'));
+            pgAdmin.Browser.notifier.alert(gettext('Validate Path'), gettext('Path should not be empty.'));
           } else {
             api.post(url_for('misc.validate_binary_path'),
               JSON.stringify({ 'utility_path': data }))
               .then(function (res) {
-                Notify.alert(gettext('Validate binary path'), gettext(res.data.data));
+                pgAdmin.Browser.notifier.alert(gettext('Validate binary path'), gettext(res.data.data));
               })
               .catch(function (error) {
-                Notify.pgNotifier('error', error, gettext('Failed to validate binary path.'));
+                pgAdmin.Browser.notifier.pgNotifier('error', error, gettext('Failed to validate binary path.'));
               });
           }
           return true;

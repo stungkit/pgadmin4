@@ -2,28 +2,29 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
 import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
-import DataGridViewWithHeaderForm from 'sources/helpers/DataGridViewWithHeaderForm';
+import { DataGridFormHeader } from 'sources/SchemaView/DataGridView';
 import { isEmptyString } from '../../../../../../../../static/js/validators';
 
 class TokenHeaderSchema extends BaseUISchema {
   constructor(tokenOptions) {
     super({
       token: undefined,
+      isNew: true,
     });
 
     this.tokenOptions = tokenOptions;
-    this.isNewFTSConf = true;
   }
 
-  addDisabled() {
-    return this.isNewFTSConf;
+  set isNewFTSConf(flag) {
+    if (this.state)
+      this.state.data = {...this.state.data, isNew: flag};
   }
 
   getNewData(data) {
@@ -34,10 +35,17 @@ class TokenHeaderSchema extends BaseUISchema {
   }
 
   get baseFields() {
-    let obj = this;
     return [{
-      id: 'token', label: gettext('Tokens'), type:'select', editable: false,
-      options: this.tokenOptions, disabled: function() { return obj.isNewFTSConf; }
+      id: 'token', label: gettext('Tokens'), deps: ['isNew'],
+      type: () => ({
+        type: 'select',
+        options: this.tokenOptions,
+      }),
+      disabled: function() {
+        return this.state ? this.state.data.isNew : true;
+      }
+    },{
+      id: 'isNew', visible: false, type: 'text', exclude: true,
     }];
   }
 }
@@ -132,9 +140,9 @@ export default class FTSConfigurationSchema extends BaseUISchema {
         //disable parser when user select copy_config manually and vica-versa
         disabled: function(state) {
           let copy_config = state.copy_config;
-          return (_.isNull(copy_config) ||
+          return !(_.isNull(copy_config) ||
                   _.isUndefined(copy_config) ||
-                  copy_config === '') ? false : true;
+                  copy_config === '');
         },
         readonly: function(state) { return !obj.isNew(state); },
       }, {
@@ -145,20 +153,21 @@ export default class FTSConfigurationSchema extends BaseUISchema {
         //disable copy_config when user select parser manually and vica-versa
         disabled: function(state) {
           let parser = state.prsname;
-          return (_.isNull(parser) ||
+          return !(_.isNull(parser) ||
                   _.isUndefined(parser) ||
-                  parser === '') ? false : true;
+                  parser === '');
         },
         readonly: function(state) { return !obj.isNew(state); },
       }, {
         id: 'tokens', label: '', type: 'collection',
         group: gettext('Tokens'), mode: ['create','edit'],
-        editable: false, schema: this.tokColumnSchema,
+        schema: this.tokColumnSchema,
         headerSchema: this.tokHeaderSchema,
-        headerVisible: function() { return true;},
-        CustomControl: DataGridViewWithHeaderForm,
+        headerFormVisible: true,
+        GridHeader: DataGridFormHeader,
         uniqueCol : ['token'],
-        canAdd: true, canEdit: false, canDelete: true,
+        canAdd: (state, helpderProps) => (helpderProps.mode !== 'create'),
+        canDelete: true,
       }
     ];
   }

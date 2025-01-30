@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -18,16 +18,6 @@ from regression.python_test_utils import test_utils as utils
 CURRENT_PATH = os.path.dirname(os.path.realpath(__file__))
 with open(CURRENT_PATH + "/subscription_test_data.json") as data_file:
     test_cases = json.load(data_file)
-
-
-def get_tables(self):
-    tables = self.tester.get(
-        '/browser/subscription/get_tables/' + str(
-            utils.SERVER_GROUP) + '/' + str(
-            self.server_id) + '/' +
-        str(self.db_id) + '/',
-        content_type='html/json')
-    return [tables.json['data'][1]['value']]
 
 
 def create_subscription_api(self):

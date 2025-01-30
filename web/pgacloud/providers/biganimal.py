@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -19,7 +19,7 @@ from utils.io import debug, error, output
 
 
 class BigAnimalProvider(AbsProvider):
-    BASE_URL = 'https://portal.biganimal.com/api/v2'
+    BASE_URL = 'https://portal.biganimal.com/api/v3'
 
     def __init__(self):
         self._clients = {}
@@ -47,6 +47,12 @@ class BigAnimalProvider(AbsProvider):
         parser_create_instance = parsers.add_parser('create-instance',
                                                     help='create a new '
                                                          'instance')
+        parser_create_instance.add_argument('--project',
+                                            required=True,
+                                            help='Project')
+        parser_create_instance.add_argument('--cloud-provider',
+                                            required=True,
+                                            help='Provider')
         parser_create_instance.add_argument('--region', required=True,
                                             help='name of the region')
         parser_create_instance.add_argument('--name', required=True,
@@ -71,6 +77,9 @@ class BigAnimalProvider(AbsProvider):
         parser_create_instance.add_argument('--volume-IOPS',
                                             required=True,
                                             help='storage IOPS')
+        parser_create_instance.add_argument('--throughput',
+                                            required=False,
+                                            help='Disk throughput')
         parser_create_instance.add_argument('--private-network', required=True,
                                             help='Private or Public Network')
         parser_create_instance.add_argument('--public-ip', default='',
@@ -85,9 +94,6 @@ class BigAnimalProvider(AbsProvider):
         parser_create_instance.add_argument('--replicas',
                                             required=True,
                                             help='No. of Stand By Replicas')
-        parser_create_instance.add_argument('--cloud-provider',
-                                            required=True,
-                                            help='Provider')
 
     def cmd_create_instance(self, args):
         """ Create a biganimal cluster """
@@ -105,7 +111,8 @@ class BigAnimalProvider(AbsProvider):
 
             debug('Creating BigAnimal cluster: {}...'.format(args.name))
 
-            _url = "{0}/{1}".format(self.BASE_URL, 'clusters')
+            _url = "{0}/projects/{1}/clusters".format(self.BASE_URL,
+                                                      args.project)
             _headers = {"content-type": "application/json",
                         "accept": "application/json",
                         'authorization': 'Bearer {0}'.format(self._access_key)}
@@ -124,7 +131,8 @@ class BigAnimalProvider(AbsProvider):
                     'volumePropertiesId': args.volume_properties,
                     'volumeTypeId': args.volume_type,
                     'iops': args.volume_IOPS,
-                    'size': args.volume_size + ' Gi'
+                    'size': args.volume_size + ' Gi',
+                    'throughput': args.throughput
                 },
                 'clusterArchitecture': {
                     'clusterArchitectureId': args.cluster_arch,
@@ -143,7 +151,7 @@ class BigAnimalProvider(AbsProvider):
             if cluster_resp.status_code == 202 and cluster_resp.content:
                 cluster_info = json.loads(cluster_resp.content)
                 instance_id = cluster_info['data']['clusterId']
-                instance = self.get_instance_status(instance_id)
+                instance = self.get_instance_status(args.project, instance_id)
                 data = {'instance': {
                     'ImageName': instance['clusterName'],
                     'Database Type': instance['pgType']['pgTypeName'],
@@ -163,13 +171,15 @@ class BigAnimalProvider(AbsProvider):
         except Exception as e:
             debug(str(e))
 
-    def get_instance_status(self, instance_id):
+    def get_instance_status(self, project_id, instance_id):
         """ Get the biganimal cluster status """
 
         running = True
         status = None
         while running:
-            _url = "{0}/{1}/{2}".format(self.BASE_URL, 'clusters', instance_id)
+            _url = "{0}/projects/{1}/clusters/{2}".format(self.BASE_URL,
+                                                          project_id,
+                                                          instance_id)
             _headers = {"accept": "application/json",
                         'authorization': 'Bearer {0}'.format(self._access_key)}
 

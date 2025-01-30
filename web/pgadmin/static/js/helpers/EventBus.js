@@ -1,3 +1,11 @@
+/////////////////////////////////////////////////////////////
+//
+// pgAdmin 4 - PostgreSQL Tools
+//
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
+// This software is released under the PostgreSQL Licence
+//
+//////////////////////////////////////////////////////////////
 import _ from 'lodash';
 
 export default class EventBus {
@@ -12,21 +20,26 @@ export default class EventBus {
       callback: callback,
       fired: once ? 'pending' : 'ignore',
     });
+
+    // helpfull in useEffect where we need to cleanup the listeners.
+    return ()=>{
+      this.deregisterListener(event, callback);
+    };
   }
 
   on(...args) {
-    this.registerListener(...args);
+    return this.registerListener(...args);
   }
 
   once(...args) {
-    this.registerListener(...args, true);
+    return this.registerListener(...args, true);
   }
 
   deregisterListener(event, callback) {
     if(callback) {
       this._eventListeners = this._eventListeners.filter((e)=>{
         if(e.event === event) {
-          return e.callback.toString()!=callback.toString();
+          return e.callback != callback;
         }
         return true;
       });

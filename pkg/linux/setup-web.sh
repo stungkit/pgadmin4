@@ -72,7 +72,7 @@ fi
 
 # Run setup script first:
 echo "Creating configuration database..."
-if ! /usr/pgadmin4/venv/bin/python3 /usr/pgadmin4/web/setup.py;
+if ! /usr/pgadmin4/venv/bin/python3 /usr/pgadmin4/web/setup.py setup-db;
 then
 	echo "Error setting up server mode. Please examine the output above."
 	exit 1
@@ -93,6 +93,7 @@ fi
 # Set SELinux up:
 if [ ${IS_REDHAT} == 1 ]; then
     echo "Configuring SELinux..."
+    setsebool -P httpd_tmp_exec 1 1> /dev/null
     setsebool -P httpd_can_network_connect 1 1> /dev/null
     setsebool -P httpd_can_network_connect_db 1 1> /dev/null
     semanage fcontext -a -t httpd_var_lib_t '/var/lib/pgadmin(/.*)?' 1> /dev/null

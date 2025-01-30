@@ -6,7 +6,6 @@ set -e
 # Debugging shizz
 trap 'ERRCODE=$? && if [ ${ERRCODE} -ne 0 ]; then echo "The command \"${BASH_COMMAND}\" failed in \"${FUNCNAME}\" with exit code ${ERRCODE}."; fi' EXIT
 
-OS_VERSION=$(grep "^VERSION_ID=" /etc/os-release | awk -F "=" '{ print $2 }' | sed 's/"//g')
 OS_ARCH=$(dpkg-architecture -qDEB_HOST_ARCH)
 
 # Stop creating pyc files.
@@ -22,7 +21,8 @@ _setup_dirs
 _create_python_virtualenv "debian"
 _build_runtime
 _build_docs "debian"
-_copy_code
+_copy_code "debian"
+_generate_sbom
 
 #
 # Server package
@@ -32,19 +32,32 @@ _copy_code
 echo "Creating the server package..."
 mkdir "${SERVERROOT}/DEBIAN"
 
+echo "Creating preinst script..."
+cat << EOF > "${SERVERROOT}/DEBIAN/preinst"
+#!/bin/sh
+
+rm -rf /usr/pgadmin4/venv
+if [ -d /usr/pgadmin4/web ]; then
+  cd /usr/pgadmin4/web && rm -rf \$(ls -A -I config_local.py)
+fi
+EOF
+
+chmod 755 "${SERVERROOT}/DEBIAN/preinst"
+
 cat << EOF > "${SERVERROOT}/DEBIAN/control"
 Package: ${APP_NAME}-server
 Version: ${APP_LONG_VERSION}
 Architecture: ${OS_ARCH}
 Section: database
 Priority: optional
-Depends: python3, libpq5 (>= 11.0), libgssapi-krb5-2
+Depends: ${PYTHON_BINARY}, libpq5 (>= 11.0), libgssapi-krb5-2, python-dbus | python3-dbus
 Recommends: postgresql-client | postgresql-client-15 | postgresql-client-14 | postgresql-client-13 | postgresql-client-12 | postgresql-client-11 | postgresql-client-10
 Maintainer: pgAdmin Development Team <pgadmin-hackers@postgresql.org>
 Description: The core server package for pgAdmin. pgAdmin is the most popular and feature rich Open Source administration and development platform for PostgreSQL, the most advanced Open Source database in the world.
 EOF
 
 # Build the Debian package for the server
+chmod -R u+rwX,go+rX,go-w "${SERVERROOT}"
 fakeroot dpkg-deb --build "${SERVERROOT}" "${DISTROOT}/${APP_NAME}-server_${APP_LONG_VERSION}_${OS_ARCH}.deb"
 
 #
@@ -55,18 +68,40 @@ fakeroot dpkg-deb --build "${SERVERROOT}" "${DISTROOT}/${APP_NAME}-server_${APP_
 echo "Creating the desktop package..."
 mkdir "${DESKTOPROOT}/DEBIAN"
 
+# Ubuntu 24 requires apparmor profile to work.
+OS_ID=$(grep "^ID=" /etc/os-release | awk -F "=" '{ print $2 }')
+OS_VERSION=$(grep "^VERSION_ID=" /etc/os-release | awk -F "=" '{ print $2 }' | sed 's/"//g' | awk -F "." '{ print $1 }')
+
+if [ "${OS_ID}" == 'ubuntu' ] && [ "${OS_VERSION}" -ge "24" ]; then
+  cat << EOF > "${DESKTOPROOT}/DEBIAN/conffiles"
+/etc/apparmor.d/pgadmin4
+EOF
+
+  mkdir -p "${DESKTOPROOT}/etc/apparmor.d"
+  cp "${SOURCEDIR}/pkg/debian/pgadmin4-aa-profile" "${DESKTOPROOT}/etc/apparmor.d/pgadmin4"
+
+  cat << EOF > "${DESKTOPROOT}/DEBIAN/postinst"
+#!/bin/sh
+
+echo "Load apparmor pgAdmin profile..."
+apparmor_parser -r /etc/apparmor.d/pgadmin4
+EOF
+  chmod 755 "${DESKTOPROOT}/DEBIAN/postinst"
+fi
+
 cat << EOF > "${DESKTOPROOT}/DEBIAN/control"
 Package: ${APP_NAME}-desktop
 Version: ${APP_LONG_VERSION}
 Architecture: ${OS_ARCH}
 Section: database
 Priority: optional
-Depends: ${APP_NAME}-server (= ${APP_LONG_VERSION}), libatomic1, xdg-utils
+Depends: ${APP_NAME}-server (= ${APP_LONG_VERSION}), libatomic1, xdg-utils, python-dbus | python3-dbus
 Maintainer: pgAdmin Development Team <pgadmin-hackers@postgresql.org>
 Description: The desktop user interface for pgAdmin. pgAdmin is the most popular and feature rich Open Source administration and development platform for PostgreSQL, the most advanced Open Source database in the world.
 EOF
 
-# Build the Debian package for the server
+# Build the Debian package for the desktop
+chmod -R u+rwX,go+rX,go-w "${DESKTOPROOT}"
 fakeroot dpkg-deb --build "${DESKTOPROOT}" "${DISTROOT}/${APP_NAME}-desktop_${APP_LONG_VERSION}_${OS_ARCH}.deb"
 
 #
@@ -96,6 +131,7 @@ mkdir -p "${WEBROOT}/etc/apache2/conf-available"
 cp "${SOURCEDIR}/pkg/debian/pgadmin4.conf" "${WEBROOT}/etc/apache2/conf-available"
 
 # Build the Debian package for the web
+chmod -R u+rwX,go+rX,go-w "${WEBROOT}"
 fakeroot dpkg-deb --build "${WEBROOT}" "${DISTROOT}/${APP_NAME}-web_${APP_LONG_VERSION}_all.deb"
 
 #

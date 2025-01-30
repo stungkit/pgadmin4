@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -26,11 +26,11 @@ describe('KeyboardShortcutAction', ()=>{
       key_code: 66,
     },
   };
-  let handler1 = jasmine.createSpy('handler1');
-  let handler2 = jasmine.createSpy('handler2');
+  let handler1 = jest.fn();
+  let handler2 = jest.fn();
 
   beforeAll(()=>{
-    spyOn(KeyboardShortcutAction.prototype, 'shortcutKey').and.callThrough();
+    jest.spyOn(KeyboardShortcutAction.prototype, 'shortcutKey');
     keyAction = new KeyboardShortcutAction([
       [key1, handler1],
       [key2, handler2],
@@ -50,11 +50,13 @@ describe('KeyboardShortcutAction', ()=>{
   });
 
   it('callHandler', ()=>{
-    let keyEvent = {altKey: key1.alt, ctrlKey: key1.control, shiftKey: key1.shift, metaKey: false, keyCode:key1.key.key_code};
+    let keyEvent = {altKey: key1.alt, ctrlKey: key1.control, shiftKey: key1.shift, metaKey: false, keyCode:key1.key.key_code,
+      stopPropagation: jest.fn(), preventDefault: jest.fn()};
     keyAction.callHandler(keyEvent);
     expect(handler1).toHaveBeenCalled();
 
-    keyEvent = {altKey: key2.alt, ctrlKey: key2.control, shiftKey: key2.shift, metaKey: false, keyCode:key2.key.key_code};
+    keyEvent = {altKey: key2.alt, ctrlKey: key2.control, shiftKey: key2.shift, metaKey: false, keyCode:key2.key.key_code,
+      stopPropagation: jest.fn(), preventDefault: jest.fn()};
     keyAction.callHandler(keyEvent);
     expect(handler2).toHaveBeenCalled();
   });

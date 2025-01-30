@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -49,9 +49,9 @@ class CatalogObjectModule(SchemaChildModule):
     # Flag for not to show node under Schema/Catalog node
     # By default its set to True to display node in schema/catalog
     # We do not want to display 'Catalog Objects' under Schema/Catalog
-    # but only in information_schema/sys/dbo
+    # but only in information_schema/sys
     CATALOG_DB_SUPPORTED = False
-    SUPPORTED_SCHEMAS = ['information_schema', 'sys', 'dbo']
+    SUPPORTED_SCHEMAS = ['information_schema', 'sys']
 
     def __init__(self, *args, **kwargs):
         """
@@ -235,7 +235,8 @@ class CatalogObjectView(PGChildNodeView):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon="icon-catalog_object"
+                    icon="icon-catalog_object",
+                    description=row['description']
                 ))
 
         return make_json_response(

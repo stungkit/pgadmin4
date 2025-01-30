@@ -1,6 +1,8 @@
 SELECT
-    c.oid, c.relname AS name, c.relacl, pg_catalog.pg_get_userbyid(relowner) AS owner,
+    c.oid, c.relname AS name, pg_catalog.pg_get_userbyid(relowner) AS owner,
+    pg_catalog.array_to_string(c.relacl::text[], ', ') as acl,
     ftoptions, srvname AS ftsrvname, description, nspname AS basensp,
+    (SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgrelid=ftrelid AND tgisinternal = FALSE) AS triggercount,
     (SELECT
         pg_catalog.array_agg(provider || '=' || label)
     FROM
@@ -20,7 +22,7 @@ JOIN
 LEFT OUTER JOIN
     pg_catalog.pg_foreign_server fs ON ft.ftserver=fs.oid
 LEFT OUTER JOIN
-    pg_catalog.pg_description des ON (des.objoid=c.oid AND des.classoid='pg_class'::regclass)
+    pg_catalog.pg_description des ON (des.objoid=c.oid AND des.classoid='pg_class'::regclass AND des.objsubid = 0)
 LEFT OUTER JOIN
     pg_catalog.pg_namespace nsp ON (nsp.oid=c.relnamespace)
 WHERE

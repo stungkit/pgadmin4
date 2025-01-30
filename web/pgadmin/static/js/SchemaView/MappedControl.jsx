@@ -2,92 +2,173 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useContext, useMemo, useState } from 'react';
 import _ from 'lodash';
-import {
-  FormInputText, FormInputSelect, FormInputSwitch, FormInputCheckbox, FormInputColor,
-  FormInputFileSelect, FormInputToggle, InputSwitch, FormInputSQL, InputSQL, FormNote, FormInputDateTimePicker, PlainString,
-  InputSelect, InputText, InputCheckbox, InputDateTimePicker, InputFileSelect, FormInputKeyboardShortcut, FormInputQueryThreshold, FormInputSelectThemes, InputRadio, FormButton
-} from '../components/FormComponents';
-import Privilege from '../components/Privilege';
-import { evalFunc } from 'sources/utils';
 import PropTypes from 'prop-types';
-import CustomPropTypes from '../custom_prop_types';
-import { SelectRefresh } from '../components/SelectRefresh';
+
+import {
+  FormButton, FormInputCheckbox, FormInputColor, FormInputDateTimePicker,
+  FormInputFileSelect, FormInputKeyboardShortcut, FormInputQueryThreshold,
+  FormInputSQL, FormInputSelect, FormInputSelectThemes, FormInputSwitch,
+  FormInputText, FormInputToggle, FormNote, InputCheckbox, InputDateTimePicker,
+  InputFileSelect, InputRadio, InputSQL,InputSelect, InputSwitch, InputText,
+  InputTree, PlainString,
+} from 'sources/components/FormComponents';
+import { SelectRefresh } from 'sources/components/SelectRefresh';
+import Privilege from 'sources/components/Privilege';
+import { useIsMounted } from 'sources/custom_hooks';
+import CustomPropTypes from 'sources/custom_prop_types';
+import { evalFunc } from 'sources/utils';
+
+import { SchemaStateContext } from './SchemaState';
+import { isValueEqual } from './common';
+import {
+  useFieldOptions, useFieldValue, useFieldError, useSchemaStateSubscriber,
+} from './hooks';
+import { listenDepChanges } from './utils';
+import { InputColor } from '../components/FormComponents';
+
 
 /* Control mapping for form view */
-function MappedFormControlBase({ type, value, id, onChange, className, visible, inputRef, noLabel, onClick, ...props }) {
-  const name = id;
+function MappedFormControlBase({
+  id, type, state, onChange, className, inputRef, visible,
+  withContainer, controlGridBasis, noLabel, ...props
+}) {
+  let name = id;
   const onTextChange = useCallback((e) => {
     let val = e;
-    if(e && e.target) {
+    if(e?.target) {
       val = e.target.value;
     }
-    onChange && onChange(val);
+    onChange?.(val);
   }, []);
+  const value = state;
 
   const onSqlChange = useCallback((changedValue) => {
-    onChange && onChange(changedValue);
+    onChange?.(changedValue);
+  }, []);
+
+  const onTreeSelection = useCallback((selectedValues)=> {
+    onChange?.(selectedValues);
   }, []);
 
   if (!visible) {
     return <></>;
   }
 
+  if (name && _.isNumber(name)) {
+    name = String(name);
+  }
+
   /* The mapping uses Form* components as it comes with labels */
   switch (type) {
   case 'int':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} type='int' />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props} type='int'
+    />;
   case 'numeric':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} type='numeric' />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props} type='numeric'
+    />;
   case 'tel':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} type='tel' />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props} type='tel'
+    />;
   case 'text':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props}
+    />;
   case 'multiline':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className}
-      inputRef={inputRef} controlProps={{ multiline: true }} {...props} />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} controlProps={{ multiline: true }} {...props}
+    />;
   case 'password':
-    return <FormInputText name={name} value={value} onChange={onTextChange} className={className} type='password' inputRef={inputRef} {...props} />;
+    return <FormInputText
+      name={name} value={value} onChange={onTextChange} className={className}
+      type='password' inputRef={inputRef} {...props}
+    />;
   case 'select':
-    return <FormInputSelect name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} />;
+    return <FormInputSelect
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props}
+    />;
   case 'select-refresh':
-    return <SelectRefresh name={name} value={value} onChange={onTextChange} className={className} {...props} />;
+    return <SelectRefresh
+      name={name} value={value} onChange={onTextChange} className={className}
+      {...props}
+    />;
   case 'switch':
-    return <FormInputSwitch name={name} value={value}
-      onChange={(e) => onTextChange(e.target.checked, e.target.name)} className={className}
-      {...props} />;
+    return <FormInputSwitch
+      name={name} value={value} className={className}
+      onChange={(e) => onTextChange(e.target.checked, e.target.name)}
+      withContainer={withContainer} controlGridBasis={controlGridBasis}
+      {...props}
+    />;
   case 'checkbox':
-    return <FormInputCheckbox name={name} value={value}
-      onChange={(e) => onTextChange(e.target.checked, e.target.name)} className={className}
-      {...props} />;
+    return <FormInputCheckbox
+      name={name} value={value} className={className}
+      onChange={(e) => onTextChange(e.target.checked, e.target.name)}
+      {...props}
+    />;
   case 'toggle':
-    return <FormInputToggle name={name} value={value}
-      onChange={onTextChange} className={className} inputRef={inputRef}
-      {...props} />;
+    return <FormInputToggle
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props}
+    />;
   case 'color':
-    return <FormInputColor name={name} value={value} onChange={onTextChange} className={className} {...props} />;
+    return <FormInputColor
+      name={name} value={value} onChange={onTextChange} className={className}
+      {...props}
+    />;
   case 'file':
-    return <FormInputFileSelect name={name} value={value} onChange={onTextChange} className={className} inputRef={inputRef} {...props} />;
+    return <FormInputFileSelect
+      name={name} value={value} onChange={onTextChange} className={className}
+      inputRef={inputRef} {...props}
+    />;
   case 'sql':
-    return <FormInputSQL name={name} value={value} onChange={onSqlChange} className={className} noLabel={noLabel} inputRef={inputRef} {...props} />;
+    return <FormInputSQL
+      name={name} value={value} onChange={onSqlChange} className={className}
+      noLabel={noLabel} inputRef={inputRef} {...props}
+    />;
   case 'note':
     return <FormNote className={className} {...props} />;
   case 'datetimepicker':
-    return <FormInputDateTimePicker name={name} value={value} onChange={onTextChange} className={className} {...props} />;
+    return <FormInputDateTimePicker
+      name={name} value={value} onChange={onTextChange} className={className}
+      {...props}
+    />;
   case 'keyboardShortcut':
-    return <FormInputKeyboardShortcut name={name} value={value} onChange={onTextChange} {...props}/>;
+    return <FormInputKeyboardShortcut
+      name={name} value={value} onChange={onTextChange} {...props}
+    />;
   case 'threshold':
-    return <FormInputQueryThreshold name={name} value={value} onChange={onTextChange} {...props}/>;
+    return <FormInputQueryThreshold
+      name={name} value={value} onChange={onTextChange} {...props}
+    />;
   case 'theme':
-    return <FormInputSelectThemes name={name} value={value} onChange={onTextChange} {...props}/>;
+    return <FormInputSelectThemes
+      name={name} value={value} onChange={onTextChange} {...props}
+    />;
   case 'button':
-    return <FormButton name={name} value={value} className={className} onClick={onClick}  {...props} />;
+    return <FormButton
+      name={name} value={value} className={className} onClick={props.onClick}
+      {...props}
+    />;
+  case 'tree':
+    return <InputTree
+      name={name} treeData={props.treeData} onChange={onTreeSelection}
+      {...props}
+    />;
   default:
     return <PlainString value={value} {...props} />;
   }
@@ -97,8 +178,8 @@ MappedFormControlBase.propTypes = {
   type: PropTypes.oneOfType([
     PropTypes.string, PropTypes.func,
   ]).isRequired,
-  value: PropTypes.any,
-  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  state: PropTypes.any,
+  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onChange: PropTypes.func,
   className: PropTypes.oneOfType([
     PropTypes.string, PropTypes.object,
@@ -106,31 +187,39 @@ MappedFormControlBase.propTypes = {
   visible: PropTypes.bool,
   inputRef: CustomPropTypes.ref,
   noLabel: PropTypes.bool,
-  onClick: PropTypes.func
+  onClick: PropTypes.func,
+  withContainer: PropTypes.bool,
+  controlGridBasis: PropTypes.number,
+  treeData: PropTypes.oneOfType([
+    PropTypes.array, PropTypes.instanceOf(Promise), PropTypes.func]
+  ),
 };
 
 /* Control mapping for grid cell view */
-function MappedCellControlBase({ cell, value, id, optionsLoaded, onCellChange, visible, reRenderRow, ...props }) {
-  const name = id;
+function MappedCellControlBase({
+  cell, value, id, optionsLoaded, onCellChange, visible, reRenderRow, inputRef,
+  ...props
+}) {
+  let name = id;
   const onTextChange = useCallback((e) => {
     let val = e;
-    if (e && e.target) {
+    if (e?.target) {
       val = e.target.value;
     }
 
-    onCellChange && onCellChange(val);
+    onCellChange?.(val);
   }, []);
 
   const onRadioChange = useCallback((e) => {
     let val =e;
-    if(e && e.target) {
+    if(e?.target) {
       val = e.target.checked;
     }
-    onCellChange && onCellChange(val);
+    onCellChange?.(val);
   });
 
   const onSqlChange = useCallback((val) => {
-    onCellChange && onCellChange(val);
+    onCellChange?.(val);
   }, []);
 
   /* Some grid cells are based on options selected in other cells.
@@ -138,26 +227,31 @@ function MappedCellControlBase({ cell, value, id, optionsLoaded, onCellChange, v
    */
   const optionsLoadedRerender = useCallback((res) => {
     /* optionsLoaded is called when select options are fetched */
-    optionsLoaded && optionsLoaded(res);
-    reRenderRow && reRenderRow();
+    optionsLoaded?.(res);
+    reRenderRow?.();
   }, []);
 
   if (!visible) {
     return <></>;
   }
 
+  if (name && _.isNumber(name)) {
+    name = String('name');
+  }
+
   /* The mapping does not need Form* components as labels are not needed for grid cells */
   switch(cell) {
   case 'int':
-    return <InputText name={name} value={value} onChange={onTextChange} {...props} type='int'/>;
+    return <InputText name={name} value={value} onChange={onTextChange} ref={inputRef} {...props} type='int'/>;
   case 'numeric':
-    return <InputText name={name} value={value} onChange={onTextChange} {...props} type='numeric'/>;
+    return <InputText name={name} value={value} onChange={onTextChange} ref={inputRef} {...props} type='numeric'/>;
   case 'text':
-    return <InputText name={name} value={value} onChange={onTextChange} {...props}/>;
+    return <InputText name={name} value={value} onChange={onTextChange} ref={inputRef} {...props}/>;
   case 'password':
-    return <InputText name={name} value={value} onChange={onTextChange} {...props} type='password'/>;
+    return <InputText name={name} value={value} onChange={onTextChange} ref={inputRef} {...props} type='password'/>;
   case 'select':
-    return <InputSelect name={name} value={value} onChange={onTextChange} optionsLoaded={optionsLoadedRerender} {...props}/>;
+    return <InputSelect name={name} value={value} onChange={onTextChange} optionsLoaded={optionsLoadedRerender}
+      inputRef={inputRef} {...props}/>;
   case 'switch':
     return <InputSwitch name={name} value={value}
       onChange={(e)=>onTextChange(e.target.checked, e.target.name)} {...props} />;
@@ -170,6 +264,8 @@ function MappedCellControlBase({ cell, value, id, optionsLoaded, onCellChange, v
     return <InputDateTimePicker name={name} value={value} onChange={onTextChange} {...props}/>;
   case 'sql':
     return <InputSQL name={name} value={value} onChange={onSqlChange} {...props} />;
+  case 'color':
+    return <InputColor name={name} value={value} onChange={onTextChange} {...props} />;
   case 'file':
     return <InputFileSelect name={name} value={value} onChange={onTextChange} inputRef={props.inputRef} {...props} />;
   case 'keyCode':
@@ -200,7 +296,9 @@ const ALLOWED_PROPS_FIELD_COMMON = [
   'mode', 'value', 'readonly', 'disabled', 'hasError', 'id',
   'label', 'options', 'optionsLoaded', 'controlProps', 'schema', 'inputRef',
   'visible', 'autoFocus', 'helpMessage', 'className', 'optionsReloadBasis',
-  'orientation', 'isvalidate', 'fields', 'radioType', 'hideBrowseButton', 'btnName'
+  'orientation', 'isvalidate', 'fields', 'radioType', 'hideBrowseButton',
+  'btnName', 'hidden', 'withContainer', 'controlGridBasis', 'hasCheckbox',
+  'treeData', 'labelTooltip'
 ];
 
 const ALLOWED_PROPS_FIELD_FORM = [
@@ -208,50 +306,132 @@ const ALLOWED_PROPS_FIELD_FORM = [
 ];
 
 const ALLOWED_PROPS_FIELD_CELL = [
-  'cell', 'onCellChange', 'row', 'reRenderRow', 'validate', 'disabled', 'readonly', 'radioType', 'hideBrowseButton'
+  'cell', 'onCellChange', 'reRenderRow', 'validate', 'disabled',
+  'readonly', 'radioType', 'hideBrowseButton', 'hidden', 'row',
 ];
 
+export const StaticMappedFormControl = ({accessPath, field, ...props}) => {
+  const schemaState = useContext(SchemaStateContext);
+  const state = schemaState.value(accessPath);
+  const newProps = {
+    ...props,
+    state,
+    noLabel: field.isFullTab,
+    ...field,
+    onChange: () => { /* Do nothing */ },
+  };
+  const visible = evalFunc(null, field.visible, state);
 
-export const MappedFormControl = ({memoDeps, ...props}) => {
-  let newProps = { ...props };
-  let typeProps = evalFunc(null, newProps.type, newProps.state);
-  if (typeof (typeProps) === 'object') {
+  if (visible === false) return <></>;
+
+  return useMemo(
+    () => <MappedFormControlBase
+      {
+        ..._.pick(
+          newProps,
+          _.union(ALLOWED_PROPS_FIELD_COMMON, ALLOWED_PROPS_FIELD_FORM)
+        )
+      }
+    />, []
+  );
+};
+
+StaticMappedFormControl.propTypes = {
+  accessPath: PropTypes.array.isRequired,
+  field: PropTypes.object,
+};
+
+export const MappedFormControl = ({
+  accessPath, dataDispatch, field, onChange, ...props
+}) => {
+  const checkIsMounted = useIsMounted();
+  const [key, setKey] = useState(0);
+  const subscriberManager = useSchemaStateSubscriber(setKey);
+  const schemaState = useContext(SchemaStateContext);
+  const state = schemaState.data;
+  const value = useFieldValue(accessPath, schemaState, subscriberManager);
+  const options = useFieldOptions(accessPath, schemaState, subscriberManager);
+  const {hasError} = useFieldError(accessPath, schemaState, subscriberManager);
+  const avoidRenderingWhenNotMounted = (...args) => {
+    if (checkIsMounted()) subscriberManager.current?.signal(...args);
+  };
+
+  const origOnChange = onChange;
+
+  onChange = (changedValue) => {
+    if (!origOnChange || !checkIsMounted()) return;
+
+    // We don't want the 'onChange' to be executed for the same value to avoid
+    // rerendering of the control, top component may still be rerendered on the
+    // change of the value.
+    const currValue = schemaState.value(accessPath);
+
+    if (!isValueEqual(changedValue, currValue)) origOnChange(changedValue);
+  };
+
+  const depVals = listenDepChanges(
+    accessPath, field, schemaState, avoidRenderingWhenNotMounted
+  );
+
+  let newProps = {
+    ...props,
+    state: value,
+    noLabel: field.isFullTab,
+    ...field,
+    onChange: onChange,
+    dataDispatch: dataDispatch,
+    ...options,
+    hasError,
+  };
+
+  if (typeof (field.type) === 'function') {
+    const typeProps = evalFunc(null, field.type, state);
     newProps = {
       ...newProps,
       ...typeProps,
     };
-  } else {
-    newProps.type = typeProps;
   }
 
   let origOnClick = newProps.onClick;
   newProps.onClick = ()=>{
     origOnClick?.();
-    /* Consider on click as change for button.
-    Just increase state val by 1 to inform the deps and self depChange */
-    newProps.onChange?.((newProps.state[props.id]||0)+1);
   };
 
-  /* Filter out garbage props if any using ALLOWED_PROPS_FIELD */
-  return useMemo(()=><MappedFormControlBase {..._.pick(newProps, _.union(ALLOWED_PROPS_FIELD_COMMON, ALLOWED_PROPS_FIELD_FORM))} />, memoDeps??[]);
+  // FIXME:: Get this list from the option registry.
+  const memDeps = ['disabled', 'visible', 'readonly'].map(
+    option => options[option]
+  );
+
+  memDeps.push(value);
+  memDeps.push(hasError);
+  memDeps.push(key);
+  memDeps.push(JSON.stringify(accessPath));
+  memDeps.push(depVals);
+
+  // Filter out garbage props if any using ALLOWED_PROPS_FIELD.
+  return useMemo(
+    () => <MappedFormControlBase
+      {
+        ..._.pick(
+          newProps,
+          _.union(ALLOWED_PROPS_FIELD_COMMON, ALLOWED_PROPS_FIELD_FORM)
+        )
+      }
+    />, [...memDeps]
+  );
 };
 
 MappedFormControl.propTypes = {
-  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired
+  accessPath: PropTypes.array.isRequired,
+  field: PropTypes.object,
+  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
 };
 
 export const MappedCellControl = (props) => {
-  let newProps = { ...props };
-  let cellProps = evalFunc(null, newProps.cell, newProps.row);
-  if (typeof (cellProps) === 'object') {
-    newProps = {
-      ...newProps,
-      ...cellProps,
-    };
-  } else {
-    newProps.cell = cellProps;
-  }
+  const newProps = _.pick(
+    props, _.union(ALLOWED_PROPS_FIELD_COMMON, ALLOWED_PROPS_FIELD_CELL)
+  );;
 
-  /* Filter out garbage props if any using ALLOWED_PROPS_FIELD */
-  return <MappedCellControlBase {..._.pick(newProps, _.union(ALLOWED_PROPS_FIELD_COMMON, ALLOWED_PROPS_FIELD_CELL))} />;
+  // Filter out garbage props if any using ALLOWED_PROPS_FIELD.
+  return <MappedCellControlBase {...newProps}/>;
 };

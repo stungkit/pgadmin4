@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -13,7 +13,7 @@ from abc import abstractmethod
 
 import flask
 from flask import render_template, current_app
-from flask.views import View, MethodViewType
+from flask.views import View, MethodView
 from flask_babel import gettext
 
 from config import PG_DEFAULT_DRIVER
@@ -37,14 +37,14 @@ def underscore_escape(text):
         '<': "&lt;",
         '>': "&gt;",
         '"': "&quot;",
-        '`': "&#96;",
-        "'": "&#x27;"
+        "'": "&#39;"
     }
 
     # always replace & first
-    for c, r in sorted(html_map.items(),
-                       key=lambda x: 0 if x[0] == '&' else 1):
-        text = text.replace(c, r)
+    if text:
+        for c, r in sorted(html_map.items(),
+                           key=lambda x: 0 if x[0] == '&' else 1):
+            text = text.replace(c, r)
 
     return text
 
@@ -62,15 +62,13 @@ def underscore_unescape(text):
         "&lt;": '<',
         "&gt;": '>',
         "&quot;": '"',
-        "&#96;": '`',
-        "&#x27;": "'",
-        "&#39;": "'",
-        "&#34;": '"'
+        "&#39;": "'"
     }
 
     # always replace & first
-    for c, r in html_map.items():
-        text = text.replace(c, r)
+    if text:
+        for c, r in html_map.items():
+            text = text.replace(c, r)
 
     return text
 
@@ -140,7 +138,7 @@ class PGChildModule():
         pass
 
 
-class NodeView(View, metaclass=MethodViewType):
+class NodeView(View, metaclass=type(MethodView)):
     """
     A PostgreSQL Object has so many operaions/functions apart from CRUD
     (Create, Read, Update, Delete):
@@ -373,6 +371,7 @@ class PGChildNodeView(NodeView):
 
     _NODE_SQL = 'node.sql'
     _NODES_SQL = 'nodes.sql'
+    _COUNT_SQL = 'count.sql'
     _CREATE_SQL = 'create.sql'
     _UPDATE_SQL = 'update.sql'
     _ALTER_SQL = 'alter.sql'
@@ -581,6 +580,7 @@ class PGChildNodeView(NodeView):
             'Pf': 'function', 'Pt': 'trigger_function', 'Pp': 'procedure',
             'Rl': 'rule', 'Rs': 'row_security_policy', 'Sy': 'synonym',
             'Ty': 'type', 'Tr': 'trigger', 'Tc': 'compound_trigger',
+            'c': 'type',
             # None specified special handling for this type
             'A': None
         }

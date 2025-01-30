@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -75,7 +75,10 @@ class ForeignDataWrapperModule(CollectionNodeModule):
             sid: Server ID
             did: Database Id
         """
-        yield self.generate_browser_collection_node(did)
+        if self.has_nodes(
+            sid, did,
+                base_template_path=ForeignDataWrapperView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(did)
 
     @property
     def script_load(self):
@@ -179,6 +182,7 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
     """
 
     node_type = blueprint.node_type
+    BASE_TEMPLATE_PATH = 'foreign_data_wrappers/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -235,7 +239,7 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
                     kwargs['did']]['datistemplate']
 
             # Set the template path for the SQL scripts
-            self.template_path = 'foreign_data_wrappers/sql/#{0}#'.format(
+            self.template_path = self.BASE_TEMPLATE_PATH.format(
                 self.manager.version
             )
 
@@ -299,7 +303,8 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     did,
                     row['name'],
-                    icon="icon-foreign_data_wrapper"
+                    icon="icon-foreign_data_wrapper",
+                    description=row['description']
                 ))
 
         return make_json_response(
@@ -505,12 +510,17 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
             if not status:
                 return internal_server_error(errormsg=res)
 
+            other_node_info = {}
+            if 'description' in data:
+                other_node_info['description'] = data['description']
+
             return jsonify(
                 node=self.blueprint.generate_browser_node(
                     fid,
                     did,
                     name,
-                    icon="icon-%s" % self.node_type
+                    icon="icon-%s" % self.node_type,
+                    **other_node_info
                 )
             )
         except Exception as e:
@@ -624,7 +634,7 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
             except ValueError:
                 data[k] = v
         try:
-            sql, name = self.get_sql(gid, sid, data, did, fid)
+            sql, _ = self.get_sql(gid, sid, data, did, fid)
             # Most probably this is due to error
             if not isinstance(sql, str):
                 return sql
@@ -999,8 +1009,8 @@ class ForeignDataWrapperView(PGChildNodeView, SchemaDiffObjectCompare):
         drop_sql = kwargs.get('drop_sql', False)
 
         if data:
-            sql, name = self.get_sql(gid=gid, sid=sid, did=did, data=data,
-                                     fid=oid)
+            sql, _ = self.get_sql(gid=gid, sid=sid, did=did, data=data,
+                                  fid=oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

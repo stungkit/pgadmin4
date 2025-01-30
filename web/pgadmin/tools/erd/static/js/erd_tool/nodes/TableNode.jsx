@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -20,13 +20,11 @@ import UniqueKeyIcon from 'top/browser/server_groups/servers/databases/schemas/t
 import PropTypes from 'prop-types';
 import gettext from 'sources/gettext';
 import { PgIconButton } from '../../../../../../static/js/components/Buttons';
-import NoteRoundedIcon from '@material-ui/icons/NoteRounded';
-import VisibilityRoundedIcon from '@material-ui/icons/VisibilityRounded';
-import VisibilityOffRoundedIcon from '@material-ui/icons/VisibilityOffRounded';
-import { withStyles } from '@material-ui/styles';
-import clsx from 'clsx';
-import { Box } from '@material-ui/core';
-
+import NoteRoundedIcon from '@mui/icons-material/NoteRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import { Box } from '@mui/material';
+import { styled } from '@mui/material/styles';
 
 const TYPE = 'table';
 const TABLE_WIDTH = 175;
@@ -171,7 +169,7 @@ export class TableNodeModel extends DefaultNodeModel {
 function RowIcon({icon}) {
   return (
     <div style={{padding: '0rem 0.125rem'}}>
-      <img src={icon} crossOrigin="anonymous"/>
+      <img src={icon} alt="" crossOrigin="anonymous"/>
     </div>
   );
 }
@@ -180,8 +178,8 @@ RowIcon.propTypes = {
   icon: PropTypes.any.isRequired,
 };
 
-const styles = (theme)=>({
-  tableNode: {
+const StyledDiv = styled('div')(({theme})=>({
+  '&.TableNode-tableNode': {
     backgroundColor: theme.palette.background.default,
     color: theme.palette.text.primary,
     ...theme.mixins.panelBorder.all,
@@ -192,48 +190,48 @@ const styles = (theme)=>({
     '& div:last-child': {
       borderBottomLeftRadius: 'inherit',
       borderBottomRightRadius: 'inherit',
-    }
+    },
+    '& .TableNode-tableSection': {
+      ...theme.mixins.panelBorder.bottom,
+      padding: '0.125rem 0.25rem',
+      display: 'flex',
+      '&.TableNode-tableNameText': {
+        fontWeight: 'bold',
+        wordBreak: 'break-all',
+        margin: 'auto 0',
+        '& .TableNode-error': {
+          color: theme.palette.error.main,
+        },
+      },
+      '&.TableNode-tableToolbar': {
+        background: theme.otherVars.editorToolbarBg,
+        borderTopLeftRadius: 'inherit',
+        borderTopRightRadius: 'inherit',
+      },
+      '& .TableNode-noteBtn': {
+        marginLeft: 'auto',
+        backgroundColor: theme.palette.warning.main,
+        color: theme.palette.warning.contrastText,
+      },
+    },
+    '& .TableNode-columnSection': {
+      display:'flex',
+      width: '100%' ,
+      ...theme.mixins.panelBorder.bottom,
+      '& .TableNode-columnName': {
+        display:'flex',
+        width: '100%' ,
+        padding: '0.125rem 0.25rem',
+        wordBreak: 'break-all',
+      },
+    },
   },
-  tableNodeSelected: {
+  '&.TableNode-tableNodeSelected': {
     borderColor: theme.palette.primary.main,
   },
-  tableSection: {
-    ...theme.mixins.panelBorder.bottom,
-    padding: '0.125rem 0.25rem',
-    display: 'flex',
-  },
-  columnSection: {
-    display:'flex',
-    width: '100%' ,
-    ...theme.mixins.panelBorder.bottom,
-  },
-  columnName: {
-    display:'flex',
-    width: '100%' ,
-    padding: '0.125rem 0.25rem',
-    wordBreak: 'break-all',
-  },
-  tableToolbar: {
-    background: theme.otherVars.editorToolbarBg,
-    borderTopLeftRadius: 'inherit',
-    borderTopRightRadius: 'inherit',
-  },
-  tableNameText: {
-    fontWeight: 'bold',
-    wordBreak: 'break-all',
-    margin: 'auto 0',
-  },
-  error: {
-    color: theme.palette.error.main,
-  },
-  noteBtn: {
-    marginLeft: 'auto',
-    backgroundColor: theme.palette.warning.main,
-    color: theme.palette.warning.contrastText,
-  }
-});
+}));
 
-class TableNodeWidgetRaw extends React.Component {
+export class TableNodeWidget extends React.Component {
   constructor(props) {
     super(props);
 
@@ -278,18 +276,17 @@ class TableNodeWidgetRaw extends React.Component {
       cltype += '('+ col.attlen + (col.attprecision ? ',' + col.attprecision : '') +')';
     }
 
-    const {classes} = this.props;
     return (
-      <Box className={classes.columnSection} key={col.attnum} data-test="column-row">
+      <Box className='TableNode-columnSection' key={col.attnum} data-test="column-row">
         <Box marginRight="auto" padding="0" minHeight="0" display="flex" alignItems="center">
           {this.generatePort(leftPort)}
         </Box>
-        <Box className={classes.columnName}>
+        <Box className='TableNode-columnName'>
           <RowIcon icon={icon} />
           <Box margin="auto 0">
             <span data-test="column-name">{col.name}</span>&nbsp;
             {this.state.show_details &&
-            <span data-test="column-type">{cltype}</span>}
+            <span data-test="column-type">{cltype + (col.colconstype == 'i' ? ` (${gettext('IDENTITY')})`:'')}</span>}
           </Box>
         </Box>
         <Box marginLeft="auto" padding="0" minHeight="0" display="flex" alignItems="center">
@@ -311,7 +308,7 @@ class TableNodeWidgetRaw extends React.Component {
   toggleShowDetails = (e) => {
     e.preventDefault();
     this.setState((prevState)=>({show_details: !prevState.show_details}));
-  }
+  };
 
   render() {
     let tableData = this.props.node.getData() || {};
@@ -324,55 +321,50 @@ class TableNodeWidgetRaw extends React.Component {
     (tableData.unique_constraint||[]).forEach((uk)=>{
       localUkCols.push(...uk.columns.map((c)=>c.column));
     });
-    const {classes} = this.props;
     const styles = {
       backgroundColor: tableMetaData.fillColor,
       color: tableMetaData.textColor,
     };
     return (
-      <div className={clsx(classes.tableNode, (this.props.node.isSelected() ? classes.tableNodeSelected: ''))}
+      <StyledDiv className={['TableNode-tableNode', (this.props.node.isSelected() ? 'TableNode-tableNodeSelected': '')].join(' ')}
         onDoubleClick={()=>{this.props.node.fireEvent({}, 'editTable');}} style={styles}>
-        <div className={clsx(classes.tableSection, classes.tableToolbar)}>
+        <div className={'TableNode-tableSection TableNode-tableToolbar'}>
           <PgIconButton size="xs" title={gettext('Show Details')} icon={this.state.show_details ? <VisibilityRoundedIcon /> : <VisibilityOffRoundedIcon />}
             onClick={this.toggleShowDetails} onDoubleClick={(e)=>{e.stopPropagation();}} />
           {this.props.node.getNote() &&
-            <PgIconButton size="xs" className={classes.noteBtn}
+            <PgIconButton size="xs" className='TableNode-noteBtn'
               title={gettext('Check Note')} icon={<NoteRoundedIcon />}
               onClick={()=>{
                 this.props.node.fireEvent({}, 'showNote');
               }}
             />}
         </div>
-        {tableMetaData.is_promise && <>
-          <div className={classes.tableSection}>
-            {!tableMetaData.data_failed && <div className={classes.tableNameText}>{gettext('Fetching...')}</div>}
-            {tableMetaData.data_failed && <div className={clsx(classes.tableNameText, classes.error)}>{gettext('Failed to get data. Please delete this table.')}</div>}
-          </div>
-        </>}
+        {tableMetaData.is_promise &&
+          <div className='TableNode-tableSection'>
+            {!tableMetaData.data_failed && <div className='TableNode-tableNameText'>{gettext('Fetching...')}</div>}
+            {tableMetaData.data_failed && <div className={'TableNode-tableNameText TableNode-error'}>{gettext('Failed to get data. Please delete this table.')}</div>}
+          </div>}
         {!tableMetaData.is_promise && <>
-          <div className={classes.tableSection}>
+          <div className='TableNode-tableSection'>
             <RowIcon icon={SchemaIcon}/>
-            <div className={classes.tableNameText} data-test="schema-name">{tableData.schema}</div>
+            <div className='TableNode-tableNameText' data-test="schema-name">{tableData.schema}</div>
           </div>
-          <div className={classes.tableSection}>
+          <div className='TableNode-tableSection'>
             <RowIcon icon={TableIcon} />
-            <div className={classes.tableNameText} data-test="table-name">{tableData.name}</div>
+            <div className='TableNode-tableNameText' data-test="table-name">{tableData.name}</div>
           </div>
           {tableData.columns.length > 0 && <div>
             {_.map(tableData.columns, (col)=>this.generateColumn(col, localFkCols, localUkCols))}
           </div>}
         </>}
-      </div>
+      </StyledDiv>
     );
   }
 }
 
-export const TableNodeWidget = withStyles(styles)(TableNodeWidgetRaw);
-
-TableNodeWidgetRaw.propTypes = {
+TableNodeWidget.propTypes = {
   node: PropTypes.instanceOf(TableNodeModel),
-  engine: PropTypes.instanceOf(DiagramEngine),
-  classes: PropTypes.object,
+  engine: PropTypes.instanceOf(DiagramEngine)
 };
 
 export class TableNodeFactory extends AbstractReactFactory {

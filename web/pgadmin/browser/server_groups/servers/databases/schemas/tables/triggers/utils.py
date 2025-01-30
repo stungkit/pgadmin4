@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -10,7 +10,7 @@
 """ Implements Utility class for Triggers. """
 
 from flask import render_template
-from flask_babel import gettext as _
+from flask_babel import gettext
 from pgadmin.utils.ajax import internal_server_error
 from pgadmin.utils.exception import ObjectGone, ExecuteError
 from pgadmin.browser.server_groups.servers.databases.schemas.utils \
@@ -89,14 +89,15 @@ def get_column_details(conn, tid, clist, template_path=None):
 
 
 @get_template_path
-def get_trigger_function_and_columns(conn, data, tid,
-                                     show_system_objects, template_path=None):
+def get_trigger_function_and_columns(conn, data, tid, show_system_objects,
+                                     without_schema=False, template_path=None):
     """
     This function will return trigger function with schema name.
     :param conn: Connection Object
     :param data: Data
     :param tid: Table ID
     :param show_system_objects: show system object
+    :param without_schema: without_schema
     :param template_path: Optional Template Path
     :return:
     """
@@ -106,7 +107,8 @@ def get_trigger_function_and_columns(conn, data, tid,
     SQL = render_template("/".join(
         [template_path, 'get_triggerfunctions.sql']),
         tgfoid=data['tgfoid'],
-        show_system_objects=show_system_objects
+        show_system_objects=show_system_objects,
+        without_schema=without_schema
     )
 
     status, result = conn.execute_dict(SQL)
@@ -165,7 +167,8 @@ def get_sql(conn, **kwargs):
         if not status:
             raise ExecuteError(res)
         elif len(res['rows']) == 0:
-            raise ObjectGone(_('Could not find the trigger in the table.'))
+            raise ObjectGone(
+                gettext('Could not find the trigger in the table.'))
 
         old_data = dict(res['rows'][0])
         # If name is not present in data then
@@ -202,7 +205,7 @@ def get_sql(conn, **kwargs):
 
         for arg in required_args:
             if arg not in data:
-                return _('-- definition incomplete')
+                return gettext('-- definition incomplete')
 
         # If the request for new object which do not have did
         sql = render_template("/".join([template_path, 'create.sql']),
@@ -279,7 +282,7 @@ def get_reverse_engineered_sql(conn, **kwargs):
         raise ExecuteError(res)
 
     if len(res['rows']) == 0:
-        raise ObjectGone(_('Could not find the trigger in the table.'))
+        raise ObjectGone(gettext('Could not find the trigger in the table.'))
 
     data = dict(res['rows'][0])
 
@@ -292,9 +295,9 @@ def get_reverse_engineered_sql(conn, **kwargs):
 
     data = trigger_definition(data)
 
-    SQL, name = get_sql(conn, data=data, tid=tid, trid=None,
-                        datlastsysoid=datlastsysoid,
-                        show_system_objects=show_system_objects)
+    SQL, _ = get_sql(conn, data=data, tid=tid, trid=None,
+                     datlastsysoid=datlastsysoid,
+                     show_system_objects=show_system_objects)
 
     if with_header:
         sql_header = "-- Trigger: {0}\n\n-- ".format(data['name'])

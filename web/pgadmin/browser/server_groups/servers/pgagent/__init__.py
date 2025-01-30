@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -174,7 +174,7 @@ class JobView(PGChildNodeView):
             self.template_path = 'pga_job/sql/pre3.4'
 
             if 'pgAgent'not in self.manager.db_info:
-                status, res = self.conn.execute_dict("""
+                _, res = self.conn.execute_dict("""
 SELECT EXISTS(
         SELECT 1 FROM information_schema.columns
         WHERE
@@ -209,7 +209,8 @@ SELECT EXISTS(
                     sid,
                     rset['rows'][0]['jobname'],
                     "icon-pga_job" if rset['rows'][0]['jobenabled'] else
-                    "icon-pga_job-disabled"
+                    "icon-pga_job-disabled",
+                    description=rset['rows'][0]['jobdesc']
                 ),
                 status=200
             )
@@ -222,7 +223,8 @@ SELECT EXISTS(
                     sid,
                     row['jobname'],
                     "icon-pga_job" if row['jobenabled'] else
-                    "icon-pga_job-disabled"
+                    "icon-pga_job-disabled",
+                    description=row['jobdesc']
                 )
             )
 
@@ -397,7 +399,8 @@ SELECT EXISTS(
                 sid,
                 row['jobname'],
                 icon="icon-pga_job" if row['jobenabled']
-                else "icon-pga_job-disabled"
+                else "icon-pga_job-disabled",
+                description=row['jobdesc']
             )
         )
 
@@ -595,7 +598,7 @@ SELECT EXISTS(
         """
         # Format the schedule data. Convert the boolean array
         jschedules = data.get('jschedules', {})
-        if type(jschedules) == dict:
+        if isinstance(jschedules, dict):
             for schedule in jschedules.get('added', []):
                 format_schedule_data(schedule)
             for schedule in jschedules.get('changed', []):
@@ -603,7 +606,7 @@ SELECT EXISTS(
 
         has_connection_str = self.manager.db_info['pgAgent']['has_connstr']
         jssteps = data.get('jsteps', {})
-        if type(jssteps) == dict:
+        if isinstance(jssteps, dict):
             for changed_step in jssteps.get('changed', []):
                 status, res = format_step_data(
                     data['jobid'], changed_step, has_connection_str,

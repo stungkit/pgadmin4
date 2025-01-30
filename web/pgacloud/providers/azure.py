@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -24,7 +24,7 @@ import sys
 CURRENT_PATH = os.path.dirname(os.path.realpath(__file__))
 root = os.path.dirname(os.path.dirname(CURRENT_PATH))
 sys.path.insert(0, root)
-from pgadmin.misc.cloud.azure.azure_cache import load_persistent_cache, \
+from utils.azure_cache import load_persistent_cache, \
     TokenCachePersistenceOptions
 
 
@@ -197,7 +197,7 @@ class AzureProvider(AbsProvider):
         """ Create/cache/return an Azure client object """
         # Acquire a credential object using CLI-based authentication.
         if self._credentials is None:
-            status, self._credentials = \
+            _, self._credentials = \
                 self._get_azure_credentials()
 
         if type in self._clients:

@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -17,6 +17,8 @@ from pgadmin.browser.server_groups.servers.databases.schemas.utils \
     import DataTypeReader
 from pgadmin.browser.server_groups.servers.utils import parse_priv_from_db, \
     parse_priv_to_db
+from pgadmin.browser.server_groups.servers.databases.utils \
+    import make_object_name
 from functools import wraps
 
 
@@ -139,12 +141,7 @@ def column_formatter(conn, tid, clid, data, edit_types_list=None,
 
     # We need to format variables according to client js collection
     if 'attoptions' in data and data['attoptions'] is not None:
-        spcoptions = []
-        for spcoption in data['attoptions']:
-            k, v = spcoption.split('=')
-            spcoptions.append({'name': k, 'value': v})
-
-        data['attoptions'] = spcoptions
+        data['attoptions'] = parse_column_variables(data['attoptions'])
 
     # Need to format security labels according to client js collection
     if 'seclabels' in data and data['seclabels'] is not None:
@@ -154,6 +151,10 @@ def column_formatter(conn, tid, clid, data, edit_types_list=None,
             seclabels.append({'provider': k, 'label': v})
 
         data['seclabels'] = seclabels
+
+    # Get formatted Column Options
+    if 'attfdwoptions' in data and data['attfdwoptions'] != '':
+        data['coloptions'] = parse_options_for_column(data['attfdwoptions'])
 
     # We need to parse & convert ACL coming from database to json format
     SQL = render_template("/".join([template_path, 'acl.sql']),
@@ -186,15 +187,48 @@ def column_formatter(conn, tid, clid, data, edit_types_list=None,
     # We will need present type in edit mode
     edit_types_list.append(data['typname'])
     data['edit_types'] = sorted(edit_types_list)
-
     data['cltype'] = DataTypeReader.parse_type_name(data['cltype'])
-
     return data
+
+
+def parse_options_for_column(db_variables):
+    """
+        Function to format the output for variables.
+
+        Args:
+            db_variables: Variable object
+
+                Expected Object Format:
+                    ['option1=value1', ..]
+                where:
+                    user_name and database are optional
+        Returns:
+            Variable Object in below format:
+                {
+                'variables': [
+                    {'name': 'var_name', 'value': 'var_value',
+                    'user_name': 'user_name', 'database': 'database_name'},
+                    ...]
+                }
+                where:
+                    user_name and database are optional
+        """
+    variables_lst = []
+
+    if db_variables is not None:
+        for row in db_variables:
+            # The value may contain equals in string, split on
+            # first equals only
+            var_name, var_value = row.split("=", 1)
+            var_dict = {'option': var_name, 'value': var_value}
+            variables_lst.append(var_dict)
+    return variables_lst
 
 
 @get_template_path
 def get_formatted_columns(conn, tid, data, other_columns,
-                          table_or_type, template_path=None):
+                          table_or_type, template_path=None,
+                          with_serial=False):
     """
     This function will iterate and return formatted data for all
     the columns.
@@ -222,6 +256,28 @@ def get_formatted_columns(conn, tid, data, other_columns,
             if col['name'] == other_col['name']:
                 col['inheritedfrom' + table_or_type] = \
                     other_col['inheritedfrom']
+
+        if with_serial:
+            # Here we assume if a column is serial
+            serial_seq_name = make_object_name(
+                data['name'], col['name'], 'seq')
+            # replace the escaped quotes for comparison
+            defval = (col.get('defval', '') or '').replace("''", "'").\
+                replace('""', '"')
+
+            if serial_seq_name in defval and defval.startswith("nextval('")\
+                    and col['typname'] in ('integer', 'smallint', 'bigint'):
+
+                serial_type = {
+                    'integer': 'serial',
+                    'smallint': 'smallserial',
+                    'bigint': 'bigserial'
+                }[col['typname']]
+
+                col['displaytypname'] = serial_type
+                col['cltype'] = serial_type
+                col['typname'] = serial_type
+                col['defval'] = ''
 
     data['columns'] = all_columns
 
@@ -280,7 +336,7 @@ def _parse_format_col_for_edit(data, columns, column_acl):
         if action in columns:
             final_columns = []
             for c in columns[action]:
-                if 'inheritedfrom' not in c:
+                if c.get('inheritedfrom', None) is None:
                     final_columns.append(c)
 
             _parse_column_actions(final_columns, column_acl)
@@ -308,7 +364,7 @@ def parse_format_columns(data, mode=None):
         final_columns = []
 
         for c in columns:
-            if 'inheritedfrom' not in c:
+            if c.get('inheritedfrom', None) is None:
                 final_columns.append(c)
 
         # Now we have all lis of columns which we need
@@ -339,9 +395,6 @@ def convert_length_precision_to_string(data):
     :return:
     """
 
-    # We need to handle the below case because jquery has changed
-    # undefined/null values to empty strings
-    # https://github.com/jquery/jquery/commit/36d2d9ae937f626d98319ed850905e8d1cbfd078
     if 'attlen' in data and data['attlen'] == '':
         data['attlen'] = None
     elif 'attlen' in data and data['attlen'] is not None:
@@ -387,7 +440,7 @@ def fetch_length_precision(data):
     length = False
     precision = False
     if 'elemoid' in data:
-        length, precision, typeval = \
+        length, precision, _ = \
             DataTypeReader.get_length_precision(data['elemoid'])
 
     # Set length and precision to None
@@ -410,3 +463,13 @@ def fetch_length_precision(data):
             data['attprecision'] = None
 
     return data
+
+
+def parse_column_variables(col_variables):
+    # We need to format variables according to client js collection
+    spcoptions = []
+    if col_variables is not None:
+        for spcoption in col_variables:
+            k, v = spcoption.split('=')
+            spcoptions.append({'name': k, 'value': v})
+    return spcoptions

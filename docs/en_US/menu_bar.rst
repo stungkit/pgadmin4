@@ -25,9 +25,6 @@ Use the *File* menu to access the following options:
 +-------------------------+---------------------------------------------------------------------------------------------------------+
 | *Reset Layout*          | If you have modified the workspace, click to restore the default layout.                                |
 +-------------------------+---------------------------------------------------------------------------------------------------------+
-| *Lock Layout*           | Click to open a submenu to select the level for locking the UI layout                                   |
-|                         | This can also be changed from browser display :ref:`preferences <preferences>`                          |
-+-------------------------+---------------------------------------------------------------------------------------------------------+
 | *Runtime*               | Click to open a submenu to Configure, View Log and Zoom settings. Only visible when pgAdmin4 runs in    |
 |                         | desktop mode. To know more about runtime menu :ref:`click here <desktop_deployment>`                    |
 +-------------------------+---------------------------------------------------------------------------------------------------------+
@@ -45,6 +42,12 @@ following options (in alphabetical order):
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | Option                      | Action                                                                                                                   |
 +=============================+==========================================================================================================================+
+| *Register*                  |                                                                                                                          |
+|                             |                                                                                                                          |
+|   1) *Server*               | Click to open the :ref:`Server <server_dialog>` dialog to register a server.                                             |
+|                             |                                                                                                                          |
+|   2) *Deploy Cloud Instance*| Click to open the :ref:`Cloud Deployment <cloud_deployment>` dialog to deploy an cloud instance.                         |
++-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Change Password...*        | Click to open the :ref:`Change Password... <change_password_dialog>` dialog to change your password.                     |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Clear Saved Password*      | If you have saved the database server password, click to clear the saved password.                                       |
@@ -55,14 +58,18 @@ following options (in alphabetical order):
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Connect Server*            | Click to open the :ref:`Connect to Server <connect_to_server>` dialog to establish a connection with a server.           |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
+| *Copy Server...*            | Click to copy the currently selected server.                                                                             |
++-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Create*                    | Click *Create* to access a context menu that provides context-sensitive selections.                                      |
 |                             | Your selection opens a *Create* dialog for creating a new object.                                                        |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
-| *Delete/Drop*               | Click to delete the currently selected object from the server.                                                           |
+| *Delete*                    | Click to delete the currently selected object from the server.                                                           |
++-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
+| *Delete (Cascade)*          | Click to delete the currently selected object and all dependent objects from the server.                                 |
++-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
+| *Delete (Force)*            | Click to delete the currently selected database with force option.                                                       |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Disconnect from server*    | Click to disconnect from the currently selected server.                                                                  |
-+-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
-| *Drop Cascade*              | Click to delete the currently selected object and all dependent objects from the server.                                 |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+
 | *Properties...*             | Click to review or modify the currently selected object's properties.                                                    |
 +-----------------------------+--------------------------------------------------------------------------------------------------------------------------+

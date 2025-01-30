@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -11,18 +11,21 @@ import _ from 'lodash';
 import gettext from 'sources/gettext';
 import BaseUISchema from 'sources/SchemaView/base_schema.ui';
 import SecLabelSchema from '../../../static/js/sec_label.ui';
+import { getPrivilegesForTableAndLikeObjects } from '../../schemas/tables/static/js/table.ui';
+
 
 export class DefaultPrivSchema extends BaseUISchema {
-  constructor(getPrivilegeRoleSchema) {
+  constructor(getPrivilegeRoleSchema, nodeInfo) {
     super();
     this.getPrivilegeRoleSchema = getPrivilegeRoleSchema;
+    this.nodeInfo = nodeInfo;
   }
 
   get baseFields() {
     return [
       {
         id: 'deftblacl', type: 'collection', group: gettext('Tables'),
-        schema: this.getPrivilegeRoleSchema(['a', 'r', 'w', 'd', 'D', 'x', 't']),
+        schema: this.getPrivilegeRoleSchema(getPrivilegesForTableAndLikeObjects(this.getServerVersion())),
         mode: ['edit', 'create'],
         canAdd: true, canDelete: true,
         uniqueCol : ['grantee', 'grantor'],
@@ -48,7 +51,7 @@ export class DefaultPrivSchema extends BaseUISchema {
 }
 
 export default class DatabaseSchema extends BaseUISchema {
-  constructor(getVariableSchema, getPrivilegeRoleSchema, fieldOptions={}, initValues={}) {
+  constructor(getVariableSchema, getPrivilegeRoleSchema, fieldOptions={}, nodeInfo={}, initValues={}) {
     super({
       name: undefined,
       owner: undefined,
@@ -61,6 +64,7 @@ export default class DatabaseSchema extends BaseUISchema {
       char_type: undefined,
       datconnlimit: -1,
       datallowconn: undefined,
+      datlocaleprovider: 'libc',
       variables: [],
       privileges: [],
       securities: [],
@@ -75,6 +79,7 @@ export default class DatabaseSchema extends BaseUISchema {
     });
     this.getVariableSchema = getVariableSchema;
     this.getPrivilegeRoleSchema = getPrivilegeRoleSchema;
+    this.nodeInfo = nodeInfo;
     this.fieldOptions = {
       role: [],
       encoding: [],
@@ -82,6 +87,8 @@ export default class DatabaseSchema extends BaseUISchema {
       spcname: [],
       datcollate: [],
       datctype: [],
+      daticulocale: [],
+      datbuiltinlocale: [],
       ...fieldOptions,
     };
   }
@@ -100,6 +107,9 @@ export default class DatabaseSchema extends BaseUISchema {
         id: 'did', label: gettext('OID'), cell: 'text', mode: ['properties'],
         editable: false, type: 'text',
       },{
+        id: 'datoid', label: gettext('OID'), mode: ['create'], type: 'int',
+        min: 16384, min_version: 150000
+      }, {
         id: 'datowner', label: gettext('Owner'),
         editable: false, type: 'select', options: this.fieldOptions.role,
         controlProps: { allowClear: false }, isCollectionProperty: true,
@@ -126,16 +136,111 @@ export default class DatabaseSchema extends BaseUISchema {
         options: this.fieldOptions.spcname,
         controlProps: { allowClear: false },
       },{
+        id: 'datstrategy', label: gettext('Strategy'),
+        editable: false, type: 'select', group: gettext('Definition'),
+        readonly: function(state) {return !obj.isNew(state); },
+        mode: ['create'],
+        options: [{
+          label: gettext('WAL Log'),
+          value: 'wal_log',
+        }, {
+          label: gettext('File Copy'),
+          value: 'file_copy',
+        }],
+        min_version: 150000
+      }, {
+        id: 'datlocaleprovider', label: gettext('Locale Provider'),
+        editable: false, type: 'select', group: gettext('Definition'),
+        readonly: function(state) {return !obj.isNew(state); },
+        controlProps: { allowClear: false },
+        options: function() {
+          let options = [{
+            label: gettext('icu'),
+            value: 'icu',
+          }, {
+            label: gettext('libc'),
+            value: 'libc',
+          }];
+          if(obj.getServerVersion() >= 170000) {
+            options.push({
+              label: gettext('builtin'), value: 'builtin',
+            });
+          }
+          return Promise.resolve(options);
+        },
+        min_version: 150000
+      },{
         id: 'datcollate', label: gettext('Collation'),
         editable: false, type: 'select', group: gettext('Definition'),
         readonly: function(state) {return !obj.isNew(state); },
         options: this.fieldOptions.datcollate,
+        deps: ['datlocaleprovider'],
+        depChange: (state)=>{
+          if (state.datlocaleprovider !== 'libc')
+            return { datcollate: '' };
+        },
+        disabled: function(state) {
+          return state.datlocaleprovider !== 'libc';
+        },
       },{
         id: 'datctype', label: gettext('Character type'),
         editable: false, type: 'select', group: gettext('Definition'),
         readonly: function(state) {return !obj.isNew(state); },
         options: this.fieldOptions.datctype,
+        deps: ['datlocaleprovider'],
+        depChange: (state)=>{
+          if (state.datlocaleprovider !== 'libc')
+            return { datctype: '' };
+        },
+        disabled: function(state) {
+          return state.datlocaleprovider !== 'libc';
+        },
       },{
+        id: 'daticulocale', label: gettext('ICU Locale'),
+        editable: false, type: 'select', group: gettext('Definition'),
+        readonly: function(state) {return !obj.isNew(state); },
+        options: this.fieldOptions.daticulocale,
+        deps: ['datlocaleprovider'],
+        depChange: (state)=>{
+          if (state.datlocaleprovider !== 'icu')
+            return { daticulocale: '' };
+        },
+        disabled: function(state) {
+          return state.datlocaleprovider !== 'icu';
+        },
+        min_version: 150000
+      }, {
+        id: 'datcollversion', label: gettext('Collation Version'),
+        editable: false, type: 'text', group: gettext('Definition'),
+        mode: ['properties'], min_version: 150000
+      }, {
+        id: 'daticurules', label: gettext('ICU Rules'),
+        editable: false, type: 'text', group: gettext('Definition'),
+        readonly: function(state) {return !obj.isNew(state); },
+        deps: ['datlocaleprovider'],
+        depChange: (state)=>{
+          if (state.datlocaleprovider !== 'icu')
+            return { daticurules: '' };
+        },
+        disabled: function(state) {
+          return state.datlocaleprovider !== 'icu';
+        },
+        min_version: 160000
+      }, {
+        id: 'datbuiltinlocale', label: gettext('Builtin Locale'),
+        editable: false, type: 'select', group: gettext('Definition'),
+        readonly: function(state) {return !obj.isNew(state); },
+        options: this.fieldOptions.datbuiltinlocale,
+        deps: ['datlocaleprovider'],
+        depChange: (state)=>{
+          if (state.datlocaleprovider !== 'builtin')
+            return { datbuiltinlocale: '' };
+        },
+        disabled: function(state) {
+          return state.datlocaleprovider !== 'builtin';
+        },
+        min_version: 170000
+      }, {
         id: 'datconnlimit', label: gettext('Connection limit'),
         editable: false, type: 'int', group: gettext('Definition'),
         min: -1,
@@ -143,7 +248,7 @@ export default class DatabaseSchema extends BaseUISchema {
         id: 'is_template', label: gettext('Template?'),
         type: 'switch', group: gettext('Definition'),
         mode: ['properties', 'edit', 'create'], readonly: function(state) {return (state.is_sys_obj); },
-        helpMessage: gettext('Note: When the preferences setting \'show template databases\' is set to false, then template databases won\'t be displayed in the browser tree.'),
+        helpMessage: gettext('Note: When the preferences setting \'show template databases\' is set to false, then template databases won\'t be displayed in the object explorer.'),
         helpMessageMode: ['edit', 'create'],
       },{
         id: 'datallowconn', label: gettext('Allow connections?'),
@@ -191,7 +296,7 @@ export default class DatabaseSchema extends BaseUISchema {
       },{
         type: 'nested-tab', group: gettext('Default Privileges'),
         mode: ['edit'],
-        schema: new DefaultPrivSchema(this.getPrivilegeRoleSchema),
+        schema: new DefaultPrivSchema(this.getPrivilegeRoleSchema, this.nodeInfo),
       },
       {
         id: 'schema_res', label: gettext('Schema restriction'),
@@ -216,5 +321,14 @@ export default class DatabaseSchema extends BaseUISchema {
         },
       },
     ];
+  }
+
+  validate(state, setError) {
+    if (state.datlocaleprovider && this.isNew(state) &&
+        (state.datlocaleprovider == 'builtin' && !state.datbuiltinlocale)) {
+      setError('datbuiltinlocale', gettext('Please specify Builtin Locale.'));
+      return true;
+    }
+    return false;
   }
 }

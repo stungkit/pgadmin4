@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -69,22 +69,6 @@ class CheckForXssFeatureTest(BaseFeatureTest):
         self._check_xss_in_browser_tree()
         self._check_xss_in_sql_tab()
         self._check_xss_in_dependents_tab()
-        # sometime the tab for dependent does not show info, so refreshing
-        # the page and then again collapsing until the table node
-        # retry = 2
-        # while retry > 0:
-        #     try:
-        #         self.page.refresh_page()
-        #         self.page.wait_for_spinner_to_disappear()
-        #         self._tables_node_expandable()
-        #         self._check_xss_in_dependents_tab()
-        #         retry = 0
-        #     except WebDriverException as e:
-        #         print("Exception in dependent check {0}".format(retry),
-        #               file=sys.stderr)
-        #         if retry == 1:
-        #             raise e
-        #         retry -= 1
 
         # Query tool
         self.page.open_query_tool()
@@ -94,7 +78,7 @@ class CheckForXssFeatureTest(BaseFeatureTest):
         # Query tool view/edit data
         self.page.open_view_data(self.test_db)
         self._check_xss_view_data()
-        self.page.close_data_grid()
+        self.page.close_query_tool(prompt=False)
 
         # Explain module
         self.page.open_query_tool()
@@ -121,12 +105,12 @@ class CheckForXssFeatureTest(BaseFeatureTest):
 
     def _check_xss_in_browser_tree(self):
         print(
-            "\n\tChecking the Browser tree for XSS vulnerabilities",
+            "\n\tChecking the browser tree for XSS vulnerabilities",
             file=sys.stderr, end=""
         )
         # Fetch the inner html & check for escaped characters
         source_code = self.page.find_by_xpath(
-            "//*[@id='tree']"
+            "//*[@id='id-object-explorer']"
         ).get_attribute('innerHTML')
 
         self._check_escaped_characters(
@@ -144,12 +128,12 @@ class CheckForXssFeatureTest(BaseFeatureTest):
 
         # Wait till data is displayed in SQL Tab
         self.assertTrue(self.page.check_if_element_exist_by_xpath(
-            "//*[contains(@class,'CodeMirror-lines') and "
+            "//*[contains(@class,'cm-line') and "
             "contains(.,'CREATE TABLE')]", 10), "No data displayed in SQL tab")
 
         # Fetch the inner html & check for escaped characters
         source_code = self.page.find_by_xpath(
-            "//*[contains(@class,'CodeMirror-lines') and "
+            "//*[contains(@class,'cm-line') and "
             "contains(.,'CREATE TABLE')]"
         ).get_attribute('innerHTML')
 
@@ -172,10 +156,10 @@ class CheckForXssFeatureTest(BaseFeatureTest):
             try:
                 self.page.click_tab("Dependents")
                 source_code = \
-                    self.page.find_by_xpath(
-                        "//*[@id='5']/table/tbody/tr/td/div/div/div[2]/div"
-                        "/div[2]/div[1]/div/div/div/div/"
-                        "div/div[2]").get_attribute('innerHTML')
+                    self.page.find_by_css_selector(
+                        "#id-dependents div.pgrt-row-content:nth-child(1) "
+                        "div.pgrd-row-cell:nth-child(2)"
+                    ).get_attribute('innerHTML')
                 retry = 0
             except WebDriverException as e:
                 print("Exception in dependent tab {0}".format(retry),
@@ -224,7 +208,7 @@ class CheckForXssFeatureTest(BaseFeatureTest):
         self.page.find_by_css_selector(
             QueryToolLocators.btn_execute_query_css).click()
 
-        self.page.click_tab('id-history', rc_dock=True)
+        self.page.click_tab('Query History')
 
         # Check for history entry
         history_ele = self.page\
@@ -256,7 +240,7 @@ class CheckForXssFeatureTest(BaseFeatureTest):
             "Query tool (History Details-Message)"
         )
 
-        self.page.click_tab('id-query', rc_dock=True)
+        self.page.click_tab('Query')
 
     def _check_xss_view_data(self):
         print(
@@ -288,7 +272,7 @@ class CheckForXssFeatureTest(BaseFeatureTest):
         self.page.find_by_css_selector(
             QueryToolLocators.btn_explain).click()
         self.page.wait_for_query_tool_loading_indicator_to_disappear()
-        self.page.click_tab('id-explain', rc_dock=True)
+        self.page.click_tab('Explain')
 
         for idx in range(3):
             # Re-try logic

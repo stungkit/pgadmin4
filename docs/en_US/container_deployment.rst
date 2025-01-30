@@ -26,9 +26,9 @@ where *<tag name>* is one of the following:
    +==========+===============================================================================+
    | latest   | The most recent release.                                                      |
    +----------+-------------------------------------------------------------------------------+
-   | 6.14     | A specific version (6.14 in this case).                                       |
+   | 8.4      | A specific version (8.4 in this case).                                        |
    +----------+-------------------------------------------------------------------------------+
-   | 6        | the latest release of a specific major version (major version 6 in this case).|
+   | 8        | the latest release of a specific major version (major version 8 in this case).|
    +----------+-------------------------------------------------------------------------------+
    | snapshot | The latest nightly test build.                                                |
    +----------+-------------------------------------------------------------------------------+
@@ -42,23 +42,22 @@ maintenance functions to be executed. Multiple versions are included in the
 following directories to allow use with different versions of the database
 server:
 
-* PostgreSQL 10: */usr/local/pgsql-10*
-* PostgreSQL 11: */usr/local/pgsql-11*
 * PostgreSQL 12: */usr/local/pgsql-12*
 * PostgreSQL 13: */usr/local/pgsql-13*
 * PostgreSQL 14: */usr/local/pgsql-14*
+* PostgreSQL 15: */usr/local/pgsql-15*
+* PostgreSQL 16: */usr/local/pgsql-16*
 
 The default binary paths set in the container are as follows:
 
 .. code-block:: bash
 
     DEFAULT_BINARY_PATHS = {
+        'pg-17': '/usr/local/pgsql-17',
+        'pg-16': '/usr/local/pgsql-16',
         'pg-15': '/usr/local/pgsql-15',
         'pg-14': '/usr/local/pgsql-14',
-        'pg-13': '/usr/local/pgsql-13',
-        'pg-12': '/usr/local/pgsql-12',
-        'pg-11': '/usr/local/pgsql-11',
-        'pg-10': '/usr/local/pgsql-10'
+        'pg-13': '/usr/local/pgsql-13'
     }
 
 this may be changed in the :ref:`preferences`.
@@ -133,7 +132,30 @@ than using the default.
 
 Override the default file path for the server definition list. See the
 /pgadmin4/servers.json mapped file below for more information. See the format
-of the `JSON file <https://www.pgadmin.org/docs/pgadmin4/latest/import_export_servers.html#json-format>`_.
+of the `Servers JSON file <https://www.pgadmin.org/docs/pgadmin4/latest/import_export_servers.html#json-format>`_.
+
+**PGADMIN_PREFERENCES_JSON_FILE**
+
+*Default: /pgadmin4/preferences.json*
+
+Override the default file path for the preferences customization at the container creation. See the
+/pgadmin4/preferences.json mapped file below for more information. See the format
+of the `Preferences JSON file <https://www.pgadmin.org/docs/pgadmin4/latest/preferences.html#json-format>`_.
+
+**PGADMIN_CUSTOM_CONFIG_DISTRO_FILE**
+
+*Default: /pgadmin4/config_distro.py*
+
+Override the default file path for the pgadmin configurations file.This can be used while provisioning
+container with read only root file system to achieve a more secure pgadmin4 deployment for kubernetes.
+Note that if you are externally mapping this file, then environment variables passed using *PGADMIN_CONFIG_*
+suffix will be ignored.
+
+**PGPASS_FILE**
+
+*Default: <null>*
+This varible should be set to if you want to pass password using pgpass
+file for the servers added in pgadmin.
 
 **GUNICORN_ACCESS_LOGFILE**
 
@@ -226,6 +248,14 @@ the container environment through *PGADMIN_CONFIG_* prefixed variables.
 If this file is mapped, server definitions found in it will be loaded at launch
 time. This allows connection information to be pre-loaded into the instance of
 pgAdmin in the container. Note that server definitions are only loaded on first
+launch, i.e. when the configuration database is created, and not on subsequent
+launches using the same configuration database.
+
+**/pgadmin4/preferences.json**
+
+If this file is mapped, preferences defined in it will be updated at launch
+time. This allows customization of preferences settings into the instance of
+pgAdmin in the container. Note that preferences are only set on first
 launch, i.e. when the configuration database is created, and not on subsequent
 launches using the same configuration database.
 

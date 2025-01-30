@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##############################################################################
@@ -22,6 +22,7 @@ from pgadmin.utils.ajax import bad_request
 from .utils import user_supported_mfa_methods, mfa_user_registered, \
     mfa_suppored_methods, ValidationException, mfa_delete, is_mfa_enabled, \
     is_mfa_session_authenticated
+from pgadmin.utils.constants import MessageType
 
 
 _INDEX_URL = "browser.index"
@@ -36,8 +37,8 @@ def __handle_mfa_validation_request(
     mfa_method: str, user_mfa_auths: dict, form_data: dict
 ) -> None:
     """
-    An internal utlity function to execute mfa.validate(...) method in case, it
-    matched the following conditions:
+    An internal utility function to execute mfa.validate(...) method in case,
+    it matched the following conditions:
     1. Method specified is a valid and in the supported methods list.
     2. User has registered for this auth method.
 
@@ -118,11 +119,11 @@ def validate_view() -> Response:
                 "MFA validation failed for the user '{}' with an error: "
                 "{}"
             ).format(current_user.username, str(ve)))
-            flash(str(ve), "danger")
+            flash(str(ve), MessageType.ERROR)
             return_code = 401
         except Exception as ex:
             current_app.logger.exception(ex)
-            flash(str(ex), "danger")
+            flash(str(ex), MessageType.ERROR)
             return_code = 500
 
     mfa_views = {
@@ -133,9 +134,14 @@ def validate_view() -> Response:
     if mfa_method is None and len(mfa_views) > 0:
         list(mfa_views.items())[0][1]['selected'] = True
 
+    send_email_url = None
+    if 'email' in mfa_views:
+        send_email_url = url_for("mfa.send_email_code")
+
     return Response(render_template(
         "mfa/validate.html", _=_, views=mfa_views, base64=base64,
-        logout_url=get_logout_url()
+        logout_url=get_logout_url(),
+        send_email_url=send_email_url
     ), return_code, headers=_NO_CACHE_HEADERS, mimetype="text/html")
 
 
@@ -166,7 +172,8 @@ def _mfa_registration_view(
 
     if form_data[mfa.name] == 'SETUP':
         if supported_mfa['registered'] is True:
-            flash(_("'{}' is already registerd'").format(mfa.label), "success")
+            flash(_("'{}' is already registered'").format(mfa.label),
+                  MessageType.SUCCESS)
             return None
 
         return mfa.registration_view(form_data)
@@ -174,13 +181,13 @@ def _mfa_registration_view(
     if mfa_delete(mfa.name) is True:
         flash(_(
             "'{}' unregistered from the authentication list."
-        ).format(mfa.label), "success")
+        ).format(mfa.label), MessageType.SUCCESS)
 
         return None
 
     flash(_(
         "'{}' is not found in the authentication list."
-    ).format(mfa.label), "warning")
+    ).format(mfa.label), MessageType.WARNING)
 
     return None
 
@@ -231,7 +238,7 @@ def __handle_registration_view_for_post_method(
         _next_url (str)  : Redirect to which url, when clicked on the
                            'continue' button on the registration page.
         _mfa_auths (dict): A dict object returned by the method -
-                           'mfa_suppored_methods'.
+                           'mfa_supported_methods'.
 
     Returns:
         (Union[str, None], Union[Response, None], Union[dict, None]):
@@ -255,7 +262,7 @@ def __handle_registration_view_for_post_method(
         if view is False:
             if next_url != 'internal':
                 return None, redirect(next_url), None
-            flash(_("Please close the dialog."), "info")
+            flash(_("Please close the dialog."), MessageType.INFO)
 
         if view is not None:
             return None, Response(
@@ -282,7 +289,7 @@ def registration_view() -> Response:
     A url end-point to register/deregister an authentication method.
 
     It supports two HTTP methods:
-    * GET : Generate a view listing all the suppoted list with 'Setup',
+    * GET : Generate a view listing all the supported list with 'Setup',
             or 'Delete' buttons. If user has registered for the auth method, it
             will render a 'Delete' button next to it, and 'Setup' button
             otherwise.
@@ -336,7 +343,8 @@ def registration_view() -> Response:
             )
         elif is_mfa_session_authenticated() is False and \
                 found_one_mfa is True:
-            flash(_("Complete the authentication process first"), "danger")
+            flash(_("Complete the authentication process first"),
+                  MessageType.ERROR)
             return redirect(login_url("mfa.validate", next_url=next_url))
 
     return Response(render_template(

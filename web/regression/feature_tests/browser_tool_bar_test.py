@@ -2,19 +2,23 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
 
 import sys
 import secrets
+import time
+
+from selenium.webdriver.support.wait import WebDriverWait
 
 from regression.python_test_utils import test_utils
 from regression.feature_utils.locators import BrowserToolBarLocators
 from regression.feature_utils.base_feature_test import BaseFeatureTest
 from regression.feature_utils.tree_area_locators import TreeAreaLocators
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 
 
 class BrowserToolBarFeatureTest(BaseFeatureTest):
@@ -67,11 +71,20 @@ class BrowserToolBarFeatureTest(BaseFeatureTest):
                                                            'db_password'],
                                                        self.test_db),
                         'Tree is not expanded to database node')
+
+        WebDriverWait(self.driver, 3).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR,
+                 BrowserToolBarLocators.open_query_tool_button_css)
+            ), "Timed out waiting for execute query button to appear"
+        )
+
         self.assertTrue(self.page.retry_click(
             (By.CSS_SELECTOR,
              BrowserToolBarLocators.open_query_tool_button_css),
             (By.CSS_SELECTOR, BrowserToolBarLocators.query_tool_panel_css)),
             'Query tool did not open on clicking Query Tool button.')
+
         self.page.close_query_tool(prompt=False)
 
     def test_view_data_tool_button(self):
@@ -86,6 +99,13 @@ class BrowserToolBarFeatureTest(BaseFeatureTest):
             TreeAreaLocators.table_node(self.test_table_name))
         table_node.click()
 
+        WebDriverWait(self.driver, 3).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR,
+                 BrowserToolBarLocators.view_table_data_button_css)
+            ), "Timed out waiting for execute query button to appear"
+        )
+
         self.assertTrue(self.page.retry_click(
             (By.CSS_SELECTOR,
              BrowserToolBarLocators.view_table_data_button_css),
@@ -97,7 +117,7 @@ class BrowserToolBarFeatureTest(BaseFeatureTest):
         self.assertTrue(self.page.retry_click(
             (By.CSS_SELECTOR,
              BrowserToolBarLocators.filter_data_button_css),
-            (By.XPATH, BrowserToolBarLocators.filter_box_css)),
+            (By.CSS_SELECTOR, BrowserToolBarLocators.filter_box_css)),
             'Filter dialogue did not open on clicking filter button.')
-        self.page.click_modal('Close')
+        self.page.click_modal('Close', docker=True)
         self.page.close_query_tool(prompt=False)

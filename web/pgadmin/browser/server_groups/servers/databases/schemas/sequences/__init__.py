@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -64,7 +64,9 @@ class SequenceModule(SchemaChildModule):
         """
         Generate the sequence node
         """
-        yield self.generate_browser_collection_node(scid)
+        if self.has_nodes(sid, did, scid=scid,
+                          base_template_path=SequenceView.BASE_TEMPLATE_PATH):
+            yield self.generate_browser_collection_node(scid)
 
     @property
     def script_load(self):
@@ -91,6 +93,7 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
     node_type = blueprint.node_type
     node_label = "Sequence"
     node_icon = "icon-%s" % node_type
+    BASE_TEMPLATE_PATH = 'sequences/sql/#{0}#'
 
     parent_ids = [
         {'type': 'int', 'id': 'gid'},
@@ -148,7 +151,7 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
                     self.datistemplate = self.manager.db_info[
                         kwargs['did']]['datistemplate']
 
-                self.template_path = 'sequences/sql/#{0}#'.format(
+                self.template_path = self.BASE_TEMPLATE_PATH.format(
                     self.manager.version
                 )
                 self.acl = ['r', 'w', 'U']
@@ -229,7 +232,9 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    description=row['comment']
+
                 ),
                 status=200
             )
@@ -240,7 +245,8 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
                     row['oid'],
                     scid,
                     row['name'],
-                    icon=self.node_icon
+                    icon=self.node_icon,
+                    description=row['comment']
                 ))
 
         return make_json_response(
@@ -537,7 +543,7 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
         data = request.form if request.form else json.loads(
             request.data
         )
-        sql, name = self.get_SQL(gid, sid, did, data, scid, seid)
+        sql, _ = self.get_SQL(gid, sid, did, data, scid, seid)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -563,7 +569,8 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
                 seid,
                 row['schema'],
                 row['name'],
-                icon=self.node_icon
+                icon=self.node_icon,
+                description=row['comment']
             )
         )
 
@@ -607,7 +614,7 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
                             "Could not find the required parameter ({})."
                         ).format(arg)
                     )
-        sql, name = self.get_SQL(gid, sid, did, data, scid, seid)
+        sql, _ = self.get_SQL(gid, sid, did, data, scid, seid)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -746,8 +753,8 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
             result['schema'] = target_schema
 
         result = self._formatter(result, scid, seid)
-        sql, name = self.get_SQL(gid, sid, did, result, scid,
-                                 add_not_exists_clause=True)
+        sql, _ = self.get_SQL(gid, sid, did, result, scid,
+                              add_not_exists_clause=True)
         # Most probably this is due to error
         if not isinstance(sql, str):
             return sql
@@ -970,7 +977,7 @@ class SequenceView(PGChildNodeView, SchemaDiffObjectCompare):
         if data:
             if target_schema:
                 data['schema'] = target_schema
-            sql, name = self.get_SQL(gid, sid, did, data, scid, oid)
+            sql, _ = self.get_SQL(gid, sid, did, data, scid, oid)
         else:
             if drop_sql:
                 sql = self.delete(gid=gid, sid=sid, did=did,

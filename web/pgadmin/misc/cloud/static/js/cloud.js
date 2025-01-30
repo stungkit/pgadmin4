@@ -2,17 +2,16 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
 import React from 'react';
-import ReactDOM from 'react-dom';
-import Theme from 'sources/Theme';
 import CloudWizard from './CloudWizard';
 import getApiInstance from '../../../../static/js/api_instance';
-import Notifier from '../../../../static/js/helpers/Notifier';
-
+import { BROWSER_PANELS } from '../../../../browser/static/js/constants';
+import pgAdmin from 'sources/pgadmin';
+import current_user from 'pgadmin.user_management.current_user';
 
 // Cloud Wizard
 define('pgadmin.misc.cloud', [
@@ -45,7 +44,7 @@ define('pgadmin.misc.cloud', [
         priority: 15,
         label: gettext('Deploy Cloud Instance...'),
         icon: 'wcTabIcon icon-server',
-        enable: true,
+        enable: 'canCreate',
         data: {action: 'create'},
         category: 'register',
         node: 'server_group',
@@ -57,7 +56,7 @@ define('pgadmin.misc.cloud', [
         priority: 15,
         label: gettext('Deploy Cloud Instance...'),
         icon: 'wcTabIcon icon-server',
-        enable: true,
+        enable: 'canCreate',
         data: {action: 'create'},
         category: 'register',
         node: 'server',
@@ -65,6 +64,10 @@ define('pgadmin.misc.cloud', [
 
       pgBrowser.add_menus(menus);
       return this;
+    },
+    canCreate: function(node){
+      let serverOwner = node.user_id;
+      return (serverOwner == current_user.id || _.isUndefined(serverOwner));
     },
 
     // Callback to draw Wizard Dialog
@@ -74,30 +77,26 @@ define('pgadmin.misc.cloud', [
         d = this.d = i ? t.itemData(i) : undefined,
         info = this.info = pgBrowser.tree.getTreeNodeHierarchy(i);
 
-      // Register dialog panel
-      pgBrowser.Node.registerUtilityPanel();
-      let panel = pgBrowser.Node.addUtilityPanel(920, 650),
-        j = panel.$container.find('.obj_properties').first();
-      panel.title(gettext('Deploy Cloud Instance'));
-
-      panel.on(window.wcDocker.EVENT.CLOSED, function() {
-        const axiosApi = getApiInstance();
-        let _url = url_for('cloud.clear_cloud_session');
-        axiosApi.post(_url)
-          .then(() => {/*This is intentional (SonarQube)*/})
-          .catch((error) => {
-            Notifier.error(gettext(`Error while clearing cloud wizard data: ${error.response.data.errormsg}`));
-          });
-      });
-
-      ReactDOM.render(
-        <Theme>
-          <CloudWizard nodeInfo={info} nodeData={d} cloudPanel={panel}
+      const panelTitle = gettext('Deploy Cloud Instance');
+      const panelId = BROWSER_PANELS.CLOUD_WIZARD;
+      pgAdmin.Browser.docker.default_workspace.openDialog({
+        id: panelId,
+        title: panelTitle,
+        manualClose: true,
+        content: (
+          <CloudWizard nodeInfo={info} nodeData={d} cloudPanelId={panelId}
             onClose={() => {
-              ReactDOM.unmountComponentAtNode(j[0]);
-              panel.close();
+              const axiosApi = getApiInstance();
+              let _url = url_for('cloud.clear_cloud_session');
+              axiosApi.post(_url)
+                .then(() => {/*This is intentional (SonarQube)*/})
+                .catch((error) => {
+                  pgAdmin.Browser.notifier.error(gettext(`Error while clearing cloud wizard data: ${error.response.data.errormsg}`));
+                });
+              pgAdmin.Browser.docker.default_workspace.close(panelId, true);
             }}/>
-        </Theme>, j[0]);
+        )
+      }, pgAdmin.Browser.stdW.lg, pgAdmin.Browser.stdH.lg);
     },
   };
 

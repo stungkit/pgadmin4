@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2022, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -76,7 +76,7 @@ class Driver(BaseDriver):
                     session['__pgsql_server_managers'].copy()
                 for server in \
                     Server.query.filter_by(
-                        user_id=current_user.id):
+                        user_id=current_user.id, is_adhoc=0):
                     manager = managers[str(server.id)] = \
                         ServerManager(server)
                     if server.id in session_managers:
@@ -279,9 +279,10 @@ class Driver(BaseDriver):
 
         if conn:
             try:
-                if type(conn) != psycopg.Connection:
+                if not isinstance(conn, psycopg.Connection) and \
+                        not isinstance(conn, psycopg.AsyncConnection):
                     conn = conn.conn
-                res = psycopg.sql.Literal(value).as_string(conn)
+                res = psycopg.sql.Literal(value).as_string(conn).strip()
             except Exception:
                 print("Exception", value)
 
@@ -335,7 +336,7 @@ class Driver(BaseDriver):
             return True
         # certain types should not be quoted even though it contains a space.
         # Evilness.
-        elif for_types and value[-2:] == "[]":
+        elif for_types and value.endswith('[]'):
             val_noarray = value[:-2]
 
         if for_types and val_noarray.lower() in [

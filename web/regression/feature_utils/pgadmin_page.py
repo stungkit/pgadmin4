@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -62,14 +62,22 @@ class PgadminPage:
                 self.driver.refresh()
                 try:
                     WebDriverWait(self.driver, 3).until(EC.alert_is_present())
-                    self.driver.switch_to_alert().accept()
+                    self.driver.switch_to.alert.accept()
                     attempt = attempt + 1
                 except TimeoutException:
                     attempt = attempt + 1
 
         self.click_element(self.find_by_css_selector(
             "li[data-label='Reset Layout']"))
-        self.click_modal('OK')
+        self.click_modal('Yes', docker=True)
+        confirmation_alert = True
+        try:
+            WebDriverWait(self.driver, 1).until(EC.alert_is_present())
+        except TimeoutException:
+            confirmation_alert = False
+
+        if confirmation_alert:
+            self.driver.switch_to.alert.accept()
         self.wait_for_reloading_indicator_to_disappear()
 
     def refresh_page(self):
@@ -83,14 +91,18 @@ class PgadminPage:
         except TimeoutException:
             pass
 
-    def click_modal(self, button_text):
+    def click_modal(self, button_text, docker=False):
         time.sleep(0.5)
         # Find active dialog in case of multiple dialog
         # & click on that dialog
 
         # In case of react dialog we use different xpath
-        modal_button = self.find_by_xpath(
-            "//span[text()='{}']".format(button_text))
+        if docker:
+            modal_button = self.find_by_css_selector(
+                ".dock-fbox button[data-label='{}']".format(button_text))
+        else:
+            modal_button = self.find_by_css_selector(
+                ".MuiDialog-root button[data-label='{}']".format(button_text))
 
         self.click_element(modal_button)
 
@@ -143,8 +155,22 @@ class PgadminPage:
         self.click_element(self.find_by_css_selector(
             "li[data-label='Query Tool']"))
 
-        self.wait_for_element_to_be_visible(
-            self.driver, "//div[@id='btn-conn-status']", 5)
+        self.driver.switch_to.default_content()
+        WebDriverWait(self.driver, 10).until(
+            EC.frame_to_be_available_and_switch_to_it(
+                (By.TAG_NAME, "iframe")))
+
+        WebDriverWait(self.driver, self.timeout).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR, QueryToolLocators.btn_execute_query_css)
+            ), "Timed out waiting for execute query button to appear"
+        )
+
+        # Need to add this as by default tool tip is shown for file
+        ActionChains(self.driver).move_to_element(
+            self.driver.find_element(
+                By.CSS_SELECTOR,
+                QueryToolLocators.btn_execute_query_css)).perform()
 
     def open_view_data(self, table_name):
         self.click_element(self.find_by_css_selector(
@@ -189,12 +215,10 @@ class PgadminPage:
 
     def close_query_tool(self, prompt=True):
         self.driver.switch_to.default_content()
-        tab = self.find_by_xpath(
-            "//div[@class='wcPanelTab wcPanelTabActive']")
-        ActionChains(self.driver).context_click(tab).perform()
-        self.find_by_xpath(
-            "//li[contains(@class, 'context-menu-item')]/span[contains(text(),"
-            " 'Remove Panel')]").click()
+        time.sleep(.5)
+        self.find_by_css_selector("div[data-dockid='id-main'] "
+                                  ".dock-tab.dock-tab-active "
+                                  "button[data-label='Close']").click()
         if prompt:
             self.driver.switch_to.frame(
                 self.driver.find_elements(By.TAG_NAME, "iframe")[0])
@@ -258,6 +282,7 @@ class PgadminPage:
                 option_set_as_required = True
                 break
             else:
+                self.driver.implicitly_wait(2)
                 menu_option.click()
                 time.sleep(0.2)
                 if menu_option.get_attribute('data-checked') == is_selected:
@@ -316,11 +341,6 @@ class PgadminPage:
         return self._open_query_tool_bar_drop_down(
             QueryToolLocators.btn_explain_options_dropdown)
 
-    def close_data_grid(self):
-        self.driver.switch_to.default_content()
-        xpath = "//*[@id='dockerContainer']/div/div[3]/div/div[2]/div[1]"
-        self.click_element(self.find_by_xpath(xpath))
-
     def remove_server(self, server_config):
         self.driver.switch_to.default_content()
         server_to_remove = self.check_if_element_exists_with_scroll(
@@ -334,7 +354,7 @@ class PgadminPage:
             self.click_element(self.find_by_css_selector(
                 "li[data-label='Remove Server']"))
             self.driver.switch_to.default_content()
-            self.click_modal('Yes')
+            self.click_modal('Delete')
             time.sleep(1)
         else:
             print(server_config['name'] + " server is not removed",
@@ -563,9 +583,17 @@ class PgadminPage:
                     server_child_node_exp_status_xpath, 1):
                 server_child_expanded = True
             else:
+                # Check for child node element
                 child_node_ele = self.check_if_element_exists_with_scroll(
                     server_child_node_xpath)
-                if not child_node_ele:
+                # If child node element present try to expand it by clicking
+                # and if click and expansion is successful, return True
+                if child_node_ele:
+                    server_child_expanded = self.click_to_expand_tree_node(
+                        child_node_ele, server_child_node_exp_status_xpath)
+                if not child_node_ele or not server_child_expanded:
+                    # As child node element is not expanded,
+                    # collapse database node
                     databases_node_xpath = TreeAreaLocators.server_child_node(
                         server_name, 'Databases')
                     databases_node = self.check_if_element_exists_with_scroll(
@@ -576,12 +604,13 @@ class PgadminPage:
                         databases_node).perform()
                     child_node_ele = self.check_if_element_exists_with_scroll(
                         server_child_node_xpath)
+                    server_child_expanded = self.click_to_expand_tree_node(
+                        child_node_ele, server_child_node_exp_status_xpath)
 
-                server_child_expanded = self.click_to_expand_tree_node(
-                    child_node_ele, server_child_node_exp_status_xpath)
                 if not server_child_expanded:
                     print("Child is not expanded after clicking ",
                           file=sys.stderr)
+                return server_child_expanded
         else:
             print("The server/previous nodes not expanded", file=sys.stderr)
         return server_child_expanded
@@ -822,23 +851,25 @@ class PgadminPage:
         self.driver.execute_script(
             "arguments[0].dispatchEvent(new Event('blur'));", field)
 
-    def fill_input(self, field, field_content, input_keys=False,
-                   key_after_input=Keys.ARROW_DOWN):
-        try:
-            attempt = 0
-            for attempt in range(0, 3):
+    def fill_input(
+        self, field, field_content, input_keys=False,
+        key_after_input=Keys.ARROW_DOWN
+    ):
+        for attempt in range(0, 3):
+            try:
                 field.click()
                 break
-        except Exception as e:
-            time.sleep(.2)
-            if attempt == 2:
-                raise e
+            except Exception as e:
+                time.sleep(.2)
+                if attempt == 2:
+                    raise e
+
         # Use send keys if input_keys true, else use javascript to set content
         if input_keys:
-            backspaces = [Keys.BACKSPACE] * len(field.get_attribute('value'))
-            field.send_keys(backspaces)
-            field.send_keys(str(field_content))
-            self.wait_for_input_by_element(field, field_content)
+            # Clear the existing content first
+            self.clear_edit_box(field)
+            # Send the keys one by one.
+            [field.send_keys(c) for c in str(field_content)]
         else:
             self.driver.execute_script("arguments[0].value = arguments[1]",
                                        field, field_content)
@@ -853,7 +884,7 @@ class PgadminPage:
                                  key_after_input=Keys.ARROW_DOWN,
                                  loose_focus=False):
         field = self.find_by_css_selector(
-            "input[name='" + field_name + "']:not(:disabled)")
+            "input[name='" + field_name + "']:read-write")
         self.fill_input(field, field_content, input_keys=input_keys,
                         key_after_input=key_after_input)
 
@@ -878,14 +909,13 @@ class PgadminPage:
                 driver.switch_to.frame(
                     driver.find_element(By.TAG_NAME, "iframe"))
                 element = driver.find_element(
-                    By.CSS_SELECTOR, "#sqleditor-container .CodeMirror")
+                    By.CSS_SELECTOR,
+                    "#sqleditor-container #id-query .cm-content")
                 if element.is_displayed() and element.is_enabled():
                     return element
             except (NoSuchElementException, WebDriverException):
                 return False
-
         time.sleep(1)
-        # self.wait_for_query_tool_loading_indicator_to_disappear(12)
 
         retry = 2
         while retry > 0:
@@ -894,9 +924,7 @@ class PgadminPage:
                 WebDriverWait(self.driver, 10).until(
                     EC.frame_to_be_available_and_switch_to_it(
                         (By.TAG_NAME, "iframe")))
-                self.find_by_css_selector(
-                    "div.dock-tab-btn[id$=\"id-query\"]").click()
-                # self.find_by_xpath("//div[text()='Query Editor']").click()
+                self.find_by_xpath("//span[text()='Query']").click()
 
                 codemirror_ele = WebDriverWait(
                     self.driver, timeout=self.timeout, poll_frequency=0.01) \
@@ -919,26 +947,16 @@ class PgadminPage:
             action.perform()
         else:
             self.driver.execute_script(
-                "arguments[0].CodeMirror.setValue(arguments[1]);"
-                "arguments[0].CodeMirror.setCursor("
-                "arguments[0].CodeMirror.lineCount(),0);",
+                "arguments[0].cmView.view.setValue(arguments[1]);"
+                "arguments[0].cmView.view.setCursor("
+                "arguments[0].cmView.view.lineCount(),-1);",
                 codemirror_ele, field_content)
 
-    def click_tab(self, tab_name, rc_dock=False):
-        if rc_dock:
-            tab = self.find_by_css_selector(
-                NavMenuLocators.rcdock_tab.format(tab_name))
-            self.click_element(tab)
-            return
-
-        WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(
-            (By.XPATH, NavMenuLocators.select_tab_xpath.format(tab_name))))
-        while True:
-            tab = self.find_by_xpath(
-                NavMenuLocators.select_tab_xpath.format(tab_name))
-            self.click_element(tab)
-            if 'wcPanelTabActive' in tab.get_attribute('class'):
-                break
+    def click_tab(self, tab_name):
+        tab = self.find_by_css_selector(
+            NavMenuLocators.select_tab.format(tab_name))
+        self.click_element(tab)
+        time.sleep(0.5)
 
     def wait_for_input_by_element(self, element, content):
         def input_field_has_content(driver):
@@ -1128,28 +1146,40 @@ class PgadminPage:
                 if f_scroll > 0:
                     bottom_ele = self.driver.find_element(
                         By.XPATH,
-                        "//div[@id='tree']/div/div/div/div/div[last()]")
-                    bottom_ele_location = int(
-                        bottom_ele.value_of_css_property('top').split("px")[0])
+                        "//div[@id='id-object-explorer']"
+                        "/div/div/div/div/div/div[last()]")
+                    bottom_ele_top = bottom_ele.value_of_css_property('top')
+                    bottom_ele_location = 1
+
+                    if (bottom_ele_top != 'auto'):
+                        bottom_ele_location = int(
+                            bottom_ele_top.split("px")[0]
+                        )
 
                     if tree_height - bottom_ele_location < 25:
-                        f_scroll = 0
+                        f_scroll = bottom_ele_location - 25
                     else:
                         self.driver.execute_script(
-                            self.js_executor_scrollintoview_arg, bottom_ele)
+                            self.js_executor_scrollintoview_arg, bottom_ele
+                        )
                         f_scroll -= 1
                 elif r_scroll > 0:
                     top_el = self.driver.find_element(
                         By.XPATH,
-                        "//div[@id='tree']/div/div/div/div/div[1]")
-                    top_el_location = int(
-                        top_el.value_of_css_property('top').split("px")[0])
+                        "//div[@id='id-object-explorer']"
+                        "/div/div/div/div/div[1]")
+                    top_el_top = top_el.value_of_css_property('top')
+                    top_el_location = 0
+
+                    if (top_el_top != 'auto'):
+                        top_el_location = int(top_el_top.split("px")[0])
 
                     if (tree_height - top_el_location) == tree_height:
                         r_scroll = 0
                     else:
-                        webdriver.ActionChains(self.driver).move_to_element(
-                            top_el).perform()
+                        self.driver.execute_script(
+                            self.js_executor_scrollintoview_arg, top_el
+                        )
                         r_scroll -= 1
                 else:
                     break
@@ -1223,7 +1253,8 @@ class PgadminPage:
                 WebDriverWait(self.driver, 10).until(
                     EC.visibility_of_element_located(verify_locator))
                 click_status = True
-            except Exception:
+            except Exception as e:
+                print(e)
                 attempt += 1
         return click_status
 
@@ -1267,3 +1298,30 @@ class PgadminPage:
     def clear_edit_box(self, edit_box_webelement):
         while edit_box_webelement.get_attribute("value") != "":
             edit_box_webelement.send_keys(Keys.BACK_SPACE)
+
+    def check_utility_error(self):
+        wait = WebDriverWait(self.driver, 2)
+        try:
+            is_error = wait.until(EC.presence_of_element_located(
+                (By.XPATH, "//div[contains(@class,'MuiDialogTitle-root')]"
+                           "//div[text()='Utility not found']")
+            ))
+        except TimeoutException:
+            is_error = None
+
+        # If debugger plugin is not found
+        if is_error and is_error.text == "Utility not found":
+            click = True
+            while click:
+                try:
+                    self.click_modal('OK', docker=True)
+                    wait.until(EC.invisibility_of_element(
+                        (By.XPATH, "//div[@class ='MuiDialogTitle-root']"
+                                   "//div[text()='Utility not found']")
+                    ))
+                    click = False
+                except TimeoutException:
+                    pass
+            return True
+        else:
+            return False

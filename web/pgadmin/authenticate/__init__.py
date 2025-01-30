@@ -2,7 +2,7 @@
 #
 # pgAdmin 4 - PostgreSQL Tools
 #
-# Copyright (C) 2013 - 2023, The pgAdmin Development Team
+# Copyright (C) 2013 - 2025, The pgAdmin Development Team
 # This software is released under the PostgreSQL Licence
 #
 ##########################################################################
@@ -12,27 +12,40 @@
 import config
 import copy
 import functools
+from threading import Lock
 
 from flask import current_app, flash, Response, request, url_for, \
     session, redirect, render_template
 from flask_babel import gettext
 from flask_security.views import _security, _ctx
-from flask_security.utils import get_post_logout_redirect, logout_user,\
-    config_value
+from flask_security.utils import logout_user, config_value
 
 from flask_login import current_user
 from flask_socketio import disconnect, ConnectionRefusedError
 
-
 from pgadmin.model import db, User
-from pgadmin.utils import PgAdminModule, get_safe_post_login_redirect
-from pgadmin.utils.constants import KERBEROS, INTERNAL, OAUTH2, LDAP
+from pgadmin.utils.constants import KERBEROS, INTERNAL, OAUTH2, LDAP,\
+    MessageType
+import pgadmin.utils as pga_utils
 from pgadmin.authenticate.registry import AuthSourceRegistry
 
 MODULE_NAME = 'authenticate'
 auth_obj = None
 
 _URL_WITH_NEXT_PARAM = "{0}?next={1}"
+
+
+class AuthLocker:
+    """Implementing lock while authentication."""
+    lock = Lock()
+
+    def __enter__(self):
+        self.lock.acquire()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        if self.lock.locked():
+            self.lock.release()
 
 
 def get_logout_url() -> str:
@@ -69,7 +82,7 @@ def socket_login_required(f):
     return wrapped
 
 
-class AuthenticateModule(PgAdminModule):
+class AuthenticateModule(pga_utils.PgAdminModule):
     def get_exposed_url_endpoints(self):
         return ['authenticate.login']
 
@@ -83,7 +96,15 @@ def login():
     Entry point for all the authentication sources.
     The user input will be validated and authenticated.
     """
-    form = _security.login_form()
+    with AuthLocker():
+        return _login()
+
+
+def _login():
+    """
+    Internal authentication process locked by a mutex.
+    """
+    form = _security.forms.get('login_form').cls(request.form)
     if OAUTH2 in config.AUTHENTICATION_SOURCES \
             and 'oauth2_button' in request.form:
         # Sending empty form as oauth2 does not require form attribute
@@ -110,9 +131,9 @@ def login():
         if user.login_attempts >= config.MAX_LOGIN_ATTEMPTS > 0:
             flash(gettext('Your account is locked. Please contact the '
                           'Administrator.'),
-                  'warning')
+                  MessageType.WARNING)
             logout_user()
-            return redirect(get_post_logout_redirect())
+            return redirect(pga_utils.get_safe_post_logout_redirect())
 
     # Validate the user
     if not auth_obj.validate():
@@ -136,9 +157,9 @@ def login():
                 if flash_login_attempt_error:
                     error = error + flash_login_attempt_error
                     flash_login_attempt_error = None
-                flash(error, 'warning')
+                flash(error, MessageType.WARNING)
 
-        return redirect(get_post_logout_redirect())
+        return redirect(pga_utils.get_safe_post_logout_redirect())
 
     # Authenticate the user
     status, msg = auth_obj.authenticate()
@@ -153,8 +174,8 @@ def login():
                 return redirect('{0}?next={1}'.format(url_for(
                     'authenticate.kerberos_login'), url_for('browser.index')))
 
-            flash(msg, 'danger')
-            return redirect(get_post_logout_redirect())
+            flash(msg, MessageType.ERROR)
+            return redirect(pga_utils.get_safe_post_logout_redirect())
 
         session['auth_source_manager'] = current_auth_obj
 
@@ -164,7 +185,7 @@ def login():
 
         if 'auth_obj' in session:
             session.pop('auth_obj')
-        return redirect(get_safe_post_login_redirect())
+        return redirect(pga_utils.get_safe_post_login_redirect())
 
     elif isinstance(msg, Response):
         return msg
@@ -172,8 +193,8 @@ def login():
         return msg
     if 'auth_obj' in session:
         session.pop('auth_obj')
-    flash(msg, 'danger')
-    form_class = _security.login_form
+    flash(msg, MessageType.ERROR)
+    form_class = _security.forms.get('login_form').cls
     form = form_class()
 
     return _security.render_template(
@@ -246,7 +267,7 @@ class AuthSourceManager:
             if status:
                 return True
         if err_msg:
-            flash(err_msg, 'warning')
+            flash(err_msg, MessageType.WARNING)
         return False
 
     def authenticate(self):
@@ -267,6 +288,10 @@ class AuthSourceManager:
                 if msg is not None and 'username' in msg:
                     self.form._fields['email'].data = msg['username']
                 return status, msg
+            else:
+                current_app.logger.debug(
+                    "Authentication initiated via source: %s is failed." %
+                    source.get_source_name())
 
         return status, msg
 

@@ -2,7 +2,7 @@
 //
 // pgAdmin 4 - PostgreSQL Tools
 //
-// Copyright (C) 2013 - 2023, The pgAdmin Development Team
+// Copyright (C) 2013 - 2025, The pgAdmin Development Team
 // This software is released under the PostgreSQL Licence
 //
 //////////////////////////////////////////////////////////////
@@ -15,6 +15,127 @@ import {default as supportedServers} from 'pgadmin.server.supported_servers';
 import current_user from 'pgadmin.user_management.current_user';
 import { isEmptyString } from 'sources/validators';
 import VariableSchema from './variable.ui';
+import { getRandomColor } from '../../../../../static/js/utils';
+
+class TagsSchema extends BaseUISchema {
+  get idAttribute() { return 'old_text'; }
+
+  get baseFields() {
+    return [
+      {
+        id: 'text', label: gettext('Text'), cell: 'text', group: null,
+        mode: ['create', 'edit'], noEmpty: true, controlProps: {
+          maxLength: 30,
+        }
+      },
+      {
+        id: 'color', label: gettext('Color'), cell: 'color', group: null,
+        mode: ['create', 'edit'], controlProps: {
+          input: true,
+        }
+      },
+    ];
+  }
+
+  getNewData(data) {
+    return {
+      ...data,
+      color: getRandomColor(),
+    };
+  }
+}
+
+export function getConnectionParameters() {
+  return [{
+    'value': 'hostaddr', 'label': gettext('Host address'), 'vartype': 'string'
+  }, {
+    'value': 'passfile', 'label': gettext('Password file'), 'vartype': 'file'
+  }, {
+    'value': 'channel_binding', 'label': gettext('Channel binding'), 'vartype': 'enum',
+    'enumvals': [gettext('prefer'), gettext('require'), gettext('disable')],
+    'min_server_version': '13'
+  }, {
+    'value': 'connect_timeout', 'label': gettext('Connection timeout (seconds)'), 'vartype': 'integer'
+  }, {
+    'value': 'client_encoding', 'label': gettext('Client encoding'), 'vartype': 'string'
+  },  {
+    'value': 'options', 'label': gettext('Options'), 'vartype': 'string'
+  }, {
+    'value': 'application_name', 'label': gettext('Application name'), 'vartype': 'string'
+  }, {
+    'value': 'fallback_application_name', 'label': gettext('Fallback application name'), 'vartype': 'string'
+  }, {
+    'value': 'keepalives', 'label': gettext('Keepalives'), 'vartype': 'integer'
+  }, {
+    'value': 'keepalives_idle', 'label': gettext('Keepalives idle (seconds)'), 'vartype': 'integer'
+  }, {
+    'value': 'keepalives_interval', 'label': gettext('Keepalives interval (seconds)'), 'vartype': 'integer'
+  }, {
+    'value': 'keepalives_count', 'label': gettext('Keepalives count'), 'vartype': 'integer'
+  }, {
+    'value': 'tcp_user_timeout', 'label': gettext('TCP user timeout (milliseconds)'), 'vartype': 'integer',
+    'min_server_version': '12'
+  },  {
+    'value': 'tty', 'label': gettext('TTY'), 'vartype': 'string',
+    'max_server_version': '13'
+  }, {
+    'value': 'replication', 'label': gettext('Replication'), 'vartype': 'enum',
+    'enumvals': [gettext('on'), gettext('off'), gettext('database')],
+    'min_server_version': '11'
+  }, {
+    'value': 'gssencmode', 'label': gettext('GSS encmode'), 'vartype': 'enum',
+    'enumvals': [gettext('prefer'), gettext('require'), gettext('disable')],
+    'min_server_version': '12'
+  }, {
+    'value': 'sslmode', 'label': gettext('SSL mode'), 'vartype': 'enum',
+    'enumvals': [gettext('allow'), gettext('prefer'), gettext('require'),
+      gettext('disable'), gettext('verify-ca'), gettext('verify-full')]
+  }, {
+    'value': 'sslcompression', 'label': gettext('SSL compression?'), 'vartype': 'bool',
+  }, {
+    'value': 'sslcert', 'label': gettext('Client certificate'), 'vartype': 'file'
+  }, {
+    'value': 'sslkey', 'label': gettext('Client certificate key'), 'vartype': 'file'
+  }, {
+    'value': 'sslpassword', 'label': gettext('SSL password'), 'vartype': 'string',
+    'min_server_version': '13'
+  }, {
+    'value': 'sslrootcert', 'label': gettext('Root certificate'), 'vartype': 'file'
+  }, {
+    'value': 'sslcrl', 'label': gettext('Certificate revocation list'), 'vartype': 'file',
+  }, {
+    'value': 'sslcrldir', 'label': gettext('Certificate revocation list directory'), 'vartype': 'file',
+    'min_server_version': '14'
+  }, {
+    'value': 'sslsni', 'label': gettext('Server name indication'), 'vartype': 'bool',
+    'min_server_version': '14'
+  }, {
+    'value': 'requirepeer', 'label': gettext('Require peer'), 'vartype': 'string',
+  }, {
+    'value': 'ssl_min_protocol_version', 'label': gettext('SSL min protocol version'),
+    'vartype': 'enum', 'min_server_version': '13',
+    'enumvals': [gettext('TLSv1'), gettext('TLSv1.1'), gettext('TLSv1.2'),
+      gettext('TLSv1.3')]
+  }, {
+    'value': 'ssl_max_protocol_version', 'label': gettext('SSL max protocol version'),
+    'vartype': 'enum', 'min_server_version': '13',
+    'enumvals': [gettext('TLSv1'), gettext('TLSv1.1'), gettext('TLSv1.2'),
+      gettext('TLSv1.3')]
+  }, {
+    'value': 'krbsrvname', 'label': gettext('Kerberos service name'), 'vartype': 'string',
+  }, {
+    'value': 'gsslib', 'label': gettext('GSS library'), 'vartype': 'string',
+  }, {
+    'value': 'target_session_attrs', 'label': gettext('Target session attribute'),
+    'vartype': 'enum',
+    'enumvals': [gettext('any'), gettext('read-write'), gettext('read-only'),
+      gettext('primary'), gettext('standby'), gettext('prefer-standby')]
+  }, {
+    'value': 'load_balance_hosts', 'label': gettext('Load balance hosts'),
+    'vartype': 'enum', 'min_server_version': '16',
+    'enumvals': [gettext('disable'), gettext('random')]
+  }];
+};
 
 export default class ServerSchema extends BaseUISchema {
   constructor(serverGroupOptions=[], userId=0, initValues={}) {
@@ -36,23 +157,27 @@ export default class ServerSchema extends BaseUISchema {
       passexec: undefined,
       passexec_expiration: undefined,
       service: undefined,
-      use_ssh_tunnel: 0,
+      shared_username: '',
+      use_ssh_tunnel: false,
       tunnel_host: undefined,
       tunnel_port: 22,
       tunnel_username: undefined,
       tunnel_identity_file: undefined,
       tunnel_password: undefined,
       tunnel_authentication: false,
+      tunnel_keep_alive: 0,
       save_tunnel_password: false,
       connection_string: undefined,
       connection_params: [
         {'name': 'sslmode', 'value': 'prefer', 'keyword': 'sslmode'},
         {'name': 'connect_timeout', 'value': 10, 'keyword': 'connect_timeout'}],
+      tags: [],
       ...initValues,
     });
 
     this.serverGroupOptions = serverGroupOptions;
-    this.paramSchema = new VariableSchema(this.getConnectionParameters(), null, null, ['name', 'keyword', 'value']);
+    this.paramSchema = new VariableSchema(getConnectionParameters(), null, null, ['name', 'keyword', 'value']);
+    this.tagsSchema = new TagsSchema();
     this.userId = userId;
     _.bindAll(this, 'isShared');
   }
@@ -107,8 +232,8 @@ export default class ServerSchema extends BaseUISchema {
       {
         id: 'bgcolor', label: gettext('Background'), type: 'color',
         group: null, mode: ['edit', 'create'],
-        disabled: obj.isConnected, deps: ['fgcolor'], depChange: (state)=>{
-          if(!state.bgcolor && state.fgcolor) {
+        disabled: obj.isConnected, deps: ['fgcolor'], depChange: (state, source)=>{
+          if(source[0] == 'fgcolor' && !state.bgcolor && state.fgcolor) {
             return {'bgcolor': '#ffffff'};
           }
         }
@@ -128,6 +253,33 @@ export default class ServerSchema extends BaseUISchema {
           return !obj.isNew(state) && serverOwner != current_user.id;
         }, visible: function(){
           return current_user.is_admin && pgAdmin.server_mode == 'True';
+        },
+      },
+      {
+        id: 'shared_username', label: gettext('Shared Username'), type: 'text',
+        controlProps: { maxLength: 64},
+        mode: ['properties', 'create', 'edit'], deps: ['shared', 'username'],
+        readonly: (s) => {
+          return !(!this.origData.shared && s.shared);
+        }, visible: ()=>{
+          return current_user.is_admin && pgAdmin.server_mode == 'True';
+        },
+        depChange: (state, source, _topState, actionObj)=>{
+          let ret = {};
+          if(this.origData.shared) {
+            return ret;
+          }
+          if(source == 'username' && actionObj.oldState.username == state.shared_username) {
+            ret['shared_username'] = state.username;
+          }
+          if(source == 'shared') {
+            if(state.shared) {
+              ret['shared_username'] = state.username;
+            } else {
+              ret['shared_username'] = '';
+            }
+          }
+          return ret;
         },
       },
       {
@@ -195,7 +347,8 @@ export default class ServerSchema extends BaseUISchema {
           return state.connect_now && obj.isNew(state);
         },
         controlProps: {
-          maxLength: null
+          maxLength: null,
+          autoComplete: 'new-password'
         },
         disabled: function(state) {return state.kerberos_conn;},
       },{
@@ -300,6 +453,15 @@ export default class ServerSchema extends BaseUISchema {
         },
       },
       {
+        id: 'tunnel_keep_alive', label: gettext('Keep alive (seconds)'),
+        type: 'int', group: gettext('SSH Tunnel'), min: 0,
+        mode: ['properties', 'edit', 'create'], deps: ['use_ssh_tunnel'],
+        disabled: function(state) {
+          return !state.use_ssh_tunnel;
+        },
+        readonly: obj.isConnected,
+      },
+      {
         id: 'db_res', label: gettext('DB restriction'), type: 'select', group: gettext('Advanced'),
         options: [],
         mode: ['properties', 'edit', 'create'], readonly: obj.isConnected, controlProps: {
@@ -307,22 +469,45 @@ export default class ServerSchema extends BaseUISchema {
       },
       {
         id: 'passexec_cmd', label: gettext('Password exec command'), type: 'text',
-        group: gettext('Advanced'),
+        group: gettext('Advanced'), controlProps: {maxLength: null},
         mode: ['properties', 'edit', 'create'],
+        disabled: pgAdmin.server_mode == 'True' && pgAdmin.enable_server_passexec_cmd == 'False',
+        helpMessage: gettext('The server hostname, port, and username can be passed as variables by using the placeholders %HOST%, %PORT%, and %USERNAME%, which will be replaced with the corresponding server connection information.')
       },
       {
         id: 'passexec_expiration', label: gettext('Password exec expiration (seconds)'), type: 'int',
         group: gettext('Advanced'),
         mode: ['properties', 'edit', 'create'],
-        visible: function(state) {
-          return !_.isEmpty(state.passexec_cmd);
+        disabled: function(state) {
+          return isEmptyString(state.passexec_cmd);
         },
-      }
+      },
+      {
+        id: 'prepare_threshold', label: gettext('Prepare threshold'), type: 'int',
+        group: gettext('Advanced'),
+        mode: ['properties', 'edit', 'create'],
+        helpMessageMode: ['edit', 'create'],
+        helpMessage: gettext('If it is set to 0, every query is prepared the first time it is executed. If it is set to blank, prepared statements are disabled on the connection.')
+      },
+      {
+        id: 'tags', label: gettext('Tags'),
+        type: 'collection', group: gettext('Tags'),
+        schema: this.tagsSchema, mode: ['edit', 'create'], uniqueCol: ['text'],
+        canAdd: true, canEdit: false, canDelete: true, maxCount: pgAdmin.Browser.utils.max_server_tags_allowed,
+      },
     ];
   }
 
   validate(state, setError) {
     let errmsg = null;
+
+    if(isEmptyString(state.gid)) {
+      errmsg = gettext('Server group must be specified.');
+      setError('gid', errmsg);
+      return true;
+    } else {
+      setError('gid', null);
+    }
 
     if (isEmptyString(state.service)) {
       errmsg = gettext('Either Host name or Service must be specified.');
@@ -400,95 +585,15 @@ export default class ServerSchema extends BaseUISchema {
           setError('tunnel_identity_file', null);
         }
       }
+
+      if(isEmptyString(state.tunnel_keep_alive)) {
+        errmsg = gettext('Keep alive must be specified. Specify 0 for no keep alive.');
+        setError('tunnel_keep_alive', errmsg);
+        return true;
+      } else {
+        setError('tunnel_keep_alive', null);
+      }
     }
     return false;
-  }
-
-  getConnectionParameters() {
-    return [{
-      'value': 'hostaddr', 'label': gettext('Host address'), 'vartype': 'string'
-    }, {
-      'value': 'passfile', 'label': gettext('Password file'), 'vartype': 'file'
-    }, {
-      'value': 'channel_binding', 'label': gettext('Channel binding'), 'vartype': 'enum',
-      'enumvals': [gettext('prefer'), gettext('require'), gettext('disable')],
-      'min_server_version': '13'
-    }, {
-      'value': 'connect_timeout', 'label': gettext('Connection timeout (seconds)'), 'vartype': 'integer'
-    }, {
-      'value': 'client_encoding', 'label': gettext('Client encoding'), 'vartype': 'string'
-    },  {
-      'value': 'options', 'label': gettext('Options'), 'vartype': 'string'
-    }, {
-      'value': 'application_name', 'label': gettext('Application name'), 'vartype': 'string'
-    }, {
-      'value': 'fallback_application_name', 'label': gettext('Fallback application name'), 'vartype': 'string'
-    }, {
-      'value': 'keepalives', 'label': gettext('Keepalives'), 'vartype': 'integer'
-    }, {
-      'value': 'keepalives_idle', 'label': gettext('Keepalives idle (seconds)'), 'vartype': 'integer'
-    }, {
-      'value': 'keepalives_interval', 'label': gettext('Keepalives interval (seconds)'), 'vartype': 'integer'
-    }, {
-      'value': 'keepalives_count', 'label': gettext('Keepalives count'), 'vartype': 'integer'
-    }, {
-      'value': 'tcp_user_timeout', 'label': gettext('TCP user timeout (milliseconds)'), 'vartype': 'integer',
-      'min_server_version': '12'
-    },  {
-      'value': 'tty', 'label': gettext('TTY'), 'vartype': 'string',
-      'max_server_version': '13'
-    }, {
-      'value': 'replication', 'label': gettext('Replication'), 'vartype': 'enum',
-      'enumvals': [gettext('on'), gettext('off'), gettext('database')],
-      'min_server_version': '11'
-    }, {
-      'value': 'gssencmode', 'label': gettext('GSS encmode'), 'vartype': 'enum',
-      'enumvals': [gettext('prefer'), gettext('require'), gettext('disable')],
-      'min_server_version': '12'
-    }, {
-      'value': 'sslmode', 'label': gettext('SSL mode'), 'vartype': 'enum',
-      'enumvals': [gettext('allow'), gettext('prefer'), gettext('require'),
-        gettext('disable'), gettext('verify-ca'), gettext('verify-full')]
-    }, {
-      'value': 'sslcompression', 'label': gettext('SSL compression?'), 'vartype': 'bool',
-    }, {
-      'value': 'sslcert', 'label': gettext('Client certificate'), 'vartype': 'file'
-    }, {
-      'value': 'sslkey', 'label': gettext('Client certificate key'), 'vartype': 'file'
-    }, {
-      'value': 'sslpassword', 'label': gettext('SSL password'), 'vartype': 'string',
-      'min_server_version': '13'
-    }, {
-      'value': 'sslrootcert', 'label': gettext('Root certificate'), 'vartype': 'file'
-    }, {
-      'value': 'sslcrl', 'label': gettext('Certificate revocation list'), 'vartype': 'file',
-    }, {
-      'value': 'sslcrldir', 'label': gettext('Certificate revocation list directory'), 'vartype': 'file',
-      'min_server_version': '14'
-    }, {
-      'value': 'sslsni', 'label': gettext('Server name indication'), 'vartype': 'bool',
-      'min_server_version': '14'
-    }, {
-      'value': 'requirepeer', 'label': gettext('Require peer'), 'vartype': 'string',
-    }, {
-      'value': 'ssl_min_protocol_version', 'label': gettext('SSL min protocol version'),
-      'vartype': 'enum', 'min_server_version': '13',
-      'enumvals': [gettext('TLSv1'), gettext('TLSv1.1'), gettext('TLSv1.2'),
-        gettext('TLSv1.3')]
-    }, {
-      'value': 'ssl_max_protocol_version', 'label': gettext('SSL max protocol version'),
-      'vartype': 'enum', 'min_server_version': '13',
-      'enumvals': [gettext('TLSv1'), gettext('TLSv1.1'), gettext('TLSv1.2'),
-        gettext('TLSv1.3')]
-    }, {
-      'value': 'krbsrvname', 'label': gettext('Kerberos service name'), 'vartype': 'string',
-    }, {
-      'value': 'gsslib', 'label': gettext('GSS library'), 'vartype': 'string',
-    }, {
-      'value': 'target_session_attrs', 'label': gettext('Target session attribute'),
-      'vartype': 'enum',
-      'enumvals': [gettext('any'), gettext('read-write'), gettext('read-only'),
-        gettext('primary'), gettext('standby'), gettext('prefer-standby')]
-    }];
   }
 }
